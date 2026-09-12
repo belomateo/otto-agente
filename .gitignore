@@ -8,6 +8,7 @@ panel/.env.local
 node_modules/
 panel/.next/
 panel/out/
+*.tsbuildinfo
 supabase/.temp/
 *.log
 .DS_Store

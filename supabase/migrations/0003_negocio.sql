@@ -16,13 +16,18 @@ create table historial_ediciones (
 );
 create index historial_ediciones_tabla_fila_idx on historial_ediciones(tabla, fila_id);
 
+-- La fila de historial describe la versión que se está reemplazando, así que sus
+-- tres campos de autoría salen todos de OLD: version, editado_por y editado_at.
+-- (Antes editado_at era now(), o sea el momento en que esa versión dejó de ser la
+-- vigente: quedaba el nombre del autor de la v1 con la fecha de la edición que la
+-- pisó, y el panel no podía mostrar "v1 — Ana — tal fecha" sin mentir.)
 create or replace function historial_antes_de_editar()
 returns trigger
 language plpgsql
 as $$
 begin
   insert into historial_ediciones(tabla, fila_id, version, datos_anteriores, editado_por, editado_at)
-  values (TG_TABLE_NAME, OLD.id, OLD.version, to_jsonb(OLD), OLD.editado_por, now());
+  values (TG_TABLE_NAME, OLD.id, OLD.version, to_jsonb(OLD), OLD.editado_por, OLD.editado_at);
   new.version := OLD.version + 1;
   new.editado_at := now();
   return new;

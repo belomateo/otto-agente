@@ -73,6 +73,11 @@ async function testColaSkipLocked() {
   await admin.connect();
   let jobId;
   try {
+    // Esta prueba no puede correr adentro de una transacción, así que si una
+    // corrida anterior murió a mitad de camino quedan filas con este teléfono y
+    // el insert de abajo fallaría por el unique de `clientes.telefono` para
+    // siempre. Se limpia primero (cascada borra conversaciones y cola_trabajos).
+    await admin.query("delete from clientes where telefono = '+549000000002'");
     const cli = await admin.query(
       "insert into clientes (telefono) values ('+549000000002') returning id"
     );
@@ -111,10 +116,15 @@ async function testColaSkipLocked() {
   } finally {
     // Limpieza manual: esta prueba no puede vivir en una sola transacción
     // (necesita dos sesiones reales para que SKIP LOCKED tenga sentido).
-    if (jobId) await admin.query("delete from cola_trabajos where id = $1", [jobId]);
-    await admin.query("delete from conversaciones where cliente_id in (select id from clientes where telefono = '+549000000002')");
-    await admin.query("delete from clientes where telefono = '+549000000002'");
-    await admin.end();
+    // El try anidado es para que la conexión se cierre igual si un delete falla;
+    // si no, el proceso se queda colgado con la conexión abierta.
+    try {
+      if (jobId) await admin.query("delete from cola_trabajos where id = $1", [jobId]);
+      // borrar el cliente arrastra en cascada conversaciones y cola_trabajos
+      await admin.query("delete from clientes where telefono = '+549000000002'");
+    } finally {
+      await admin.end();
+    }
   }
 }
 
@@ -125,9 +135,26 @@ async function testRlsCeroFilas() {
   try {
     await client.query("begin");
 
+    // Con las tablas vacías, "ve 0 filas" lo cumple hasta una base sin RLS: la
+    // prueba pasaría igual estando todo abierto. Así que primero se planta una
+    // fila de cada tabla (dentro de la transacción, se va con el rollback) y se
+    // confirma que el dueño de la tabla sí las ve. Recién ahí el 0 significa algo.
+    const cli = await client.query(
+      "insert into clientes (telefono, nombre) values ('+549000000003', 'Prueba RLS') returning id"
+    );
+    await client.query(
+      `insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin)
+       values ($1, 'invitado', 45, 1, now() + interval '2 days', now() + interval '2 days 45 minutes')`,
+      [cli.rows[0].id]
+    );
+    const comoDueno = await client.query("select count(*)::int as n from clientes");
+    assert(comoDueno.rows[0].n > 0, "la fila de prueba existe (si no, el resto de la prueba no probaría nada)");
+
     await client.query("set local role anon");
     const comoAnon = await client.query("select count(*)::int as n from clientes");
-    assert(comoAnon.rows[0].n === 0, "anon ve 0 filas en clientes");
+    assert(comoAnon.rows[0].n === 0, "anon ve 0 filas en clientes (habiendo filas)");
+    const anonTurnos = await client.query("select count(*)::int as n from turnos");
+    assert(anonTurnos.rows[0].n === 0, "anon ve 0 filas en turnos (habiendo filas)");
 
     await client.query("reset role");
     await client.query("set local role authenticated");
@@ -139,6 +166,19 @@ async function testRlsCeroFilas() {
 
     const sinPerfilTurnos = await client.query("select count(*)::int as n from turnos");
     assert(sinPerfilTurnos.rows[0].n === 0, "usuario autenticado sin perfil aprobado ve 0 filas en turnos");
+
+    // Leer no es lo único que hay que cortar: anon y authenticated tienen GRANT
+    // de INSERT/UPDATE/DELETE por defecto en Supabase, así que lo único que los
+    // frena es el `with check` de la policy.
+    let rechazado = false;
+    await client.query("savepoint antes_del_insert");
+    try {
+      await client.query("insert into clientes (telefono) values ('+549000000004')");
+    } catch (err) {
+      rechazado = err.code === "42501"; // insufficient_privilege (violó la policy)
+      await client.query("rollback to savepoint antes_del_insert");
+    }
+    assert(rechazado, "usuario autenticado sin perfil aprobado no puede insertar en clientes");
   } finally {
     await client.query("rollback");
     await client.end();

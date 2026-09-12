@@ -18,8 +18,14 @@ create index cola_trabajos_estado_idx on cola_trabajos(estado);
 -- Toma UN trabajo pendiente de forma atómica y lo marca 'procesando'.
 -- SKIP LOCKED: si otro worker ya lo tiene bloqueado, esta llamada lo salta
 -- en vez de esperar o repetirlo. Es la pieza que garantiza el control de Fase 0.
+--
+-- `returns setof` y no `returns cola_trabajos`: una función que devuelve un
+-- registro compuesto no puede devolver "nada", así que con la cola vacía
+-- `select * from cola_tomar_uno(...)` daba UNA fila con todas las columnas en
+-- NULL. Un worker que mire `rows.length` en vez de `rows[0].id` tomaría ese
+-- fantasma como trabajo. Con setof, cola vacía = cero filas.
 create or replace function cola_tomar_uno(p_worker text)
-returns cola_trabajos
+returns setof cola_trabajos
 language plpgsql
 as $$
 declare
@@ -32,13 +38,15 @@ begin
   for update skip locked
   limit 1;
 
-  if v_fila.id is not null then
-    update cola_trabajos
-    set estado = 'procesando', tomado_por = p_worker, tomado_at = now()
-    where id = v_fila.id
-    returning * into v_fila;
+  if v_fila.id is null then
+    return;
   end if;
 
-  return v_fila;
+  update cola_trabajos
+  set estado = 'procesando', tomado_por = p_worker, tomado_at = now()
+  where id = v_fila.id
+  returning * into v_fila;
+
+  return next v_fila;
 end;
 $$;
