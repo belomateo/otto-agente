@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.md text eol=lf
+*.sql text eol=lf
+*.json text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+supabase/functions/_shared/prompt.md text eol=lf
+supabase/seeds/** text eol=lf

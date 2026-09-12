@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+panel/.env.local
+.claude/rol
+.claude/permisos-sesion.txt
+.claude/settings.local.json
+node_modules/
+panel/.next/
+panel/out/
+supabase/.temp/
+*.log
+.DS_Store

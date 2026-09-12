@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-hueso text-tinta font-sans antialiased;
+  }
+  ::selection {
+    @apply bg-cobre-claro text-cobre-oscuro;
+  }
+}
+
+/* Filas de tabla a 56px, ver t-tipo del diseño (DISENO.md). */
+@layer utilities {
+  .fila-tabla {
+    height: theme('spacing.fila');
+  }
+}

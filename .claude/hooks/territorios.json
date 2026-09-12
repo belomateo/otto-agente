@@ -1,0 +1,73 @@
+{
+  "compartidos": [
+    "CLAUDE.md",
+    "docs/ficha-del-negocio.md",
+    "docs/supuestos.md",
+    ".claude/hooks/**",
+    "ARRANQUE.md"
+  ],
+  "roles": {
+    "front": [
+      "panel/app/**",
+      "panel/components/**",
+      "panel/styles/**",
+      "panel/public/**",
+      "panel/tailwind.config.*",
+      "panel/postcss.config.*",
+      "DISENO.md"
+    ],
+    "agente": [
+      "supabase/functions/_shared/**",
+      "supabase/functions/probar-agente/**",
+      "supabase/seeds/fragmentos*",
+      "supabase/seeds/reglas*",
+      "scripts/armar-prompt.mjs",
+      "scripts/probar-*.js",
+      "tests/herramientas/**",
+      "tests/barandillas/**",
+      "AGENTE.md",
+      "plantilla-agente/**"
+    ],
+    "paneles": [
+      "panel/lib/**",
+      "panel/app/api/**",
+      "panel/middleware.*",
+      "panel/package.json",
+      "panel/tsconfig.json",
+      "panel/next.config.*",
+      "panel/.env.example",
+      "supabase/migrations/*negocio*",
+      "supabase/migrations/*auth*",
+      "supabase/migrations/*turnos*",
+      "supabase/seeds/catalogo*",
+      "supabase/seeds/horarios*",
+      "supabase/seeds/admin*"
+    ],
+    "logica": [
+      "supabase/functions/webhook-whatsapp/**",
+      "supabase/functions/worker/**",
+      "supabase/functions/cron*/**",
+      "supabase/functions/_shared/agenda/**",
+      "supabase/functions/_shared/whatsapp/**",
+      "supabase/migrations/*base*",
+      "supabase/migrations/*cola*",
+      "supabase/migrations/*fragmentos*",
+      "supabase/migrations/*metricas*",
+      "supabase/migrations/*rls*",
+      "supabase/migrations/*storage*",
+      "supabase/migrations/*cron*",
+      "supabase/config.toml",
+      "tests/sql/**",
+      "scripts/permiso.mjs",
+      "package.json",
+      ".gitattributes",
+      ".gitignore",
+      ".env.example",
+      "STACK.md",
+      "PROCESOS.md",
+      "TRABAJO.md",
+      "docs/hitos/**",
+      "docs/informes/**"
+    ]
+  }
+}
