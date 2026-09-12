@@ -6,13 +6,29 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { NAV_ITEMS } from './nav-items';
 import { NAV_ICONS } from './icons';
 import { Chip } from '../ui-otto/Chip';
+import { crearClienteNavegador } from '@/lib/supabase/client';
 
-export function Sidebar({ pendientes = 2 }: { pendientes?: number }) {
+type Usuario = { nombre: string; rol: string };
+
+export function Sidebar({
+  pendientes = 2,
+  usuario,
+}: {
+  pendientes?: number;
+  usuario?: Usuario;
+}) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function salir() {
+    await crearClienteNavegador().auth.signOut();
+    router.push('/login');
+    router.refresh();
+  }
 
   return (
     <aside className="hidden w-sidebar flex-none flex-col self-stretch border-r border-borde bg-lino font-sans md:flex">
@@ -54,12 +70,15 @@ export function Sidebar({ pendientes = 2 }: { pendientes?: number }) {
 
       <div className="flex items-center gap-2.5 border-t border-borde-suave px-5 py-4">
         <div className="flex h-8 w-8 flex-none items-center justify-center rounded-pill bg-cobre-claro font-serif text-sm font-semibold text-cobre">
-          M
+          {(usuario?.nombre ?? 'Equipo').charAt(0).toUpperCase()}
         </div>
-        <div>
-          <div className="text-[13px] font-medium">Marcelo</div>
-          <div className="text-[11px] text-grafito">Admin</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium">{usuario?.nombre ?? 'Equipo'}</div>
+          <div className="text-[11px] text-grafito">{usuario?.rol === 'admin' ? 'Admin' : 'Equipo'}</div>
         </div>
+        <button onClick={salir} className="text-[12px] text-grafito underline">
+          Salir
+        </button>
       </div>
     </aside>
   );

@@ -17,7 +17,15 @@ const TABS = [
   { key: 'turnos', href: '/turnos', label: 'Turnos', Icon: IconTurnos },
 ] as const;
 
-export function TabbarMobile({ pendientes = 2 }: { pendientes?: number }) {
+type Usuario = { nombre: string; rol: string };
+
+export function TabbarMobile({
+  pendientes = 2,
+  usuario,
+}: {
+  pendientes?: number;
+  usuario?: Usuario;
+}) {
   const pathname = usePathname();
   const [masAbierto, setMasAbierto] = useState(false);
 
@@ -55,7 +63,7 @@ export function TabbarMobile({ pendientes = 2 }: { pendientes?: number }) {
           <span className="text-[10.5px] font-medium">Más</span>
         </button>
       </nav>
-      <MasSheet abierto={masAbierto} onCerrar={() => setMasAbierto(false)} />
+      <MasSheet abierto={masAbierto} onCerrar={() => setMasAbierto(false)} usuario={usuario} />
     </>
   );
 }

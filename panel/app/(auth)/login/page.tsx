@@ -1,10 +1,48 @@
-// Login. Puerto de d-login.html. La autenticación real (Supabase Auth) la
-// conecta "paneles" en H1.10 — esto es el molde visual.
+// Login + registro abierto (CLAUDE.md § 1: "El dueño edita sin programador",
+// registro abierto pero el perfil nace pendiente — TRABAJO.md H1.10). El molde
+// visual es el de Claude Design (d-login.html); esto le suma la lógica real de
+// Supabase Auth encima.
+'use client';
 
 import Image from 'next/image';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { crearClienteNavegador } from '@/lib/supabase/client';
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [modo, setModo] = useState<'entrar' | 'crear-cuenta'>('entrar');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setEnviando(true);
+    const supabase = crearClienteNavegador();
+
+    if (modo === 'entrar') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setError('Email o contraseña incorrectos.');
+        setEnviando(false);
+        return;
+      }
+    } else {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        setError(error.message === 'User already registered' ? 'Ese email ya tiene una cuenta.' : 'No se pudo crear la cuenta.');
+        setEnviando(false);
+        return;
+      }
+    }
+
+    router.push(modo === 'entrar' ? '/bandeja' : '/esperando');
+    router.refresh();
+  }
+
   return (
     <div className="flex w-[340px] flex-col items-center gap-6.5">
       <div className="flex flex-col items-center gap-4 text-center">
@@ -16,18 +54,43 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
-      <div className="flex w-full flex-col gap-3">
-        <input placeholder="Email" className="rounded-otto border border-borde bg-lino px-3.5 py-3 text-[15px] outline-none" />
+      <form onSubmit={onSubmit} className="flex w-full flex-col gap-3">
+        <input
+          type="email"
+          required
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="rounded-otto border border-borde bg-lino px-3.5 py-3 text-[15px] outline-none"
+        />
         <input
           placeholder="Contraseña"
           type="password"
+          required
+          minLength={6}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
           className="rounded-otto border border-borde bg-lino px-3.5 py-3 text-[15px] outline-none"
         />
-        <button className="rounded-otto bg-cobre py-3 text-[15px] font-medium text-lino">Entrar</button>
-      </div>
-      <Link href="/esperando" className="text-sm">
-        Pedir acceso
-      </Link>
+        {error && <div className="text-sm text-ladrillo">{error}</div>}
+        <button
+          type="submit"
+          disabled={enviando}
+          className="rounded-otto bg-cobre py-3 text-[15px] font-medium text-lino disabled:opacity-60"
+        >
+          {enviando ? 'Un momento…' : modo === 'entrar' ? 'Entrar' : 'Crear cuenta'}
+        </button>
+      </form>
+      <button
+        type="button"
+        onClick={() => {
+          setError(null);
+          setModo((m) => (m === 'entrar' ? 'crear-cuenta' : 'entrar'));
+        }}
+        className="text-sm text-grafito underline"
+      >
+        {modo === 'entrar' ? 'Pedir acceso' : 'Ya tengo cuenta'}
+      </button>
     </div>
   );
 }

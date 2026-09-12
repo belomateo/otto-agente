@@ -1,18 +1,34 @@
 // Shell del panel: Sidebar fijo en desktop (md+), TabbarMobile fijo abajo en
 // mobile. Persisten entre navegaciones — cada page.tsx renderiza solo su
 // contenido, no su propia navegación. Ver ARRANQUE.md H1.2.
+//
+// Server Component: trae el perfil real (nombre, rol) para el pie del Sidebar/
+// MasSheet. El middleware ya garantiza que quien llega hasta acá tiene sesión
+// y perfil aprobado (si no, lo redirige a /login o /esperando antes).
 
 import { Sidebar } from '@/components/nav/Sidebar';
 import { TabbarMobile } from '@/components/nav/TabbarMobile';
+import { crearClienteServidor } from '@/lib/supabase/server';
 
-export default function PanelLayout({ children }: { children: React.ReactNode }) {
+export default async function PanelLayout({ children }: { children: React.ReactNode }) {
+  const supabase = await crearClienteServidor();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let usuario: { nombre: string; rol: string } | undefined;
+  if (user) {
+    const { data: perfil } = await supabase.from('perfiles').select('nombre, rol').eq('id', user.id).single();
+    usuario = { nombre: perfil?.nombre || user.email?.split('@')[0] || 'Equipo', rol: perfil?.rol ?? 'equipo' };
+  }
+
   return (
     <div className="flex h-dvh">
-      <Sidebar />
+      <Sidebar usuario={usuario} />
       <div className="flex min-w-0 flex-1 flex-col">
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-hueso">{children}</main>
         <div className="md:hidden">
-          <TabbarMobile />
+          <TabbarMobile usuario={usuario} />
         </div>
       </div>
     </div>

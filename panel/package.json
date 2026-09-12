@@ -2,7 +2,7 @@
   "name": "otto-panel",
   "version": "0.1.0",
   "private": true,
-  "description": "Panel de Lucía para Otto Su Misura. Fase 1 (H1.1/H1.2): sistema visual y las 8 pestañas maqueteadas con datos mock, sin backend todavía.",
+  "description": "Panel de Lucía para Otto Su Misura. H1.1/H1.2: sistema visual y las 8 pestañas maqueteadas con datos mock. Fase 0: Auth real de Supabase (login, registro, aprobación) sobre esa base.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,7 +12,9 @@
   "dependencies": {
     "next": "^16.3.5",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "@supabase/supabase-js": "^2.45.4",
+    "@supabase/ssr": "^0.5.1"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",

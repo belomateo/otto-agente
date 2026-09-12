@@ -4,12 +4,31 @@
 // TabbarMobile; agrupa lo que en desktop está siempre visible en el Sidebar.
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { NAV_ICONS } from './icons';
 import { NAV_ITEMS, NAV_MOBILE_PRINCIPALES } from './nav-items';
+import { crearClienteNavegador } from '@/lib/supabase/client';
 
-export function MasSheet({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
+type Usuario = { nombre: string; rol: string };
+
+export function MasSheet({
+  abierto,
+  onCerrar,
+  usuario,
+}: {
+  abierto: boolean;
+  onCerrar: () => void;
+  usuario?: Usuario;
+}) {
+  const router = useRouter();
   if (!abierto) return null;
   const items = NAV_ITEMS.filter((i) => !NAV_MOBILE_PRINCIPALES.includes(i.key));
+
+  async function salir() {
+    await crearClienteNavegador().auth.signOut();
+    router.push('/login');
+    router.refresh();
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
@@ -32,13 +51,15 @@ export function MasSheet({ abierto, onCerrar }: { abierto: boolean; onCerrar: ()
         })}
         <div className="mt-1 flex items-center gap-2.5 border-t border-borde py-3.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-pill bg-cobre-claro font-serif text-sm font-semibold text-cobre">
-            J
+            {(usuario?.nombre ?? 'Equipo').charAt(0).toUpperCase()}
           </div>
-          <div className="flex-1">
-            <div className="text-[13.5px] font-medium">Julián</div>
-            <div className="text-[11.5px] text-grafito">Equipo</div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13.5px] font-medium">{usuario?.nombre ?? 'Equipo'}</div>
+            <div className="text-[11.5px] text-grafito">{usuario?.rol === 'admin' ? 'Admin' : 'Equipo'}</div>
           </div>
-          <span className="text-[13px] text-grafito">Salir</span>
+          <button onClick={salir} className="text-[13px] text-grafito underline">
+            Salir
+          </button>
         </div>
       </div>
     </div>

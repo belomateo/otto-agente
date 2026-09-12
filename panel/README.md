@@ -31,29 +31,48 @@ compila sin errores de tipos ni vulnerabilidades (`npm audit` en cero).
   conocimiento, catálogo, estadísticas, configuración. Cada `page.tsx`
   renderiza la variante de escritorio y la de mobile (`hidden md:flex` /
   `flex md:hidden`), no son rutas separadas.
-- **`app/(auth)/`** — login y "esperando aprobación", solo el molde visual.
+- **`app/(auth)/`** — login y "esperando aprobación": Auth real de Supabase
+  (ver abajo), no solo el molde.
+- **`lib/supabase/{client,server}.ts`** y **`middleware.ts`** — el patrón
+  oficial de `@supabase/ssr` para App Router. El middleware es la guarda de
+  acceso: sin sesión manda a `/login`; con sesión pero perfil no aprobado,
+  a `/esperando`; aprobado y visitando `/login`/`/esperando`, a `/bandeja`.
 - **`public/logo-otto.png`** — el logo real de Otto Su Misura. Estaba
   embebido como imagen dentro de `Sidebar.dc.html`, no llegó como archivo
   aparte (`logo-otto.png` y `support.js` que se mencionaban al pedir la
   implementación no forman parte de este export: `support.js` es el runtime
   genérico del canvas de Claude Design, no hace falta portarlo).
 
+## Auth (Fase 0, adelantado)
+
+`ARRANQUE.md` pone la Auth del panel en Fase 0 (rol `logica`, antes que
+`front`/`agente`/`paneles` arranquen). Como acá el panel ya existía (H1.1/H1.2),
+al llegar Fase 0 se sumó la Auth real encima en vez de rehacer el esqueleto:
+
+- **Registro abierto** desde `/login` ("Pedir acceso"): crea la cuenta en
+  Supabase Auth; un trigger (`0010_auth_solicitudes.sql`) le crea su fila en
+  `perfiles` (`estado='pendiente'`) y en `solicitudes_acceso` automáticamente.
+  Sin confirmación de email (`mailer_autoconfirm=true` — panel interno, el
+  filtro real es la aprobación manual; ver `docs/supuestos.md` #19).
+- **`/esperando`** hasta que un admin apruebe (Configuración › Accesos es
+  H1.10, todavía no existe la pantalla — por ahora se aprueba a mano por SQL).
+- El pie del Sidebar/hoja "Más" ya muestra nombre y rol reales del perfil
+  logueado, y "Salir" cierra sesión de verdad.
+- Probado de punta a punta con un usuario de prueba (registro → pendiente →
+  promovido a admin por SQL → `/bandeja` con sus datos reales) y borrado
+  después; no queda ningún usuario cargado todavía.
+
 ## Qué falta (a propósito, no es un olvido)
 
-Esto es **H1.1 + H1.2 nada más**: sistema visual y maqueta con datos mock.
-Según `ARRANQUE.md`, el orden real del proyecto es que **Fase 0 (`logica`)
-corra primero** — crea el proyecto de Supabase, las migraciones y el
-esqueleto de `panel/` con Auth — y recién después arrancan `front`/`agente`/
-`paneles` en paralelo. Acá se construyó el panel **antes** de esa Fase 0,
-porque lo que se pidió fue implementar el archivo de diseño ya. Consecuencias
+El sistema visual (H1.1) y las 8 pestañas maqueteadas (H1.2) siguen con
+**datos mock** — la Auth ya es real, pero Bandeja/Turnos/Clientes/etc. todavía
+no leen la base. Eso es H1.8/H1.9 (rol `paneles`, Fase 1). Consecuencias
 concretas:
 
-- **No hay Supabase conectado.** `/login` y `/esperando` son solo el molde;
-  no autentican a nadie todavía (eso es H1.10, rol `paneles`).
-- **Todo es mock.** Nada de lo que se ve viene de una base de datos ni se
-  guarda al tocar "Guardar" — los botones existen visualmente, algunos
-  (Editor, Switch, Toast) tienen estado local de React para que no se vean
-  rotos, pero no persisten nada.
+- **Todo el contenido de las 8 pestañas es mock.** Nada de lo que se ve viene
+  de una base de datos ni se guarda al tocar "Guardar" — los botones existen
+  visualmente, algunos (Editor, Switch, Toast) tienen estado local de React
+  para que no se vean rotos, pero no persisten nada.
 - **Falta uno de los tres visuales por pestaña.** El diseño trae desktop +
   mobile para las 8 pestañas más login/esperando; ambas variantes están acá.
   Lo que no están son estados alternativos (p. ej. "Bandeja" con 0 charlas,
