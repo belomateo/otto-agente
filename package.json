@@ -1,0 +1,14 @@
+{
+  "name": "otto-agente",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cimientos (Fase 0) del agente Lucía — Otto Su Misura. `npm test` corre los controles de Fase 0 contra la base real.",
+  "scripts": {
+    "test": "node tests/sql/run.mjs",
+    "test:sql": "node tests/sql/run.mjs"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.1"
+  }
+}
