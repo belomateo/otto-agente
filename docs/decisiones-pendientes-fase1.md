@@ -5,6 +5,32 @@ antes de que `logica` (H1.13, huecos) y `front`/`paneles` (turnos) las
 necesiten, para no descubrirlas a mitad de hito. Detalle completo en el
 informe del verificador, §3.3 a §3.5.
 
+## Resueltas por Mateo (12/9, al arrancar Fase 1)
+
+- **#1 → sí:** restricción `EXCLUDE` en la base para que dos turnos del mismo
+  probador no se pisen. Migración de `paneles` (rango 0011–0019).
+- **#2 → las dos cosas:** se suman `cancelado` y `no-vino` a `turnos.estado`, y
+  `con-aviso` sale del estado a una columna aparte (`aviso`, alerta de
+  sincronización con Calendar). Migración de `paneles`; `front` ajusta
+  `BloqueTurno` y el mock; `logica` escribe el aviso en H1.12.
+- **#3 → todos cortan 14–15:** la excepción 13–14 de la ficha no aplica. No hace
+  falta tocar `horarios`.
+- **Pestaña:** se llama **Bitácora** (ruta `/bitacora`), no Estadísticas. `front`.
+- **Letra (13/9):** en el celular ningún texto baja de 14 px; vale DISENO.md por encima del
+  canvas. `front`, en 1.1.
+- **Configuración (13/9):** `front` suma en 1.2 las subpestañas Agenda, Herramientas, Enlaces
+  y Notas con mock, para que `paneles` tenga dónde conectar la edición del dueño.
+- **Propuestas en Conocimiento (13/9):** la tarjeta pasa a ser un link de una línea a
+  Bitácora › Propuestas.
+- **Modo de trabajo (13/9):** Mateo abre las sesiones de `front`, `agente` y `paneles` en VS
+  Code; `logica` sigue en la sesión principal. Los hitos de los cuatro roles están aprobados.
+- **Nuevo, #6:** falta dónde guardar la configuración de agenda (duraciones por
+  tipo de turno, cantidad de probadores, escalonado de 15'). Hoy no hay tabla y
+  terminaría en código, contra el principio 2. `paneles` la crea (`*negocio*`)
+  antes de que `logica` haga H1.13, que la consume.
+
+Lo que sigue abajo es el texto original de cada punto, como referencia.
+
 1. **Solapamiento de turnos por probador.** `turnos_probador_inicio_idx` es un
    índice, no una restricción: hoy dos reservas concurrentes para el mismo
    probador a la misma hora entran las dos. El cálculo de huecos en código
