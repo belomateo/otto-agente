@@ -185,12 +185,105 @@ async function testRlsCeroFilas() {
   }
 }
 
+// Hito 1.15: la ficha del cliente (AGENTE.md § 7), los enums que tienen que coincidir con
+// las herramientas y el prompt (temas de AGENTE.md § 8, motivos de PROCESOS.md § 4) y el
+// UPDATE de Storage. Todo dentro de una transacción con ROLLBACK.
+const TEMAS = [
+  "que-incluye", "como-funciona", "reserva-y-garantia", "ubicacion-horarios", "talles",
+  "a-medida", "anticipacion", "accesorios", "objecion-precio", "objecion-turno",
+  "objecion-competencia", "que-no-hacemos", "descuentos", "novio", "graduado", "invitado",
+];
+const MOTIVOS = [
+  "reclamo", "prenda_danada", "corporativo", "turno_urgente_sin_hueco", "descuento",
+  "dato_no_encontrado", "pide_persona", "barandilla_doble", "sin_respuesta", "timeout",
+];
+const EVENTOS = ["casamiento", "graduacion", "fiesta", "laboral", "otro"];
+const ROLES = ["novio", "invitado", "graduado", "padre", "otro"];
+
+async function testEsquemaDelAgente() {
+  console.log("\n[1.15] Esquema del agente: ficha del cliente, enums y Storage");
+  const client = new Client({ connectionString: CONN });
+  await client.connect();
+
+  // Corre la sentencia en un savepoint: devuelve el código de error (o null si entró) sin
+  // abortar la transacción de la prueba.
+  async function probar(sql, params = []) {
+    await client.query("savepoint chequeo");
+    try {
+      await client.query(sql, params);
+      await client.query("release savepoint chequeo");
+      return null;
+    } catch (err) {
+      await client.query("rollback to savepoint chequeo");
+      return err.code;
+    }
+  }
+  async function todosEntran(valores, sql) {
+    const fallan = [];
+    for (const v of valores) if ((await probar(sql, [v])) !== null) fallan.push(v);
+    return fallan;
+  }
+
+  try {
+    await client.query("begin");
+    const cli = await client.query(
+      "insert into clientes (telefono, nombre) values ('+549000000005', 'Prueba ficha') returning id"
+    );
+    const id = cli.rows[0].id;
+    const conv = await client.query("insert into conversaciones (cliente_id) values ($1) returning id", [id]);
+    const convId = conv.rows[0].id;
+
+    let fallan = await todosEntran(EVENTOS, `update clientes set evento = $1 where id = '${id}'`);
+    assert(fallan.length === 0, `los ${EVENTOS.length} eventos del enum entran${fallan.length ? ` (fallan: ${fallan})` : ""}`);
+    fallan = await todosEntran(ROLES, `update clientes set rol = $1 where id = '${id}'`);
+    assert(fallan.length === 0, `los ${ROLES.length} roles del enum entran${fallan.length ? ` (fallan: ${fallan})` : ""}`);
+    fallan = await todosEntran(MOTIVOS, `insert into derivaciones (conversacion_id, motivo) values ('${convId}', $1)`);
+    assert(fallan.length === 0, `los ${MOTIVOS.length} motivos de derivación entran${fallan.length ? ` (fallan: ${fallan})` : ""}`);
+    fallan = await todosEntran(TEMAS, "insert into fragmentos (tema, titulo, texto) values ($1, 'Prueba', 'texto de prueba')");
+    assert(fallan.length === 0, `los ${TEMAS.length} temas de fragmentos entran${fallan.length ? ` (fallan: ${fallan})` : ""}`);
+
+    // 23514 = check_violation
+    assert((await probar(`update clientes set evento = 'boda' where id = '${id}'`)) === "23514", "un evento fuera del enum se rechaza");
+    assert((await probar(`update clientes set rol = 'padrino' where id = '${id}'`)) === "23514", "un rol fuera del enum se rechaza");
+    assert((await probar(`update clientes set dia_o_noche = 'tarde' where id = '${id}'`)) === "23514", "dia_o_noche fuera de dia/noche se rechaza");
+    assert(
+      (await probar(`insert into derivaciones (conversacion_id, motivo) values ('${convId}', 'queja')`)) === "23514",
+      "un motivo de derivación fuera del enum se rechaza"
+    );
+    assert(
+      (await probar("insert into fragmentos (tema, titulo, texto) values ('precios', 'Prueba', 'texto')")) === "23514",
+      "un tema fuera de los 16 se rechaza"
+    );
+
+    const versionAntes = (await client.query("select version from clientes where id = $1", [id])).rows[0].version;
+    await client.query("update clientes set talle_aprox = '52', editado_por = 'prueba' where id = $1", [id]);
+    // Por versión y no por editado_at: dentro de una sola transacción now() es siempre el
+    // mismo instante, así que todas las filas de historial de esta prueba empatan en la hora.
+    const hist = await client.query(
+      "select max(version) as v from historial_ediciones where tabla = 'clientes' and fila_id = $1",
+      [id]
+    );
+    assert(hist.rows[0].v === versionAntes, "editar la ficha deja su fila de historial con la versión anterior");
+
+    const pol = await client.query(
+      `select count(*)::int as n from pg_policies
+       where schemaname = 'storage' and tablename = 'objects' and cmd = 'UPDATE'
+         and policyname in ('catalogo_update_aprobados', 'adjuntos_update_aprobados')`
+    );
+    assert(pol.rows[0].n === 2, "Storage tiene policies de UPDATE en catalogo y adjuntos");
+  } finally {
+    await client.query("rollback");
+    await client.end();
+  }
+}
+
 (async () => {
-  console.log("Controles de Fase 0 — otto-agente\n" + "=".repeat(40));
+  console.log("Controles de la base (Fase 0 + hito 1.15) — otto-agente\n" + "=".repeat(40));
   try {
     await testIdempotenciaWebhook();
     await testColaSkipLocked();
     await testRlsCeroFilas();
+    await testEsquemaDelAgente();
   } catch (err) {
     console.error("\n💥 Error inesperado corriendo los tests:", err);
     fallas++;
@@ -200,5 +293,5 @@ async function testRlsCeroFilas() {
     console.error(`❌ ${fallas} control(es) no pasaron.`);
     process.exit(1);
   }
-  console.log("✅ Todos los controles de Fase 0 pasaron.");
+  console.log("✅ Todos los controles pasaron.");
 })();
