@@ -108,6 +108,7 @@ apariencia sea lo primero: el día de esa fecha especial es lo que más nos impo
 ## Agenda (➜ OTTO BOT, vigente)
 
 - Lun–Vie 10:00–19:00; Sáb 9:30–18:30. Corte 14–15 (un probador puede cortar 13–14).
+  ➜ **Todos cortan 14–15; la excepción 13–14 no aplica** (Mateo, 12/9).
 - 3 probadores, escalonados de a 15 min.
 - Graduado 45' · Novio 45' · Invitado 45' · Doble 1:30 (mismo probador) · Triple 2:00
   · Prueba final 15'.
