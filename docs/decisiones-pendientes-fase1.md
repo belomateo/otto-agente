@@ -16,6 +16,14 @@ informe del verificador, §3.3 a §3.5.
 - **#3 → todos cortan 14–15:** la excepción 13–14 de la ficha no aplica. No hace
   falta tocar `horarios`.
 - **Pestaña:** se llama **Bitácora** (ruta `/bitacora`), no Estadísticas. `front`.
+- **Letra (13/9):** en el celular ningún texto baja de 14 px; vale DISENO.md por encima del
+  canvas. `front`, en 1.1.
+- **Configuración (13/9):** `front` suma en 1.2 las subpestañas Agenda, Herramientas, Enlaces
+  y Notas con mock, para que `paneles` tenga dónde conectar la edición del dueño.
+- **Propuestas en Conocimiento (13/9):** la tarjeta pasa a ser un link de una línea a
+  Bitácora › Propuestas.
+- **Modo de trabajo (13/9):** Mateo abre las sesiones de `front`, `agente` y `paneles` en VS
+  Code; `logica` sigue en la sesión principal. Los hitos de los cuatro roles están aprobados.
 - **Nuevo, #6:** falta dónde guardar la configuración de agenda (duraciones por
   tipo de turno, cantidad de probadores, escalonado de 15'). Hoy no hay tabla y
   terminaría en código, contra el principio 2. `paneles` la crea (`*negocio*`)
