@@ -2,8 +2,9 @@
 
 // Barra inferior de mobile — Bandeja · Atención humana · Turnos · Más.
 // Puerto de TabbarMobile.dc.html. El resto de las pestañas (Clientes,
-// Conocimiento, Catálogo, Estadísticas, Configuración) vive detrás de "Más",
-// ver MasSheet.tsx — puerto de m-mas.html.
+// Conocimiento, Catálogo, Bitácora, Configuración) vive detrás de "Más",
+// ver MasSheet.tsx — puerto de m-mas.html. Solo existe en mobile, así que los
+// textos van directo a 14 px (decisión de Mateo, 13/9), sin variante de escritorio.
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -41,26 +42,29 @@ export function TabbarMobile({
             <Link
               key={key}
               href={href}
-              className="relative flex flex-1 flex-col items-center justify-center gap-[3px]"
+              aria-current={activo ? 'page' : undefined}
+              className="flex flex-1 flex-col items-center justify-center gap-1"
               style={{ color: activo ? '#A8703F' : '#5C6068' }}
             >
-              <Icon width={20} height={20} />
-              <span className="text-[10.5px] font-medium">{label}</span>
-              {key === 'atencion' && pendientes > 0 && (
-                <span className="absolute right-6 top-[7px] rounded-pill bg-ladrillo px-1.5 py-px text-[10px] font-semibold text-lino">
-                  {pendientes}
-                </span>
-              )}
+              <span className="relative">
+                <Icon width={20} height={20} />
+                {key === 'atencion' && pendientes > 0 && (
+                  <span className="absolute -right-4 -top-2 min-w-[20px] rounded-pill bg-ladrillo px-1.5 text-center text-[14px] font-semibold leading-[18px] text-lino">
+                    {pendientes}
+                  </span>
+                )}
+              </span>
+              <span className="text-[14px] font-medium leading-none">{label}</span>
             </Link>
           );
         })}
         <button
           onClick={() => setMasAbierto(true)}
-          className="flex flex-1 flex-col items-center justify-center gap-[3px]"
+          className="flex flex-1 flex-col items-center justify-center gap-1"
           style={{ color: enSeccionMas ? '#A8703F' : '#5C6068' }}
         >
           <IconMas width={20} height={20} />
-          <span className="text-[10.5px] font-medium">Más</span>
+          <span className="text-[14px] font-medium leading-none">Más</span>
         </button>
       </nav>
       <MasSheet abierto={masAbierto} onCerrar={() => setMasAbierto(false)} usuario={usuario} />

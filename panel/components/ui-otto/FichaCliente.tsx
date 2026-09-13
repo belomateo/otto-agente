@@ -25,10 +25,11 @@ export function FichaClienteCompacta({
   return (
     <div className="flex items-baseline gap-2.5">
       <span className="flex-none font-serif text-[17px] font-semibold">{nombre}</span>
-      <span className="min-w-0 flex-1 truncate text-[13px] text-grafito">{resumen}</span>
+      <span className="min-w-0 flex-1 truncate text-[14px] text-grafito md:text-[13px]">{resumen}</span>
       <button
+        type="button"
         onClick={onVerFicha}
-        className="flex-none rounded-otto border border-borde bg-lino px-3.5 py-2 text-[13.5px] font-medium text-tinta"
+        className="flex-none rounded-otto border border-borde bg-lino px-3.5 py-2 text-[14px] font-medium text-tinta md:text-[13.5px]"
       >
         Ver ficha
       </button>
@@ -48,15 +49,15 @@ export function FichaClienteCompleta({ datos }: { datos: DatosFicha }) {
   return (
     <div className="rounded-otto border border-borde p-4">
       <div className="font-serif text-lg font-semibold">{datos.nombre}</div>
-      <div className="mt-3 grid grid-cols-3 gap-x-3.5 gap-y-2.5 text-[13.5px]">
+      <div className="mt-3 grid grid-cols-2 gap-x-3.5 gap-y-2.5 text-[14px] md:grid-cols-3 md:text-[13.5px]">
         {campos.map(([label, valor]) => (
           <div key={label}>
-            <div className="text-[11px] font-medium text-grafito">{label}</div>
+            <div className="text-[14px] font-medium text-grafito md:text-[11px]">{label}</div>
             {valor}
           </div>
         ))}
       </div>
-      <div className="mt-3 rounded-otto bg-hueso px-3 py-2 text-[12.5px] text-grafito">
+      <div className="mt-3 rounded-otto bg-hueso px-3 py-2 text-[14px] text-grafito md:text-[12.5px]">
         Lucía usa esta ficha en cada mensaje.
       </div>
     </div>

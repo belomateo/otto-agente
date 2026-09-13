@@ -200,8 +200,9 @@ versión y fecha, botón editar. Un campo arriba: **"Probá cómo lo encontrarí
 cliente"**: escribís "cuanto se paga de seña" y muestra qué fragmento
 devolvería. Botón "Nuevo fragmento".
 
-Arriba de todo, si hay, una tarjeta **"Propuestas de Lucía"**: lo que el
-análisis nocturno sugiere agregar, con Aplicar · Editar y aplicar · Descartar.
+Arriba de las secciones, si hay, un aviso de una línea **"Propuestas de Lucía · N
+pendientes"** que lleva a Bitácora › Propuestas (§ 7), donde se revisan con
+Aplicar · Editar y aplicar · Descartar (decisión de Mateo, 13/9).
 
 ### 6. Catálogo
 Grilla de modelos con foto grande 3:4, nombre en serif, colores como puntitos,
@@ -210,8 +211,14 @@ completa con subida de fotos (arrastrar o link), colores, talles, precio,
 descripción corta. Sección aparte "Accesorios" en tabla: nombre, precio de
 alquiler, precio de compra con descuento, switch.
 
-### 7. Bitácora
-Arriba, **cuatro números del día** en tarjetas: Consultas · Turnos agendados ·
+### 7. Bitácora (ruta `/bitacora`)
+Dos subpestañas: **Actividad** (`/bitacora`, lo que sigue) y **Propuestas · N**
+(`/bitacora/propuestas`): lo que el análisis nocturno sugiere (PROCESOS.md § 6).
+Cada propuesta dice de dónde sale (cuántas charlas y un ejemplo textual) y tiene
+Aplicar · Editar y aplicar · Descartar; las «aplicadas con alerta» van en
+Ladrillo, con el guion que falló y «Ver». N es la cantidad de pendientes.
+
+En Actividad, arriba, **cuatro números del día** en tarjetas: Consultas · Turnos agendados ·
 Conversión · Derivaciones (con el costo de IA en chico). Debajo, la línea de
 tiempo de eventos con filtros (tipo, fecha, regla, cliente): cada evento en una
 fila con hora, ícono, cliente, y descripción en una línea; las filas con error

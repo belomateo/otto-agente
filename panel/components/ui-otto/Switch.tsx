@@ -2,33 +2,44 @@
 
 // Switch con etiqueta. Ver DISENO.md § componentes, 7.
 // Se usa para todo lo que Lucía "puede mostrar" (fragmentos, modelos del
-// catálogo, accesorios): el dueño decide qué sabe el agente, en un toggle.
+// catálogo, accesorios, herramientas): el dueño decide qué sabe el agente, en
+// un toggle. Sin `checked` maneja su propio estado; con `checked` lo maneja
+// quien lo usa (hace falta para que "Deshacer" lo vuelva atrás).
 
 import { useState } from 'react';
 
 export function Switch({
   label,
+  checked: controlado,
   defaultChecked = true,
   onChange,
   size = 'md',
+  ariaLabel,
 }: {
   label?: string;
+  checked?: boolean;
   defaultChecked?: boolean;
   onChange?: (checked: boolean) => void;
   size?: 'md' | 'sm';
+  /** nombre para lectores de pantalla cuando no hay etiqueta visible */
+  ariaLabel?: string;
 }) {
-  const [checked, setChecked] = useState(defaultChecked);
+  const [interno, setInterno] = useState(defaultChecked);
+  const checked = controlado ?? interno;
   const dims = size === 'sm' ? { w: 30, h: 18, knob: 14 } : { w: 34, h: 20, knob: 16 };
 
   const toggle = () => {
     const next = !checked;
-    setChecked(next);
+    if (controlado === undefined) setInterno(next);
     onChange?.(next);
   };
 
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label ? undefined : ariaLabel}
       onClick={toggle}
       className={`flex items-center gap-2.5 text-sm font-medium ${checked ? 'text-tinta' : 'text-grafito'}`}
     >

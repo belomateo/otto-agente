@@ -10,6 +10,12 @@ const ESTILOS: Record<Estado, { bg: string; fg: string }> = {
   Cerrada: { bg: '#EFEDE8', fg: '#5C6068' },
 };
 
+// 14 px en el celular (decisión de Mateo, 13/9) y el tamaño del canvas desde md.
+// Si quien lo usa trae su propio tamaño en className, no se suma el de acá: dos
+// text-* en el mismo elemento compiten por el orden del CSS, no por el de la clase.
+const TAMANO_POR_DEFECTO = 'text-[14px] md:text-xs';
+const traeTamano = (clases: string) => /(^|\s)(md:)?text-(\[\d|xs|sm|base|lg)/.test(clases);
+
 export function Chip({
   children,
   estado,
@@ -26,9 +32,10 @@ export function Chip({
   const preset = estado ? ESTILOS[estado] : undefined;
   const background = bg ?? preset?.bg ?? '#EFEDE8';
   const color = fg ?? preset?.fg ?? '#5C6068';
+  const tamano = traeTamano(className) ? '' : TAMANO_POR_DEFECTO;
   return (
     <span
-      className={`inline-flex items-center rounded-pill px-[11px] py-1 text-xs font-medium ${className}`}
+      className={`inline-flex items-center rounded-pill px-[11px] py-1 font-medium ${tamano} ${className}`}
       style={{ background, color }}
     >
       {children}

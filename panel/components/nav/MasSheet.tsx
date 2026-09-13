@@ -54,10 +54,10 @@ export function MasSheet({
             {(usuario?.nombre ?? 'Equipo').charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13.5px] font-medium">{usuario?.nombre ?? 'Equipo'}</div>
-            <div className="text-[11.5px] text-grafito">{usuario?.rol === 'admin' ? 'Admin' : 'Equipo'}</div>
+            <div className="truncate text-[14px] font-medium">{usuario?.nombre ?? 'Equipo'}</div>
+            <div className="text-[14px] text-grafito">{usuario?.rol === 'admin' ? 'Admin' : 'Equipo'}</div>
           </div>
-          <button onClick={salir} className="text-[13px] text-grafito underline">
+          <button onClick={salir} className="text-[14px] text-grafito underline">
             Salir
           </button>
         </div>
