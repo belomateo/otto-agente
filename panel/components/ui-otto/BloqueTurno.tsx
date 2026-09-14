@@ -26,7 +26,7 @@ export const ETIQUETA_ESTADO: Record<EstadoTurno, string> = {
 
 // Borde izquierdo por estado. Alquiló (Cobre) y Retiró (Noche) vienen del canvas;
 // DISENO.md los pedía en Grafito — ver Supuestos de docs/hitos/1.1-sistema-visual.md.
-const BORDE: Record<EstadoTurno, string> = {
+export const BORDE_ESTADO: Record<EstadoTurno, string> = {
   'sin-confirmar': '#B8862B',
   confirmado: '#5E7F62',
   alquilo: '#A8703F',
@@ -55,7 +55,7 @@ export function BloqueTurno({
   return (
     <div
       className={`rounded-bloque border border-borde px-[11px] py-2 ${apagado ? 'bg-[#FBFAF7]' : 'bg-lino'}`}
-      style={{ borderLeft: `3px solid ${BORDE[estado]}` }}
+      style={{ borderLeft: `3px solid ${BORDE_ESTADO[estado]}` }}
     >
       <div className={`flex items-center gap-1.5 font-serif text-sm font-semibold ${apagado ? 'text-grafito' : ''}`}>
         <span className="min-w-0 flex-1 truncate">{nombre}</span>

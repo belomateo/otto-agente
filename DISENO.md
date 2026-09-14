@@ -93,12 +93,14 @@ Agustín Ferreyra (graduado 12/12, urgente, mismo día).
 
 **Turnos de hoy (sábado 12/9):** 10:00 Franco Bertolini — Novio — Probador 1 —
 Confirmado · 10:15 Nicolás Pereyra — Invitado — Probador 2 — Sin confirmar ·
-11:30 Martín Sosa — Invitado — Probador 3 — Confirmado · 12:15 Tomás Díaz —
+11:15 Martín Sosa — Invitado — Probador 3 — Confirmado · 15:00 Tomás Díaz —
 Graduado — Probador 1 — Confirmado · 16:00 Prueba final — Lucas Amado — 15' —
-Probador 2.
+Probador 2. (Martín y Tomás se movieron el 14/9 para entrar en las franjas del
+sábado: 9:30 a 12 con 3 probadores y 13:30 a 18:30 con 2.)
 
-**Derivaciones abiertas:** Agustín Ferreyra — Turno urgente sin hueco — hace 12
-min · Empresa Litoral Seguros — Corporativo (uniformes, 18 personas) — hace 2 h.
+**Derivaciones abiertas:** Agustín Ferreyra — Evento hoy o mañana (se gradúa hoy;
+decisión #8 del 14/9) — hace 12 min · Empresa Litoral Seguros — Corporativo
+(uniformes, 18 personas) — hace 2 h.
 
 **Catálogo:** Ambo azul noche corte italiano — $150.000 · Ambo gris perla —
 $150.000 · Smoking negro — $185.000 · Chaquet — $210.000. Accesorios: camisa +
@@ -163,8 +165,9 @@ tiene Lucía ("Lucía está atendiendo. Tomá la charla para responder").
 
 ### 2. Atención humana
 Lista de derivaciones, la más urgente arriba. Cada tarjeta: nombre, chip del
-motivo (Reclamo / Prenda dañada / Corporativo / Urgente / Descuento / Dato no
-encontrado / Pide persona), hace cuánto, y el **resumen de dos líneas** que
+motivo (Reclamo / Prenda dañada / Corporativo / Urgente / Evento hoy o mañana /
+Descuento / Dato no encontrado / Pide persona), hace cuánto, y el
+**resumen de dos líneas** que
 armó el sistema. Tocar abre la charla con los últimos mensajes y un campo
 grande para responder. Dos botones al final, bien separados: **Devolver a
 Lucía** (Cobre) y **Cerrar** (borde). Estado vacío: el avatar de Lucía y
@@ -172,8 +175,11 @@ Lucía** (Cobre) y **Cerrar** (borde). Estado vacío: el avatar de Lucía y
 
 ### 3. Turnos
 Vista de **día** (default) y **semana**. En día: tres columnas, una por
-probador, con la hora a la izquierda (9:30 a 19:00) y el corte 14–15
-sombreado. Cada turno es un bloque con nombre en serif, tipo, y borde de color
+probador, con la hora a la izquierda (9:30 a 19:00) y sombreado lo que queda
+fuera de las franjas de turnos de Configuración › Agenda: de lunes a viernes la
+mañana; el sábado de 12 a 13:30 y, a la tarde, el probador 3. Arriba, las
+franjas del día en una línea y flechas para pasar de día. Cada turno es un
+bloque con nombre en serif, tipo, y borde de color
 por estado: Sin confirmar (Ámbar) · Confirmado (Salvia) · Alquiló · Retiró ·
 Devolvió (Grafito). Un ícono chico de "sin sincronizar" si Google Calendar
 falló. Tocar: tarjeta con la ficha, y acciones: **Mover**, **Cancelar**, y los
@@ -234,9 +240,13 @@ Subpestañas horizontales:
   numeradas (lista editable, cada una con su número, agregar/quitar), y un
   bloque plegado **"Avanzado: prompt base"** con editor de texto plano, botón
   "Validar y guardar" que muestra en rojo si no pasa.
-- **Agenda:** horarios por día de la semana, cortes, cantidad de probadores,
-  duraciones por tipo de turno (Novio 45' · Invitado 45' · Graduado 45' · Doble
-  1:30 · Triple 2:00 · Prueba final 15'), escalonado (15').
+- **Agenda:** horario del local por día (para la atención del equipo y los avisos
+  fuera de horario); turnos por día en franjas, cada una con su cantidad de
+  probadores (lunes a viernes 13 a 19 con 3; sábado 9:30 a 12 con 3 y 13:30 a
+  18:30 con 2; domingo sin turnos); probadores del local; reserva para urgencias
+  en días (7); duraciones por tipo de turno (Novio 45' · Invitado 45' · Graduado
+  45' · Doble 1:30 · Triple 2:00 · Prueba final 15'), escalonado (15'). Decisiones
+  #7 y #9 del 14/9.
 - **Herramientas:** lista con nombre, descripción editable (lo que Lucía lee) y
   switch. Aviso: "Lo que la herramienta hace no se edita acá."
 - **Enlaces:** web, mapa, reseña de Google, turnero.

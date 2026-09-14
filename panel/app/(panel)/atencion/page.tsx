@@ -2,27 +2,39 @@
 // si el cliente vuelve a escribir, reaparece en Pendientes y en la Bandeja.
 // Puerto de d-atencion.html (escritorio: lista + detalle) y m-atencion.html
 // (mobile: solo tarjetas, sin detalle abierto — Fase 2 agrega el drill-in).
+// El chip muestra la etiqueta del motivo (derivaciones-mock.ts), no el enum.
 
 import { Chip } from '@/components/ui-otto/Chip';
 import { BurbujaCliente, BurbujaLucia } from '@/components/ui-otto/Burbuja';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
-import { derivas } from '@/lib/mock-data';
 import { pideVacio, type BusquedaPagina } from '../vacio';
+import { coloresMotivo, DERIVACIONES, ETIQUETA_MOTIVO, type Derivacion } from './derivaciones-mock';
 
 const VACIO = { titulo: 'Todavía no hay derivaciones', texto: 'Lucía está atendiendo sola.' };
 const CONSULTAS_OK = 5;
 
-function TarjetaDerivacion({ d, compacta = false }: { d: (typeof derivas)[number]; compacta?: boolean }) {
+// Texto fijo de la derivación por evento hoy o mañana: sin decirle que no (decisión #8, 14/9).
+const TEXTO_EVENTO_INMINENTE =
+  'Te paso con un asesor del local para que te ayude con tu evento, y vamos a hacer lo posible por encontrarte un lugar en la agenda.';
+
+function ChipMotivo({ d, className }: { d: Derivacion; className: string }) {
+  const { bg, fg } = coloresMotivo(d.motivo);
   return (
-    <div className="rounded-otto border bg-lino p-4 shadow-otto" style={{ borderColor: d.borde }}>
+    <Chip bg={bg} fg={fg} className={className}>
+      {ETIQUETA_MOTIVO[d.motivo]}
+    </Chip>
+  );
+}
+
+function TarjetaDerivacion({ d, abierta, compacta = false }: { d: Derivacion; abierta: boolean; compacta?: boolean }) {
+  return (
+    <div className="rounded-otto border bg-lino p-4 shadow-otto" style={{ borderColor: abierta ? '#A8703F' : '#E6E1D8' }}>
       <div className="flex items-baseline gap-2.5">
-        <span className="flex-1 font-serif text-base font-semibold">{d.n}</span>
+        <span className="flex-1 font-serif text-base font-semibold">{d.cliente}</span>
         <span className="text-[14px] text-grafito md:text-xs">{d.hace}</span>
       </div>
       <div className="my-2">
-        <Chip bg={d.cb} fg={d.cf} className="px-2.5 py-[3px]">
-          {d.motivo}
-        </Chip>
+        <ChipMotivo d={d} className="px-2.5 py-[3px]" />
       </div>
       <div className={`text-[14px] leading-[1.5] text-grafito md:text-[13.5px] ${compacta ? '' : 'line-clamp-2'}`}>{d.resumen}</div>
       {compacta && (
@@ -41,7 +53,7 @@ function TarjetaDerivacion({ d, compacta = false }: { d: (typeof derivas)[number
 
 export default async function AtencionPage({ searchParams }: { searchParams: BusquedaPagina }) {
   const vacia = await pideVacio(searchParams);
-  const lista = vacia ? [] : derivas;
+  const lista = vacia ? [] : DERIVACIONES;
   const principal = lista[0];
 
   return (
@@ -66,17 +78,15 @@ export default async function AtencionPage({ searchParams }: { searchParams: Bus
           {vacia ? (
             <EstadoVacio titulo={VACIO.titulo} texto={VACIO.texto} />
           ) : (
-            lista.map((d) => <TarjetaDerivacion key={d.n} d={d} />)
+            lista.map((d) => <TarjetaDerivacion key={d.cliente} d={d} abierta={d === principal} />)
           )}
         </div>
         {principal ? (
           <div className="flex flex-1 flex-col">
             <div className="flex items-center gap-3 border-b border-borde bg-lino px-6 py-4">
               <div className="flex-1">
-                <span className="font-serif text-lg font-semibold">{principal.n}</span>
-                <Chip bg="#F6E3DF" fg="#A6473A" className="ml-2.5 px-2.5 py-[3px]">
-                  {principal.motivo}
-                </Chip>
+                <span className="font-serif text-lg font-semibold">{principal.cliente}</span>
+                <ChipMotivo d={principal} className="ml-2.5 px-2.5 py-[3px]" />
               </div>
               <span className="text-[14px] text-grafito md:text-[12.5px]">{principal.hace}</span>
             </div>
@@ -86,13 +96,13 @@ export default async function AtencionPage({ searchParams }: { searchParams: Bus
               </div>
               <BurbujaCliente texto="necesito el traje para hoy sí o sí, me recibo a la noche" hora="09:47" />
               <BurbujaLucia
-                texto="Entiendo la urgencia, Agustín. Hoy no me quedan turnos libres, pero le paso tu caso a un asesor del local para que te llame ahora y lo resolvemos."
+                texto={TEXTO_EVENTO_INMINENTE}
                 hora="09:48"
-                resumen={{ tono: 'ladrillo', texto: 'Derivado: turno urgente sin hueco' }}
+                resumen={{ tono: 'ladrillo', texto: `Derivado: ${ETIQUETA_MOTIVO[principal.motivo].toLowerCase()}` }}
               />
               <div className="flex-1" />
               <textarea
-                placeholder="Escribile a Agustín — tu mensaje sale con la etiqueta «mostrador»"
+                placeholder={`Escribile a ${principal.cliente.split(' ')[0]} — tu mensaje sale con la etiqueta «mostrador»`}
                 aria-label="Respuesta del equipo"
                 className="min-h-[96px] w-full resize-none rounded-otto border border-borde px-3.5 py-3 text-[14.5px] leading-[1.5] outline-none focus:border-cobre"
               />
@@ -134,7 +144,7 @@ export default async function AtencionPage({ searchParams }: { searchParams: Bus
               <EstadoVacio titulo={VACIO.titulo} texto={VACIO.texto} />
             </div>
           ) : (
-            lista.map((d) => <TarjetaDerivacion key={d.n} d={d} compacta />)
+            lista.map((d) => <TarjetaDerivacion key={d.cliente} d={d} abierta={d === principal} compacta />)
           )}
         </div>
       </div>

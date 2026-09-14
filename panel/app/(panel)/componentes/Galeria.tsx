@@ -122,16 +122,15 @@ export function Galeria() {
           />
           <Rotulo>Mini resumen en Ladrillo (derivación)</Rotulo>
           <BurbujaLucia
-            texto="Entiendo la urgencia, Agustín. Hoy no me quedan turnos libres, pero le paso tu caso a un asesor del local para que te llame ahora y lo resolvemos."
+            texto="Te paso con un asesor del local para que te ayude con tu evento, y vamos a hacer lo posible por encontrarte un lugar en la agenda."
             hora="09:48"
-            resumen={{ tono: 'ladrillo', texto: 'Derivado: turno urgente sin hueco' }}
+            resumen={{ tono: 'ladrillo', texto: 'Derivado: evento hoy o mañana' }}
             bitacora={{
               costo: '1.210 tokens · 2,1 s',
               pasos: [
-                { tipo: 'ok', texto: 'Clasificador → intención «alquiler» · urgencia alta' },
-                { tipo: 'ok', texto: 'buscar_horarios(hoy, hoy, graduado) → 0 huecos', codigo: true },
-                { tipo: 'ok', texto: 'derivar_a_persona(motivo: turno_urgente)', codigo: true },
-                { tipo: 'pensamiento', texto: 'Sin hueco hoy y el evento es esta noche: derivo sin preguntar nada más.' },
+                { tipo: 'ok', texto: 'Clasificador → intención «alquiler» · evento hoy' },
+                { tipo: 'ok', texto: 'buscar_horarios(hoy, hoy, graduado) → derivar: evento_inminente', codigo: true },
+                { tipo: 'ok', texto: 'Derivación dura (motivo: evento_inminente) con el texto fijo', codigo: true },
               ],
             }}
           />
