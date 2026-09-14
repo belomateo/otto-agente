@@ -69,7 +69,7 @@ prueba("agendar_turno rechaza fuera de horario: dentro del corte del mediodía",
   ctx.traza.huecosOfrecidos.push({ ...hueco(MARTES, "13:30", 45), tipo: "invitado" });
   const r = await agendar(ctx, MARTES, "13:30", "invitado");
   esRechazo(r, "fuera_de_horario");
-  assertMatch(r.mensaje, /corte/);
+  assertMatch(r.mensaje, /los turnos son de 10:00 a 14:00 y de 15:00 a 19:00/);
   assertEquals(await contar(sql, turnosDe, [clienteId]), 0);
 });
 

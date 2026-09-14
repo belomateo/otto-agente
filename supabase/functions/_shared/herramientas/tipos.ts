@@ -11,12 +11,23 @@ import type { Traza } from "../traza.ts";
 
 export type EsquemaJson = Record<string, unknown>;
 
-// Un hueco libre: lo calcula logica (H1.13) por probador y duración, dentro del horario
-// laboral. Hasta que 1.13 exista, y en los tests, lo da un doble con esta misma forma.
+// Un hueco libre: lo calcula logica (H1.13) por probador y duración, dentro de las franjas de
+// turnos. Hasta que 1.13 exista, y en los tests, lo da un doble con esta misma forma.
 export type Hueco = { inicio: string; fin: string; probador: number };
 
+// Con el evento hoy o mañana la agenda no da huecos: devuelve derivar: "evento_inminente"
+// (decisión #8) y buscar_horarios deriva en código. La fecha del evento también la usa la
+// agenda para el orden de urgencia (decisión #9, supuesto #21).
+export type ResultadoAgenda = { huecos: Hueco[]; derivar?: "evento_inminente" };
+
 export interface Agenda {
-  huecos(p: { desde: string; hasta: string; tipo: TipoTurno; ahora: Date }): Promise<Hueco[]>;
+  huecos(p: {
+    desde: string;
+    hasta: string;
+    tipo: TipoTurno;
+    ahora: Date;
+    fechaEvento: string | null;
+  }): Promise<ResultadoAgenda>;
 }
 
 export type TurnoParaCalendario = {

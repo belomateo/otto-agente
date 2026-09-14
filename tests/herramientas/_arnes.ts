@@ -18,6 +18,7 @@ import type {
   ContextoHerramienta,
   Hueco,
   Resultado,
+  ResultadoAgenda,
   TurnoParaCalendario,
 } from "../../supabase/functions/_shared/herramientas/tipos.ts";
 import { MS_POR_MINUTO } from "../../supabase/functions/_shared/tiempo.ts";
@@ -45,14 +46,19 @@ export function hueco(ymd: string, hm: string, minutos: number, probador = 1): H
   };
 }
 
+// El texto fijo de la derivación por evento hoy o mañana, adentro de la transacción: así la
+// prueba demuestra que sale de contexto_agente y no de un texto escrito en el código.
+export const TEXTO_EVENTO_INMINENTE = "Texto de prueba: te paso con un asesor del local.";
+
 // La agenda de logica (H1.13) todavía no existe: el doble devuelve lo que la prueba le carga,
 // aunque esté mal (así se prueba que las herramientas no le creen).
 export class AgendaDoble implements Agenda {
   lista: Hueco[] = [];
-  pedidos: { desde: string; hasta: string; tipo: TipoTurno }[] = [];
-  huecos(p: { desde: string; hasta: string; tipo: TipoTurno; ahora: Date }): Promise<Hueco[]> {
-    this.pedidos.push({ desde: p.desde, hasta: p.hasta, tipo: p.tipo });
-    return Promise.resolve(this.lista);
+  derivar: "evento_inminente" | undefined = undefined;
+  pedidos: { desde: string; hasta: string; tipo: TipoTurno; fechaEvento: string | null }[] = [];
+  huecos(p: { desde: string; hasta: string; tipo: TipoTurno; ahora: Date; fechaEvento: string | null }): Promise<ResultadoAgenda> {
+    this.pedidos.push({ desde: p.desde, hasta: p.hasta, tipo: p.tipo, fechaEvento: p.fechaEvento });
+    return Promise.resolve(this.derivar ? { huecos: [], derivar: this.derivar } : { huecos: this.lista });
   }
 }
 
@@ -117,11 +123,28 @@ async function fijarAgenda(sql: pg.Client) {
        when 'doble' then 90 when 'triple' then 120 when 'prueba_final' then 15 else 45 end`,
   );
   await sql.query("update configuracion_agenda set cantidad_probadores = 3");
+  // Si ya existe franjas_turnos (paneles, decisión #7), se cargan franjas equivalentes al
+  // horario de arriba partido en el corte: las pruebas esperan lo mismo con o sin la tabla.
+  if (HAY_FRANJAS) {
+    await sql.query("delete from franjas_turnos");
+    await sql.query(
+      `insert into franjas_turnos (dia_semana, desde, hasta, probadores) values
+         (1, '10:00', '14:00', 3), (1, '15:00', '19:00', 3), (2, '10:00', '14:00', 3), (2, '15:00', '19:00', 3),
+         (3, '10:00', '14:00', 3), (3, '15:00', '19:00', 3), (4, '10:00', '14:00', 3), (4, '15:00', '19:00', 3),
+         (5, '10:00', '14:00', 3), (5, '15:00', '19:00', 3), (6, '09:30', '18:30', 3)`,
+    );
+  }
+  await sql.query(
+    `insert into contexto_agente (clave, valor) values ('texto_evento_inminente', $1)
+     on conflict (clave) do update set valor = excluded.valor`,
+    [TEXTO_EVENTO_INMINENTE],
+  );
 }
 
-export function prueba(nombre: string, fn: (e: Escenario) => Promise<void>) {
+export function prueba(nombre: string, fn: (e: Escenario) => Promise<void>, opciones: { ignorar?: boolean } = {}) {
   Deno.test({
     name: nombre,
+    ignore: opciones.ignorar ?? false,
     sanitizeOps: false,
     sanitizeResources: false,
     fn: () =>
@@ -259,8 +282,19 @@ export function esOk(r: Resultado): asserts r is Extract<Resultado, { ok: true }
   if (!r.ok) throw new Error(`se esperaba ok y salió ${r.rechazo}: ${r.mensaje}`);
 }
 
-export const buscar = (ctx: ContextoHerramienta, desde: string, hasta: string, tipo: TipoTurno) =>
-  ejecutarHerramienta("buscar_horarios", { desde, hasta, tipo_turno: tipo }, ctx);
+export const buscar = (
+  ctx: ContextoHerramienta,
+  desde: string,
+  hasta: string,
+  tipo: TipoTurno,
+  fechaEvento: string | null = null,
+) => ejecutarHerramienta("buscar_horarios", { desde, hasta, tipo_turno: tipo, fecha_evento: fechaEvento }, ctx);
+
+// ¿Ya existe franjas_turnos en la base? (la crea paneles, decisión #7). Mientras no exista,
+// las herramientas sacan las franjas de horarios y las pruebas que dependen de la tabla se saltean.
+export const HAY_FRANJAS: boolean = await conBase(async (sql) =>
+  (await sql.query("select to_regclass('public.franjas_turnos') is not null as existe")).rows[0].existe === true
+);
 
 export const agendar = (
   ctx: ContextoHerramienta,

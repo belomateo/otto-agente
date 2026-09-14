@@ -35,10 +35,13 @@ prueba("buscar_informacion encuentra escribiendo como cliente y suma el horario 
 
   const h = await ejecutarHerramienta("buscar_informacion", { seccion: "ubicacion-horarios", consulta: "direccion" }, ctx);
   esOk(h);
+  // Dos horarios, los dos de tablas (decisión #7): el del local y el de los turnos.
+  assertEquals(h.datos.horario_del_local, "Lunes a viernes, de 10:00 a 19:00. Sábados, de 9:30 a 18:30. Domingos, cerrado.");
   assertEquals(
-    h.datos.horario_del_local,
-    "Lunes a viernes, de 10:00 a 19:00, con corte de 14:00 a 15:00. Sábados, de 9:30 a 18:30. Domingos, cerrado.",
+    h.datos.horario_de_turnos,
+    "Lunes a viernes, de 10:00 a 14:00 y de 15:00 a 19:00. Sábados, de 9:30 a 18:30. Domingos, sin turnos.",
   );
+  assertMatch(String(h.datos.nota_horarios), /buscar_horarios/);
   for (const hora of ["10:00", "19:00", "14:00", "15:00", "09:30", "18:30"]) assert(ctx.traza.horasDevueltas.includes(hora));
 });
 

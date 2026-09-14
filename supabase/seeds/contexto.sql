@@ -7,8 +7,13 @@
 -- Seed de una sola vez. En la base real esas tres filas se actualizaron con un UPDATE el
 -- 14/9 (quedó el historial de la versión anterior). No vuelvas a correr este archivo contra
 -- la base real: el insert de enlaces de abajo no tiene clave única y duplicaría las filas.
+--
+-- texto_evento_inminente (decisión #8 de Mateo, 14/9) no va al prompt: es el texto fijo que
+-- manda el código cuando el evento es hoy o mañana y la charla pasa a una persona. Nunca dice
+-- que no. En la base real se insertó aparte el 14/9.
 insert into contexto_agente (clave, valor) values
   ('presentacion', 'Hola, soy Lucía, asistente de Mr Otto. ¿En qué puedo ayudarte hoy?'),
+  ('texto_evento_inminente', 'Te paso con un asesor del local para que te ayude con tu evento, y vamos a hacer lo posible por encontrarte un lugar en la agenda.'),
   ('tono', 'Tu tono es cercano, sin tantos emojis, y usás siempre las palabras de la casa: alquiler a medida, prendas de calidad, diseños nuevos y solución completa.'),
   ('ancla_de_valor', 'Mr Otto no alquila cualquier traje: se ajusta a medida, y si hace falta se confecciona, así queda perfecto el día del evento. El precio-calidad-servicio es el mejor del mercado, y eso lo diferencia de otros locales de alquiler. "Acá nos preocupamos de que tu apariencia sea lo primero: el día de esa fecha especial es lo que más nos importa."')
 on conflict (clave) do nothing;

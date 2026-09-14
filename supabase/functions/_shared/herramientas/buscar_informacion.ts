@@ -1,10 +1,12 @@
 // buscar_informacion(seccion, consulta) — la base de conocimiento (AGENTE.md § 4 y § 8).
 // Consulta: no toca el mundo. Si la sección es ubicacion-horarios, o sale un fragmento de esa
-// sección, suma el horario del local leído de la tabla horarios, no de un fragmento.
+// sección, suma dos horarios leídos de las tablas y no de un fragmento (decisión #7): el del
+// local (horarios) y el de los turnos de alquiler (franjas_turnos). Los horarios concretos de
+// un turno salen siempre de buscar_horarios.
 
 import { buscarFragmentos } from "../conocimiento/busqueda.ts";
 import { SECCIONES, type Seccion } from "../enums.ts";
-import { describirHorario, leerHorarios } from "./horario_laboral.ts";
+import { describirHorarios, leerFranjas, leerHorarioDelLocal } from "./horario_laboral.ts";
 import { type Herramienta, objeto } from "./tipos.ts";
 
 type Args = { seccion: Seccion | null; consulta: string };
@@ -35,9 +37,13 @@ export const buscarInformacion: Herramienta<Args> = {
       fragmentos: encontrados.map(({ tema, titulo, texto }) => ({ tema, titulo, texto })),
     };
     if (args.seccion === "ubicacion-horarios" || encontrados.some((f) => f.tema === "ubicacion-horarios")) {
-      const { texto, horas } = describirHorario(await leerHorarios(ctx.db));
-      datos.horario_del_local = texto;
-      ctx.traza.horasDevueltas.push(...horas);
+      const local = await leerHorarioDelLocal(ctx.db);
+      const { franjas } = await leerFranjas(ctx.db);
+      const h = describirHorarios(local, franjas);
+      datos.horario_del_local = h.local;
+      datos.horario_de_turnos = h.turnos;
+      datos.nota_horarios = "El local abre más horas que las de turnos. Para un turno, los horarios concretos salen siempre de buscar_horarios.";
+      ctx.traza.horasDevueltas.push(...h.horas);
     }
     if (encontrados.length === 0) {
       datos.nota = "No hay nada cargado sobre eso. No lo supongas: si el cliente lo necesita, derivá con motivo dato_no_encontrado.";

@@ -5,9 +5,11 @@
 // charla ya tenía una derivación pendiente, no se crea otra.
 // Efecto: fila en derivaciones, la conversación queda 'derivada' (Lucía no contesta hasta que
 // alguien la devuelva) y el turno avisa al equipo. El texto fijo de fuera de horario lo pone
-// el turno (H1.7), no esta herramienta.
+// el turno (H1.7), no esta herramienta. Las derivaciones duras (evento hoy o mañana) no pasan
+// por acá: las hace el código en derivacion.ts.
 
 import { MOTIVOS_DERIVACION, MOTIVOS_SIN_MENSAJE, type MotivoDerivacion } from "../enums.ts";
+import { registrarDerivacion } from "./derivacion.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
 type Args = { motivo: MotivoDerivacion; mensaje_al_cliente: string | null };
@@ -34,39 +36,22 @@ export const derivarAPersona: Herramienta<Args> = {
         "La despedida no puede tener una pregunta: después de derivar nadie la va a leer. Sacala o dejá el mensaje en null.",
       );
     }
-
-    const previa = await ctx.db.consulta(
-      "select id::text as id from derivaciones where conversacion_id = $1::uuid and estado = 'pendiente' order by creado_at limit 1",
-      [ctx.conversacionId],
-    );
-    let derivacionId = previa[0] ? String(previa[0].id) : null;
-    if (!derivacionId) {
-      const filas = await ctx.db.consulta(
-        "insert into derivaciones (conversacion_id, motivo, destino_tel) values ($1::uuid, $2, $3) returning id::text as id",
-        [ctx.conversacionId, args.motivo, ctx.derivacionTel ?? null],
-      );
-      derivacionId = String(filas[0].id);
-    }
-    await ctx.db.consulta(
-      "update conversaciones set estado = 'derivada' where id = $1::uuid and estado <> 'derivada'",
-      [ctx.conversacionId],
-    );
-
+    const { id, yaEstaba } = await registrarDerivacion(ctx, args.motivo);
     const sinDespedida = MOTIVOS_SIN_MENSAJE.includes(args.motivo);
     const datos: Record<string, unknown> = {
-      derivacion_id: derivacionId,
+      derivacion_id: id,
       nota: sinDespedida && mensaje
         ? `Con motivo ${args.motivo} la despedida no se manda: sigue una persona. No escribas nada más.`
         : "La charla quedó en manos del equipo. No escribas nada más.",
     };
-    if (previa[0]) datos.ya_estaba_derivada = true;
+    if (yaEstaba) datos.ya_estaba_derivada = true;
     return {
       ok: true,
       datos,
       efectos: {
         cortaTurno: true,
         mensajesAlCliente: !sinDespedida && mensaje ? [mensaje] : [],
-        avisoEquipo: { motivo: args.motivo, derivacionId },
+        avisoEquipo: { motivo: args.motivo, derivacionId: id },
       },
     };
   },

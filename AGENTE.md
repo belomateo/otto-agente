@@ -175,20 +175,23 @@ en el caso parecido. Orden: formato → contenido → reglas.
 
 | Barandilla | Qué detecta | Qué hace |
 | --- | --- | --- |
-| `sin_markdown` | `**`, `#`, `- ` al inicio, ``` | Limpia en código |
-| `sin_relleno` | Las fórmulas prohibidas al final | Corta la frase |
-| `una_pregunta` | Más de un `?` de cierre | Rehace |
-| `largo` | > 600 caracteres sin saltos dobles | Rehace pidiendo burbujas |
-| `precio_sin_herramienta` | Un `$` o número de 5+ cifras sin `consultar_catalogo` en la traza | Rehace |
-| `horario_sin_herramienta` | Un día/hora ofrecido sin `buscar_horarios` en la traza | Rehace |
+| `sin_markdown` | `**`, `__`, `*negrita*`, `#` o `- ` al inicio, ```, links en markdown | Limpia en código |
+| `sin_relleno` | Las fórmulas prohibidas al final (la lista incluye todas las del prompt) | Corta la frase, y las anteriores si también son relleno |
+| `una_pregunta` | Más de un `?` de cierre (varios seguidos cuentan como uno) | Rehace |
+| `largo` | Un bloque de más de 600 caracteres sin línea en blanco | Rehace pidiendo párrafos cortos |
+| `precio_sin_herramienta` | Un monto ($150.000, 150000, 150 mil) que no devolvió `consultar_catalogo` ni `consultar_accesorios` en este turno: precio sin herramienta o total armado sumando (regla 9) | Rehace |
+| `horario_sin_herramienta` | Una hora que no devolvió ninguna herramienta en este turno (`buscar_horarios`, el horario de `buscar_informacion`, los turnos del cliente), o un día ofrecido sin `buscar_horarios` | Rehace |
 | `deriva_y_pregunta` | `derivar_a_persona` + `?` en el mismo mensaje | Quita la pregunta |
-| `anuncia_sin_derivar` | «te paso con», «le derivo» sin la tool en la traza | Ejecuta la derivación |
-| `no_a_secas` | Mensaje que es solo una negativa | Rehace |
-| `menciona_ia` | «soy una IA», «modelo», «sistema», «no lo tengo cargado» | Rehace |
+| `anuncia_sin_derivar` | «te paso con», «le derivo» sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
+| `no_a_secas` | Mensaje que arranca negando, es corto y no ofrece nada. Si arranca negando pero es largo u ofrece algo, decide el revisor (`LLM_CLASIFICADOR`) | Rehace |
+| `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje) | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
-Una barandilla que salta genera un evento en la bitácora con el motivo. Dos saltos
-en el mismo turno → deriva.
+Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
+código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
+del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
+el segundo del mismo turno deriva con motivo `barandilla_doble`. Si Lucía anunció un pase,
+se ejecuta la derivación; fuera de la ventana de Meta, se bloquea y le gana a todo.
 
 ---
 
@@ -276,6 +279,20 @@ horario + «¿qué día te gustaría venir?».
 Derivación **dura** (la decide código en el paso 4, antes del LLM): reclamo,
 prenda dañada, pedido corporativo/uniforme, turno urgente sin hueco disponible.
 
+**Evento hoy o mañana** (decisión #8 de Mateo, 14/9): un alquiler con el evento hoy o
+mañana lo resuelve una persona, siempre. Se cuenta con la fecha del evento en hora de
+Argentina (`NEGOCIO_TZ`, supuesto #23); desde pasado mañana sigue el camino normal, con
+la reserva de urgencia de la agenda (supuesto #21). Es derivación dura: la decide código,
+nunca el LLM, en cualquiera de estas puertas —el paso 4 del turno si la fecha ya está en
+la ficha; `buscar_horarios`, que no ofrece turnos (la agenda devuelve `derivar:
+evento_inminente` y la herramienta lo respeta, y además lo chequea con la fecha que
+tenga); `agendar_turno` y `reprogramar_turno` como última guarda—. Motivo
+`evento_inminente`, y al cliente le llega un texto fijo que nunca dice que no, guardado
+en `contexto_agente` (clave `texto_evento_inminente`, se edita en Configuración ›
+Lucía): «Te paso con un asesor del local para que te ayude con tu evento, y vamos a
+hacer lo posible por encontrarte un lugar en la agenda.» Lucía no escribe nada más en
+ese turno.
+
 Derivación **por el LLM** (llama la tool): no encuentra el dato tras buscarlo,
 descuento insistido, cliente pide una persona, salió una barandilla dos veces,
 el modelo no respondió.
@@ -328,7 +345,9 @@ Mínimos para la V1:
 `novio-noche` · `invitado-casamiento` · `graduado-desde-otra-ciudad` ·
 `solo-precio` · `urgente-misma-semana` · `pregunta-horarios` · `accesorios` ·
 `es-caro` · `lo-voy-a-pensar` · `reclamo-deriva` · `corporativo-deriva` ·
-`fuera-de-horario-agenda-igual` · `reprograma` · `talle-grande`
+`fuera-de-horario-agenda-igual` · `reprograma` · `talle-grande` ·
+`evento-manana-deriva` (decisión #8 del 14/9: el evento es mañana y el código deriva con
+`evento_inminente` y el texto fijo; ya escrito en `scripts/probar-turno.js`)
 
 El tester (modo agente) los corre todos cada vez que se toca prompt, fragmentos,
 herramientas o barandillas, y verifica contra la base: si dijo que agendó, hay

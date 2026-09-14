@@ -1,16 +1,23 @@
-// buscar_horarios(desde, hasta, tipo_turno) — huecos reales de la agenda (AGENTE.md § 4).
-// Consulta. Los huecos los calcula la agenda (logica, H1.13) por probador y duración; acá se
-// vuelve a descartar lo que quede en el pasado o fuera del horario vigente, se agrupan por
-// hora (el modelo no elige probador) y se eligen unos pocos por día para que Lucía ofrezca
-// dos. Lo que se le muestra al modelo queda en la traza: es lo único que agendar_turno y
+// buscar_horarios(desde, hasta, tipo_turno, fecha_evento?) — huecos reales de la agenda
+// (AGENTE.md § 4). Los huecos los calcula la agenda (logica, H1.13) por probador y duración,
+// dentro de las franjas de turnos y por orden de urgencia (decisiones #7 y #9). Acá:
+//  · con el evento hoy o mañana no se ofrece nada: se deriva en código con motivo
+//    evento_inminente (decisión #8), lo diga la fecha o lo diga la agenda;
+//  · se vuelve a descartar lo que quede en el pasado o fuera de una franja (o en un probador
+//    que no toma turnos en esa franja);
+//  · se agrupa por hora (el modelo no elige probador) y se eligen unos pocos por día, para
+//    que Lucía ofrezca dos.
+// Lo que se le muestra al modelo queda en la traza: es lo único que agendar_turno y
 // reprogramar_turno aceptan en este turno.
 
 import { TIPOS_TURNO, type TipoTurno } from "../enums.ts";
 import { diasEntre, fechaLarga, fechaLocal, horaLocal, isoLocal, MINUTOS_POR_HORA, minutosDelDia } from "../tiempo.ts";
-import { dentroDeHorario, leerHorarios } from "./horario_laboral.ts";
+import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
+import { actualizarFicha, leerFicha } from "./ficha.ts";
+import { dentroDeFranja, leerFranjas } from "./horario_laboral.ts";
 import { type Herramienta, objeto, rechazo } from "./tipos.ts";
 
-type Args = { desde: string; hasta: string; tipo_turno: TipoTurno };
+type Args = { desde: string; hasta: string; tipo_turno: TipoTurno; fecha_evento: string | null };
 
 const RANGO_MAXIMO_DIAS = 13; // dos semanas por consulta
 const MEDIODIA = 13 * MINUTOS_POR_HORA; // antes de la una se dice "a la mañana"
@@ -20,18 +27,35 @@ const MAXIMO_OPCIONES = 16;
 export const buscarHorarios: Herramienta<Args> = {
   nombre: "buscar_horarios",
   tipo: "consulta",
-  descripcion: "Devuelve huecos reales para un turno en el local entre dos fechas, ya filtrados por el horario " +
-    "laboral y los probadores libres. Obligatoria antes de ofrecer un día u hora, y otra vez justo antes de " +
-    "agendar_turno o reprogramar_turno, en el mismo turno. De lo que devuelve ofrecé dos, nunca más de tres. " +
-    "tipo_turno: graduado, novio o invitado según quién se viste; doble o triple si vienen dos o tres personas " +
-    "juntas; prueba_final solo para la prueba del día anterior al evento. Pedí como mucho dos semanas por vez.",
+  descripcion: "Devuelve huecos reales para un turno en el local entre dos fechas, ya filtrados por las franjas " +
+    "de turnos y los probadores libres, con los eventos más cercanos primero. Obligatoria antes de ofrecer un día " +
+    "u hora, y otra vez justo antes de agendar_turno o reprogramar_turno, en el mismo turno. De lo que devuelve " +
+    "ofrecé dos, nunca más de tres. tipo_turno: graduado, novio o invitado según quién se viste; doble o triple si " +
+    "vienen dos o tres personas juntas; prueba_final solo para la prueba del día anterior al evento. Mandá la fecha " +
+    "del evento si la sabés. Si el evento es hoy o mañana, no devuelve huecos: la charla pasa sola a un asesor del " +
+    "local y vos no escribís nada más. Pedí como mucho dos semanas por vez.",
   parametros: objeto({
     desde: { type: "string", format: "date", description: "Primer día a mirar, AAAA-MM-DD." },
     hasta: { type: "string", format: "date", description: "Último día a mirar, AAAA-MM-DD." },
     tipo_turno: { type: "string", enum: [...TIPOS_TURNO], description: "Tipo de turno." },
+    fecha_evento: {
+      type: ["string", "null"],
+      format: "date",
+      description: "Fecha del evento, AAAA-MM-DD, si la sabés (si ya está en su libreta, podés mandarla igual).",
+    },
   }),
   async ejecutar(args, ctx) {
     const hoy = fechaLocal(ctx.ahora, ctx.tz);
+    const ficha = await leerFicha(ctx.db, ctx.cliente.id);
+    const fechaEvento = args.fecha_evento ?? ficha.fecha_evento;
+    if (fechaEvento && fechaEvento < hoy) {
+      return rechazo("fecha_evento_pasada", `La fecha del evento (${fechaEvento}) ya pasó. Confirmala con el cliente.`);
+    }
+    if (esEventoInminente(fechaEvento, ctx.ahora, ctx.tz)) {
+      if (args.fecha_evento) await actualizarFicha(ctx.db, ctx.cliente.id, { fecha_evento: args.fecha_evento });
+      return await derivarPorEventoInminente(ctx);
+    }
+
     const avisos: string[] = [];
     let desde = args.desde;
     if (desde < hoy) {
@@ -45,16 +69,24 @@ export const buscarHorarios: Herramienta<Args> = {
       return rechazo("rango_muy_largo", `Pedí como mucho ${RANGO_MAXIMO_DIAS + 1} días por vez.`);
     }
 
-    const crudos = await ctx.agenda.huecos({ desde, hasta: args.hasta, tipo: args.tipo_turno, ahora: ctx.ahora });
-    const horarios = await leerHorarios(ctx.db);
+    const agenda = await ctx.agenda.huecos({
+      desde,
+      hasta: args.hasta,
+      tipo: args.tipo_turno,
+      ahora: ctx.ahora,
+      fechaEvento,
+    });
+    if (agenda.derivar === "evento_inminente") return await derivarPorEventoInminente(ctx);
+
+    const { franjas } = await leerFranjas(ctx.db);
     const porInicio = new Map<number, { inicio: Date; fin: Date; probador: number }[]>();
     let descartados = 0;
-    for (const h of crudos) {
+    for (const h of agenda.huecos) {
       const inicio = new Date(h.inicio);
       const fin = new Date(h.fin);
       const valido = !Number.isNaN(inicio.getTime()) && inicio > ctx.ahora &&
         fechaLocal(inicio, ctx.tz) >= desde && fechaLocal(inicio, ctx.tz) <= args.hasta &&
-        dentroDeHorario(inicio, fin, horarios, ctx.tz).ok;
+        dentroDeFranja(inicio, fin, franjas, ctx.tz, h.probador).ok;
       if (!valido) {
         descartados++;
         continue;
