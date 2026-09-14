@@ -114,24 +114,29 @@ el índice del prompt.
 
 | Herramienta | Qué devuelve | Regla |
 | --- | --- | --- |
-| `buscar_informacion(seccion, consulta)` | Fragmentos de la base de conocimiento por tema | Obligatoria antes de afirmar cualquier política, horario, condición o "qué incluye". Secciones en § 8. |
-| `consultar_catalogo(evento?, color?, talle?)` | Modelos de alquiler: nombre, colores, talles, precio base, fotos | Obligatoria antes de decir un precio o describir un modelo. Devuelve además la aclaración «incluye sastrería y tintorería», que va siempre con el precio. |
-| `consultar_accesorios()` | Camisa, corbata, cinturón, zapatos, precios de alquiler y opción de compra con descuento | Solo cuando el cliente pregunta o al ofrecer el look completo |
-| `buscar_horarios(desde, hasta, tipo_turno)` | Huecos reales por probador, ya filtrados por horario laboral | Obligatoria antes de ofrecer un horario. Ofrece **dos**, nunca más de tres. |
-| `ver_turnos_cliente()` | Turnos del cliente | Ya vienen en el contexto; se llama solo si acaba de crear/mover uno en este turno |
+| `buscar_informacion(seccion, consulta)` | Hasta tres fragmentos de la base de conocimiento (búsqueda en código: raíces, sin tildes, tolera errores de tipeo) | Obligatoria antes de afirmar cualquier política, horario, condición o "qué incluye". Secciones en § 8; si ninguna pega, `seccion` = null y busca en todas. Si la sección es `ubicacion-horarios`, suma el horario leído de la tabla `horarios`, no de un fragmento. |
+| `consultar_catalogo(color?, talle?)` | Modelos de alquiler: nombre, descripción, colores, talles, precio base, si tiene fotos | Obligatoria antes de decir un precio o describir un modelo. Devuelve además qué incluye el precio (sección `que-incluye`), que va siempre con el precio; sin esa sección cargada no da precios. El catálogo no tiene evento (paneles 0016): no se filtra por evento. |
+| `consultar_accesorios()` | Camisa, corbata, cinturón, zapatos: precio de alquiler y de compra (`accesorios_alquiler`) y las condiciones (sección `accesorios`) | Solo cuando el cliente pregunta o al ofrecer el look completo |
+| `buscar_horarios(desde, hasta, tipo_turno)` | Huecos reales por probador, ya filtrados por horario laboral; hasta dos por franja y por día | Obligatoria antes de ofrecer un horario, y otra vez antes de agendar o reprogramar, en el mismo turno. Ofrece **dos**, nunca más de tres. Lo que muestra queda en la traza del turno. |
+| `ver_turnos_cliente()` | Turnos del cliente que vienen, con su `turno_id` | Ya vienen en el contexto; se llama solo si acaba de crear/mover/cancelar uno en este turno |
 
 ### Acción (tocan el mundo; validación en código obligatoria)
 
 | Herramienta | Precondiciones que el código verifica | Efecto |
 | --- | --- | --- |
-| `agendar_turno(fecha_hora, tipo, nombre, telefono, evento, fecha_evento)` | Hueco existe en `buscar_horarios` de este turno · dentro de horario laboral · cliente sin turno activo · nombre y fecha del evento presentes | Fila en `turnos` + evento en Google Calendar + confirmación al cliente con dirección y mapa (texto armado en código) |
-| `reprogramar_turno(turno_id, fecha_hora)` | Turno existe y es del cliente · hueco válido | Actualiza fila y evento. Nunca crea uno nuevo encima |
-| `cancelar_turno(turno_id, motivo)` | Turno del cliente | Marca cancelado, borra evento, anota motivo |
-| `guardar_datos_cliente({...})` | Campos del schema de la ficha (§ 7) | Upsert en `clientes` |
-| `anotar(texto)` | — | Nota libre en la libreta |
-| `enviar_fotos(modelo_ids[])` | Máximo 3 · ids existen en catálogo | Manda imágenes desde los links cargados en la ficha del modelo |
-| `enviar_link(tipo)` | tipo ∈ {mapa, resena, web} | Manda el link de `enlaces` |
-| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum · sin pregunta en el mensaje | Marca conversación en `derivaciones`, avisa al número del canal, **corta el turno**. Aparece en la pestaña Atención humana |
+| `agendar_turno(fecha_hora, tipo, nombre, evento, fecha_evento)` | Fecha futura · cliente sin turno activo · nombre y fecha del evento presentes (en los argumentos o en la ficha), el evento no pasó y el turno no cae después · hueco salió de `buscar_horarios` en este turno para ese tipo · dentro de una franja de turnos vigente · dura lo que dice `duraciones_turno` | Fila en `turnos` en el primer probador libre + ficha + evento en Google Calendar (si falla, el turno queda con `aviso`) + confirmación armada en código (fecha y hora, el fragmento de `como-funciona` sobre el turno en el local, el mapa de `enlaces`) que sale en un mensaje aparte. No recibe teléfono: el turno es siempre del cliente de la charla |
+| `reprogramar_turno(turno_id, fecha_hora)` | Turno existe, es del cliente y está activo · hueco válido (mismas reglas que agendar) | Actualiza la misma fila y el evento, vuelve a sin confirmar y el recordatorio sale de nuevo. Nunca crea uno nuevo encima |
+| `cancelar_turno(turno_id, motivo)` | Turno del cliente y activo | Marca `cancelado` con `motivo_cancelacion` (no borra), libera el hueco y saca el evento de Calendar |
+| `guardar_datos_cliente({...})` | Campos de la ficha (§ 7) salvo los de código y las notas libres · enums de la base · fecha del evento no pasada | Update en `clientes`, con historial |
+| `anotar(texto)` | — | Nota libre en la libreta (`notas`, autor `lucia`) |
+| `enviar_fotos(modelo_ids[])` | Máximo 3 · ids existen en catálogo, activos y con fotos | Manda la primera foto cargada en la ficha de cada modelo |
+| `enviar_link(tipo)` | tipo ∈ {mapa, resena, web} · el link está cargado en `enlaces` (se reconoce por el nombre) | Manda el link de `enlaces` |
+| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum · sin pregunta en el mensaje | Fila en `derivaciones` (una sola si ya había una pendiente), conversación derivada, avisa al número del canal, **corta el turno**. Con reclamo o descuento no se manda la despedida. Aparece en la pestaña Atención humana |
+
+Cada herramienta devuelve al modelo sus datos o un rechazo que dice qué hacer ahora. Lo que
+le llega al cliente armado en código (confirmación, link, fotos, el texto fijo de una
+derivación dura) no lo escribe el modelo: va aparte y lo manda el turno. Toda llamada queda en
+la traza del turno, que es lo que leen las precondiciones y las barandillas.
 
 ---
 
