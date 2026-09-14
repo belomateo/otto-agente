@@ -29,6 +29,50 @@ informe del verificador, §3.3 a §3.5.
   terminaría en código, contra el principio 2. `paneles` la crea (`*negocio*`)
   antes de que `logica` haga H1.13, que la consume.
 
+## Resueltas por Mateo (14/9, con las notas de Otto España que pasó Sofía)
+
+- **#7 → turnos por franjas.** Otto España: «solo 3 probadores, a partir de las 13hs
+  (lunes a viernes) · y los sábados hasta el mediodía, a partir de las 13.30hs (2
+  probadores)». Mateo lo leyó así: de lunes a viernes, turnos de 13 a 19 con 3 probadores
+  (a la mañana no hay turnos); el sábado, de 9:30 a 12 con 3 y de 13:30 a 18:30 con 2. La
+  agenda de hoy no lo puede guardar (un horario por día y una cantidad fija de
+  probadores), así que:
+  - `paneles` crea `franjas_turnos` en una migración `*negocio*` de su rango nuevo,
+    **0030–0039** (el 0011–0019 está completo): `dia_semana` (0 = domingo, como
+    `horarios` y `extract(dow)`), `desde`, `hasta`, `probadores`, con `version` /
+    `editado_por` / `editado_at`, trigger de historial y la misma RLS que 0012. Las franjas
+    de un día no se pisan, `desde < hasta` y `probadores` ≤
+    `configuracion_agenda.cantidad_probadores`. Seed con los valores de arriba; domingo sin
+    filas. Suma los handlers de Configuración › Agenda.
+  - `horarios` queda como horario del local (atención humana, avisos fuera de horario):
+    sus columnas de corte ya no se usan para turnos.
+  - En una franja con P probadores toman turnos los probadores 1 a P (supuesto #22).
+  - `front`: Configuración › Agenda edita varias franjas por día, cada una con su cantidad
+    de probadores, y el mock de Turnos pasa a la agenda nueva.
+  - `logica`: H1.13 calcula los huecos desde `franjas_turnos`.
+- **#8 → evento hoy o mañana: lo resuelve una persona.** Mateo: «cuando hay un alquiler y
+  el evento es el mismo día o un día posterior, se deriva a un humano, pero que no le diga
+  que no, sino algo como te derivo con un asistente del local, pero hago lo posible por
+  encontrar un hueco en la agenda». Es determinístico, así que lo decide código y no el
+  LLM (AGENTE.md § 2):
+  - `logica` suma el motivo `evento_inminente` a `derivaciones` (0026) y `buscar_horarios`
+    (H1.13) devuelve `derivar: evento_inminente` en vez de huecos.
+  - `agente`: derivación dura con texto fijo, sin «no» (propuesta: «Te paso con un asesor
+    del local para que te ayude con tu evento, y vamos a hacer lo posible por encontrarte
+    un lugar en la agenda.»), fragmento `anticipacion`, guion `evento-manana-deriva` y
+    AGENTE.md § 10.
+  - `front`: etiqueta del motivo en Atención humana («Evento hoy o mañana»).
+- **#9 → los turnos se dan por orden de urgencia** (Otto España): primero los eventos más
+  cercanos. `paneles` suma `dias_reserva_urgencia` (int, vacío = sin reserva) a
+  `configuracion_agenda` en la misma migración que #7, con seed 7; `logica` lo aplica en
+  `buscar_horarios` (supuesto #21); `front` lo suma a Configuración › Agenda.
+- **Talles** (Otto España: «Cuando preguntan por talles / tienen trajes de venta»): sin
+  cambio. Lo que no entra en el rango de alquiler es venta, fuera de la V1, y deriva.
+- **Contrato del generador de prompt:** el panel valida el prompt base con `node
+  scripts/armar-prompt.mjs --plantilla <archivo> --solo-validar` (código 0 si pasa,
+  motivos por stderr). `paneles` adapta `panel/lib/edicion/prompt.ts`, que hoy llama
+  `--validar`.
+
 Lo que sigue abajo es el texto original de cada punto, como referencia.
 
 1. **Solapamiento de turnos por probador.** `turnos_probador_inicio_idx` es un
