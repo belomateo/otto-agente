@@ -80,6 +80,7 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
    ella con todo el historial, sin volver a presentarse.
 
 Motivos (enum): `reclamo`, `prenda_danada`, `corporativo`, `turno_urgente_sin_hueco`,
+`evento_inminente` (evento hoy o mañana: deriva siempre, decisión #8 del 14/9),
 `descuento`, `dato_no_encontrado`, `pide_persona`, `barandilla_doble`, `sin_respuesta`,
 `timeout`.
 

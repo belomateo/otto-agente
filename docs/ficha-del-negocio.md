@@ -1,15 +1,16 @@
 # Ficha del negocio — Mr Otto / Otto Su Misura
 
-Respondida por Mr Otto (8/9/2026) y completada con Mateo (12/9/2026). Es DATO:
-se carga en tablas y fragmentos, no en el prompt. Lo marcado ➜ son respuestas
-posteriores de Mateo que completan o corrigen la ficha original.
+Respondida por Mr Otto (8/9/2026), completada con Mateo (12/9/2026) y corregida con
+las notas de Otto España que pasó Sofía (14/9/2026). Es DATO: se carga en tablas y
+fragmentos, no en el prompt. Lo marcado ➜ son respuestas posteriores que completan o
+corrigen la ficha original.
 
 ## Identidad del agente y del negocio
 
 - Canales: son distintos. Un WhatsApp por local (3); en uno se atienden consultas
   de venta online; aparte uno corporativo y otro de alquiler. Dos IG: venta y
   alquiler. ➜ **V1: solo alquiler, número nuevo.**
-- Nombre y presentación ➜ **Lucía**: «Hola, soy Lucía, asistente de Mr. Otto.
+- Nombre y presentación ➜ **Lucía**: «Hola, soy Lucía, asistente de Mr Otto.
   ¿En qué puedo ayudarte hoy?»
 - Tono: cercano, sin tantos emojis.
 - Siempre usar: *alquiler a medida*, *prendas de calidad*, *diseños nuevos*,
@@ -41,8 +42,13 @@ posteriores de Mateo que completan o corrigen la ficha original.
 - Anticipación: recomendado entre 60 y 7 días antes. Se retira un día antes del
   evento (con prueba final) y se devuelve un día hábil después. En la práctica hay
   gente que alquila la misma semana o el mismo día y **nunca se le dice que no**.
+  ➜ **Evento hoy o mañana: lo resuelve una persona** (Mateo, 14/9). Lucía deriva sin
+  decir que no, con algo como «te paso con un asesor del local, y vamos a hacer lo
+  posible por encontrarte un lugar en la agenda».
 - Talles: del XS al **68** de saco. Fuera de ese rango se puede confeccionar con
-  tiempo, pero solo para la venta.
+  tiempo, pero solo para la venta. ➜ Nota de Otto España (14/9), tal cual: «Cuando
+  preguntan por talles / tienen trajes de venta». Sin cambio: lo que no entra en el
+  rango de alquiler es venta, fuera de la V1, y deriva.
 - Reserva y garantía: el alquiler se paga 100% al reservarlo. Tarjeta de crédito
   como garantía el día de la prueba final. Hay tabla de daños por grado ➜ **el
   agente no la comparte: deriva siempre.**
@@ -70,7 +76,8 @@ posteriores de Mateo que completan o corrigen la ficha original.
 ## Cuándo pasa a una persona
 
 - Nunca resuelve solo: reclamos, turnos urgentes, prenda de alquiler dañada,
-  pedido corporativo (todos).
+  pedido corporativo (todos). ➜ Y **todo alquiler con el evento hoy o mañana**
+  (Mateo, 14/9), sin decirle que no al cliente.
 - Cómo deriva: «le derivo tu inquietud a …», a números distintos según alquiler /
   venta / corporativo.
 - Fuera del horario humano ➜ atiende y agenda igual, solo en horario laboral de
@@ -100,16 +107,24 @@ Respuestas armadas: no reutilizar tal cual, «hoy informan, no asesoran ni vende
 
 ## Ancla de valor (➜ Mateo, 12/9)
 
-Mr Otto no alquila cualquier traje: se confecciona / ajusta a medida así queda
-perfecto el día del evento. El precio-calidad-servicio es el mejor del mercado, y
-eso lo diferencia de otros locales de alquiler. «Acá nos preocupamos de que tu
-apariencia sea lo primero: el día de esa fecha especial es lo que más nos importa.»
+Mr Otto no alquila cualquier traje: se ajusta a medida, y si hace falta se
+confecciona, así queda perfecto el día del evento. El precio-calidad-servicio es el
+mejor del mercado, y eso lo diferencia de otros locales de alquiler. «Acá nos
+preocupamos de que tu apariencia sea lo primero: el día de esa fecha especial es lo
+que más nos importa.»
 
-## Agenda (➜ OTTO BOT, vigente)
+## Agenda (➜ OTTO BOT, corregida por Otto España el 14/9)
 
-- Lun–Vie 10:00–19:00; Sáb 9:30–18:30. Corte 14–15 (un probador puede cortar 13–14).
-  ➜ **Todos cortan 14–15; la excepción 13–14 no aplica** (Mateo, 12/9).
-- 3 probadores, escalonados de a 15 min.
+- Local abierto: Lun–Vie 10:00–19:00; Sáb 9:30–18:30.
+- ➜ **Turnos de alquiler** (Otto España vía Sofía, 14/9): Lun–Vie **desde las 13**
+  hasta el cierre, con 3 probadores; a la mañana no se dan turnos. Sábado de 9:30 a
+  12 con 3 probadores y de 13:30 a 18:30 con 2.
+- Corte: OTTO BOT decía 14–15 (un probador 13–14) y Mateo fijó el 12/9 que todos
+  cortan 14–15. ➜ Con los turnos desde las 13, la franja de lunes a viernes queda
+  corrida, sin corte: a confirmar (supuesto #20).
+- 3 probadores (el sábado a la tarde, 2), escalonados de a 15 min.
+- ➜ **Los turnos se dan por orden de urgencia**: primero los eventos más cercanos
+  (Otto España, 14/9). Cómo se aplica: supuesto #21.
 - Graduado 45' · Novio 45' · Invitado 45' · Doble 1:30 (mismo probador) · Triple 2:00
   · Prueba final 15'.
 - Un acompañante por persona. 10 min de tolerancia. Avisar si no puede asistir.
