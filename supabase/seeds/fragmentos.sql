@@ -1,0 +1,96 @@
+-- Fragmentos de conocimiento de Lucía (H1.6). Al menos uno por cada uno de los 16 temas de
+-- AGENTE.md § 8, con texto sacado de docs/ficha-del-negocio.md y docs/otto-bot-notas.md.
+-- Lucía los consulta con buscar_informacion; nunca están en el prompt (principio 2).
+--
+-- Lo que NO va acá, a propósito:
+--  · precios: salen del catálogo y de accesorios (consultar_catalogo, consultar_accesorios);
+--  · horarios del local y de los turnos: buscar_informacion los agrega leídos de horarios y
+--    franjas_turnos (decisión #7), así no se desactualizan cuando el dueño los cambia; los
+--    horarios concretos de un turno salen de buscar_horarios.
+-- Lo que en las reglas provisorias de Fase 0 era dato (anticipación de 60 a 7 días, un
+-- acompañante por persona, 10 minutos de tolerancia) quedó en anticipacion y como-funciona.
+-- El fragmento "El turno en el local" es también el que arma la confirmación de un turno.
+-- Los tres de objeciones son un borrador desde el ancla de valor: los corrige el dueño o
+-- Mateo en Conocimiento.
+--
+-- Idempotente: cada fragmento tiene su id fijo; correrlo de nuevo solo pisa lo que cambió
+-- (y el trigger deja historial). Ojo: volver a correrlo después de que el dueño editó un
+-- fragmento lo devuelve a esta versión.
+insert into fragmentos (id, tema, titulo, texto, editado_por) values
+  ('a9f10000-0000-4000-8000-000000000101', 'que-incluye', 'Qué incluye el precio',
+   'El precio del alquiler incluye el traje (saco y pantalón) y el servicio de sastrería y tintorería antes y después del evento, para que lo recibas listo para usar. El traje no viene con camisa: la camisa y el resto de las prendas para completar el look van aparte, y se alquilan o se compran según lo que necesites.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000000201', 'como-funciona', 'Cómo es el alquiler, paso a paso',
+   'Primero venís al local con turno: el asesor te muestra modelos, te probás el que más te guste y te toma las medidas. Si lo alquilás, la sastrería lo ajusta a tu medida. El traje se retira (lo pasás a buscar) un día antes del evento, con una prueba final para ver que esté perfecto, y se devuelve un día hábil después: lo devolvés acá mismo. La tintorería corre por nuestra cuenta.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000000202', 'como-funciona', 'El turno en el local',
+   'Te esperamos en España 764, Rosario. Se permite un acompañante por persona y hay 10 minutos de tolerancia. Si alquilás, para reservar el traje se abona el 100% en el local. Si no podés venir, avisanos y lo reprogramamos.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000000301', 'reserva-y-garantia', 'Pago y garantía',
+   'No se deja seña: para reservar el traje se abona el 100% del alquiler, todo junto, en el local, en el mismo turno en que lo elegís. Se puede pagar en efectivo, con transferencia o con tarjeta de crédito o débito. El día de la prueba final se deja una tarjeta de crédito como garantía, también en el local. Por WhatsApp no se cobra ni se piden datos de tarjeta.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000000401', 'ubicacion-horarios', 'Dónde estamos',
+   'El local queda en calle España 764, Rosario, y todo se hace ahí: la prueba, los ajustes, el retiro y la devolución. Para probarte un traje se viene con turno, así el equipo te dedica el tiempo que hace falta. El local abre más horas que las de los turnos de alquiler: los horarios de atención y de turnos salen de la agenda.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000000501', 'talles', 'Talles',
+   'Tenemos trajes de alquiler desde el XS hasta el 68 (el número de saco), y para los más chicos, nenes incluidos, desde el talle 4. El talle justo se ve en el local, probándolo, y la sastrería lo ajusta. Si necesitás uno más grande que el 68, se puede confeccionar con tiempo, pero ya es un traje de venta: eso te lo confirma el equipo.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000000601', 'a-medida', 'Hecho a tu medida',
+   'En Mr Otto el alquiler es a medida: en el turno te prueban el traje, te toman las medidas y la sastrería hace los arreglos que hagan falta (achicar, alargar, las mangas, el ruedo del pantalón) para que te quede perfecto el día del evento. Si hace falta, se confecciona. Las medidas se toman siempre en el local, y la sastrería y la tintorería ya están incluidas.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000000701', 'anticipacion', 'Anticipación',
+   '¿Con cuánto tiempo conviene reservar? Lo ideal es entre 60 y 7 días antes del evento, así hay tiempo para elegir y para que la sastrería ajuste todo sin apuro. Si es urgente y el evento es en pocos días, igual llegás: siempre buscamos la forma. Si el evento es hoy o mañana, te paso con un asesor del local, que hace lo posible por encontrarte un lugar en la agenda.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000000801', 'accesorios', 'Completar el look',
+   'Para completar el look alquilamos camisa, corbata, cinturón (cinto) y zapatos, según lo que necesites. Si preferís quedártelos, esas prendas se pueden comprar con descuento por alquilar con nosotros. En el turno el equipo te ayuda a combinar todo, así resolvés el look completo de una vez.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000000901', 'objecion-precio', 'Si le parece caro (borrador)',
+   'Si te parece caro, es entendible: es plata y es una decisión importante. Lo que pagás no es solo el traje: es un alquiler a medida, con la sastrería que lo ajusta para que te quede perfecto y la tintorería antes y después, todo incluido. Son prendas de calidad y diseños nuevos, y te llevás una solución completa. En precio, calidad y servicio es de lo mejor del mercado, y lo que más nos importa es que ese día tu apariencia sea lo primero.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000001001', 'objecion-turno', 'Si lo quiere pensar (borrador)',
+   'Si lo querés pensar y decidirlo después, no te preocupes: tomate tu tiempo para hablarlo con quien tengas que hablarlo. Cuando lo confirmes, me avisás y buscamos un horario para que te lo pruebes. Reservar con tiempo ayuda a que el ajuste quede perfecto, pero hoy no hace falta decidir nada.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000001101', 'objecion-competencia', 'Si está comparando (borrador)',
+   'Está perfecto comparar antes de decidir, y si en otro lado te lo dejan más barato, vale mirar qué incluye. Lo que nos distingue es que el alquiler es a medida: el traje se ajusta en nuestra sastrería para que te quede perfecto, e incluye la tintorería antes y después. Son prendas de calidad y diseños nuevos, y resolvés el look completo con el mismo equipo. En precio, calidad y servicio es de lo mejor del mercado.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000001201', 'que-no-hacemos', 'Fuera del alquiler',
+   'El alquiler es solo en el local de España 764, Rosario: no hacemos envíos ni te lo mandamos a tu casa, porque la prueba final y los ajustes se hacen acá. Si venís de otra ciudad, coordinamos el turno pensando en la fecha del evento. Los uniformes y los pedidos para empresas los atiende otro equipo de Mr Otto, y la venta de ropa es de otra área: en esos casos lo ve la persona que corresponde.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000001301', 'descuentos', 'Descuentos',
+   'Alquilando con nosotros, las prendas para completar el look se pueden comprar con descuento. Sobre el alquiler en sí, cualquier rebaja, promo o descuento especial lo decide una persona del equipo, no se define por este canal.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000001401', 'novio', 'El que se casa (guion)',
+   '¡Felicitaciones! Si te casás, buscamos un look especial para vos: el novio tiene que estar impecable, como todos los que se casan con nosotros. Para recomendarte bien conviene saber la fecha del casamiento, si es de día o de noche, si es en salón, campo o iglesia, y si ya tenés una idea de estilo o de colores. Con eso te mostramos dos looks y te proponemos un turno para probarlos con tiempo, así la sastrería lo deja perfecto para el gran día.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000001501', 'graduado', 'Graduaciones (guion)',
+   'Para graduaciones y fiestas de egresados del secundario tenemos diferentes modelos y colores, para elegir el look que mejor va con cada chico. Muchas veces escribe la mamá o el papá, cuando su hijo termina el colegio: se le habla a quien escribe y se le pregunta la fecha, si es de día o de noche y el talle aproximado. Si vienen de otra ciudad, coordinamos el turno pensando en la fecha para que resuelvan todo sin viajes de más.',
+   'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000001601', 'invitado', 'Invitados (guion)',
+   'Si te invitaron al casamiento de un amigo, a una boda civil, a un cumple de 15 o a una fiesta, conviene saber la fecha, si es de día o de noche y si tenés preferencia de color. Con eso te mostramos dos opciones y te proponemos un turno para probártelas; con los accesorios del local resolvés el look completo.',
+   'seed H1.6')
+on conflict (id) do update
+  set tema = excluded.tema,
+      titulo = excluded.titulo,
+      texto = excluded.texto,
+      activo = true,
+      editado_por = excluded.editado_por
+  where fragmentos.tema is distinct from excluded.tema
+     or fragmentos.titulo is distinct from excluded.titulo
+     or fragmentos.texto is distinct from excluded.texto
+     or fragmentos.activo is distinct from true;

@@ -1,0 +1,13 @@
+# Configuración de Supabase para las Edge Functions de logica. Solo lo necesario para
+# desplegar: el resto de la configuración del proyecto vive en el dashboard.
+project_id = "fhyuvdliwppqkneddezn"
+
+# Meta no manda un JWT de Supabase: la autenticidad del webhook se prueba con la firma
+# X-Hub-Signature-256 (firma.ts).
+[functions.webhook-whatsapp]
+verify_jwt = false
+
+# Lo llaman la base (trigger al encolar y cron de contención) con x-worker-secret, no con un
+# JWT de usuario.
+[functions.worker]
+verify_jwt = false

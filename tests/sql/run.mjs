@@ -71,6 +71,9 @@ async function testColaSkipLocked() {
   console.log("\n[2/3] Cola: dos workers no toman el mismo trabajo (FOR UPDATE SKIP LOCKED)");
   const admin = new Client({ connectionString: CONN });
   await admin.connect();
+  // El trigger de 0020 dispara el worker desplegado al encolar: si lo hiciera acá, ese worker
+  // se llevaría el trabajo antes que los dos de prueba. Interruptor solo para esta sesión.
+  await admin.query("set otto.sin_disparo = 'on'");
   let jobId;
   try {
     // Esta prueba no puede correr adentro de una transacción, así que si una
@@ -185,12 +188,195 @@ async function testRlsCeroFilas() {
   }
 }
 
+// Hito 1.15: la ficha del cliente (AGENTE.md § 7), los enums que tienen que coincidir con
+// las herramientas y el prompt (temas de AGENTE.md § 8, motivos de PROCESOS.md § 4) y el
+// UPDATE de Storage. Todo dentro de una transacción con ROLLBACK.
+const TEMAS = [
+  "que-incluye", "como-funciona", "reserva-y-garantia", "ubicacion-horarios", "talles",
+  "a-medida", "anticipacion", "accesorios", "objecion-precio", "objecion-turno",
+  "objecion-competencia", "que-no-hacemos", "descuentos", "novio", "graduado", "invitado",
+];
+const MOTIVOS = [
+  "reclamo", "prenda_danada", "corporativo", "turno_urgente_sin_hueco", "evento_inminente",
+  "descuento", "dato_no_encontrado", "pide_persona", "barandilla_doble", "sin_respuesta",
+  "timeout",
+];
+const EVENTOS = ["casamiento", "graduacion", "fiesta", "laboral", "otro"];
+const ROLES = ["novio", "invitado", "graduado", "padre", "otro"];
+
+async function testEsquemaDelAgente() {
+  console.log("\n[1.15] Esquema del agente: ficha del cliente, enums y Storage");
+  const client = new Client({ connectionString: CONN });
+  await client.connect();
+
+  // Corre la sentencia en un savepoint: devuelve el código de error (o null si entró) sin
+  // abortar la transacción de la prueba.
+  async function probar(sql, params = []) {
+    await client.query("savepoint chequeo");
+    try {
+      await client.query(sql, params);
+      await client.query("release savepoint chequeo");
+      return null;
+    } catch (err) {
+      await client.query("rollback to savepoint chequeo");
+      return err.code;
+    }
+  }
+  async function todosEntran(valores, sql) {
+    const fallan = [];
+    for (const v of valores) if ((await probar(sql, [v])) !== null) fallan.push(v);
+    return fallan;
+  }
+
+  try {
+    await client.query("begin");
+    const cli = await client.query(
+      "insert into clientes (telefono, nombre) values ('+549000000005', 'Prueba ficha') returning id"
+    );
+    const id = cli.rows[0].id;
+    const conv = await client.query("insert into conversaciones (cliente_id) values ($1) returning id", [id]);
+    const convId = conv.rows[0].id;
+
+    let fallan = await todosEntran(EVENTOS, `update clientes set evento = $1 where id = '${id}'`);
+    assert(fallan.length === 0, `los ${EVENTOS.length} eventos del enum entran${fallan.length ? ` (fallan: ${fallan})` : ""}`);
+    fallan = await todosEntran(ROLES, `update clientes set rol = $1 where id = '${id}'`);
+    assert(fallan.length === 0, `los ${ROLES.length} roles del enum entran${fallan.length ? ` (fallan: ${fallan})` : ""}`);
+    fallan = await todosEntran(MOTIVOS, `insert into derivaciones (conversacion_id, motivo) values ('${convId}', $1)`);
+    assert(fallan.length === 0, `los ${MOTIVOS.length} motivos de derivación entran${fallan.length ? ` (fallan: ${fallan})` : ""}`);
+    fallan = await todosEntran(TEMAS, "insert into fragmentos (tema, titulo, texto) values ($1, 'Prueba', 'texto de prueba')");
+    assert(fallan.length === 0, `los ${TEMAS.length} temas de fragmentos entran${fallan.length ? ` (fallan: ${fallan})` : ""}`);
+
+    // 23514 = check_violation
+    assert((await probar(`update clientes set evento = 'boda' where id = '${id}'`)) === "23514", "un evento fuera del enum se rechaza");
+    assert((await probar(`update clientes set rol = 'padrino' where id = '${id}'`)) === "23514", "un rol fuera del enum se rechaza");
+    assert((await probar(`update clientes set dia_o_noche = 'tarde' where id = '${id}'`)) === "23514", "dia_o_noche fuera de dia/noche se rechaza");
+    assert(
+      (await probar(`insert into derivaciones (conversacion_id, motivo) values ('${convId}', 'queja')`)) === "23514",
+      "un motivo de derivación fuera del enum se rechaza"
+    );
+    assert(
+      (await probar("insert into fragmentos (tema, titulo, texto) values ('precios', 'Prueba', 'texto')")) === "23514",
+      "un tema fuera de los 16 se rechaza"
+    );
+
+    const versionAntes = (await client.query("select version from clientes where id = $1", [id])).rows[0].version;
+    await client.query("update clientes set talle_aprox = '52', editado_por = 'prueba' where id = $1", [id]);
+    // Por versión y no por editado_at: dentro de una sola transacción now() es siempre el
+    // mismo instante, así que todas las filas de historial de esta prueba empatan en la hora.
+    const hist = await client.query(
+      "select max(version) as v from historial_ediciones where tabla = 'clientes' and fila_id = $1",
+      [id]
+    );
+    assert(hist.rows[0].v === versionAntes, "editar la ficha deja su fila de historial con la versión anterior");
+
+    const pol = await client.query(
+      `select count(*)::int as n from pg_policies
+       where schemaname = 'storage' and tablename = 'objects' and cmd = 'UPDATE'
+         and policyname in ('catalogo_update_aprobados', 'adjuntos_update_aprobados')`
+    );
+    assert(pol.rows[0].n === 2, "Storage tiene policies de UPDATE en catalogo y adjuntos");
+  } finally {
+    await client.query("rollback");
+    await client.end();
+  }
+}
+
+// Hito 1.11: lo que el webhook hace en la base (registrar_mensaje_entrante) y el ciclo de un
+// trabajo en la cola (reintentos, tope de 3, rescate de trabados). Transacción con ROLLBACK.
+async function testRegistroYCola() {
+  console.log("\n[1.11] Webhook → cola: registro, dedup, derivadas, reintentos y rescate");
+  const client = new Client({ connectionString: CONN });
+  await client.connect();
+  const TEL = "5490000000011";
+  const registrar = async (wamid) =>
+    (await client.query(
+      "select registrar_mensaje_entrante($1, $2, 'Prueba 1.11', 'text', 'hola', now(), '{}'::jsonb) as nuevo",
+      [wamid, TEL]
+    )).rows[0].nuevo;
+  const contar = async (tabla) =>
+    (await client.query(
+      `select count(*)::int as n from ${tabla} t
+         join conversaciones c on c.id = t.conversacion_id
+         join clientes cl on cl.id = c.cliente_id
+        where cl.telefono = $1`,
+      [TEL]
+    )).rows[0].n;
+  const estado = async (id) => (await client.query("select estado, intentos from cola_trabajos where id = $1", [id])).rows[0];
+
+  try {
+    await client.query("begin");
+    await client.query("set local otto.sin_disparo = 'on'");
+
+    assert((await registrar("wamid.T111-1")) === true, "un mensaje nuevo se registra");
+    assert((await registrar("wamid.T111-1")) === false, "el mismo wa_message_id otra vez se descarta (Meta reintentó)");
+    assert((await contar("mensajes")) === 1 && (await contar("cola_trabajos")) === 1, "queda 1 mensaje y 1 trabajo en la cola");
+
+    await registrar("wamid.T111-2");
+    const convs = await client.query(
+      "select count(*)::int as n from conversaciones c join clientes cl on cl.id = c.cliente_id where cl.telefono = $1",
+      [TEL]
+    );
+    assert(convs.rows[0].n === 1, "el segundo mensaje del mismo cliente va a la misma conversación abierta");
+
+    await client.query(
+      "update conversaciones set estado = 'derivada' where cliente_id = (select id from clientes where telefono = $1)",
+      [TEL]
+    );
+    const colaAntes = await contar("cola_trabajos");
+    await registrar("wamid.T111-3");
+    assert(
+      (await contar("mensajes")) === 3 && (await contar("cola_trabajos")) === colaAntes,
+      "con la charla derivada, el mensaje se guarda pero Lucía no recibe trabajo"
+    );
+
+    const job = (await client.query(
+      `select t.id from cola_trabajos t join conversaciones c on c.id = t.conversacion_id
+         join clientes cl on cl.id = c.cliente_id where cl.telefono = $1 limit 1`,
+      [TEL]
+    )).rows[0].id;
+    await client.query("select cola_terminar($1, false, 'falla de prueba')", [job]);
+    let e = await estado(job);
+    assert(e.estado === "pendiente" && e.intentos === 1, "un trabajo que falla vuelve a pendiente con intentos = 1");
+    await client.query("select cola_terminar($1, false, 'falla de prueba')", [job]);
+    await client.query("select cola_terminar($1, false, 'falla de prueba')", [job]);
+    e = await estado(job);
+    assert(e.estado === "error" && e.intentos === 3, "al tercer fallo queda en error y no se reintenta más");
+
+    await client.query(
+      "update cola_trabajos set estado = 'procesando', intentos = 0, tomado_por = 'muerto', tomado_at = now() - interval '6 minutes' where id = $1",
+      [job]
+    );
+    const rescatados = (await client.query("select cola_rescatar_trabados() as n")).rows[0].n;
+    e = await estado(job);
+    assert(
+      rescatados >= 1 && e.estado === "pendiente" && e.intentos === 1,
+      "un trabajo trabado en 'procesando' más de 5 min vuelve a pendiente"
+    );
+
+    await client.query("savepoint como_anon");
+    let codigo = null;
+    try {
+      await client.query("set local role anon");
+      await client.query("select registrar_mensaje_entrante('wamid.T111-X', '5490000000012', null, 'text', 'x', now(), '{}'::jsonb)");
+    } catch (err) {
+      codigo = err.code;
+    }
+    await client.query("rollback to savepoint como_anon");
+    assert(codigo === "42501", "anon no puede llamar a registrar_mensaje_entrante (sin permiso de ejecución)");
+  } finally {
+    await client.query("rollback");
+    await client.end();
+  }
+}
+
 (async () => {
-  console.log("Controles de Fase 0 — otto-agente\n" + "=".repeat(40));
+  console.log("Controles de la base (Fase 0 + hitos 1.15 y 1.11) — otto-agente\n" + "=".repeat(40));
   try {
     await testIdempotenciaWebhook();
     await testColaSkipLocked();
     await testRlsCeroFilas();
+    await testEsquemaDelAgente();
+    await testRegistroYCola();
   } catch (err) {
     console.error("\n💥 Error inesperado corriendo los tests:", err);
     fallas++;
@@ -200,5 +386,5 @@ async function testRlsCeroFilas() {
     console.error(`❌ ${fallas} control(es) no pasaron.`);
     process.exit(1);
   }
-  console.log("✅ Todos los controles de Fase 0 pasaron.");
+  console.log("✅ Todos los controles pasaron.");
 })();
