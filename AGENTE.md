@@ -101,6 +101,11 @@ una función separada en `_shared/`, testeable sola.
 Si el paso 6 no devuelve texto ni acción → derivar (principio 8). Si el turno pasa
 de 25 s → derivar con texto fijo.
 
+En el paso 6 las herramientas corren con la agenda real: el turno y el emulador arman su
+contexto con `contextoDeHerramientas` (`_shared/turno/`), que les pasa
+`agendaDesdeBase(db, tz)` de logica (`_shared/agenda/huecos.ts`, H1.13). Las pruebas de
+herramientas usan un doble (`AgendaDoble`).
+
 ---
 
 ## 4. Herramientas de Lucía
