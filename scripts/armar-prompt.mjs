@@ -61,6 +61,16 @@ export function nombreDelPrompt(prompt) {
   return m ? m[1].trim() : null;
 }
 
+// Un valor de contexto_agente lo escribe el dueño desde el panel, como le sale: se deja en
+// un solo bloque (sin líneas en blanco adentro, que el prompt usa para separar secciones) y
+// con punto final si termina en letra o número. Nada más: el texto es suyo.
+export function normalizarValorContexto(valor) {
+  let v = lf(valor).trim();
+  v = v.replace(/[ \t]+\n/g, "\n").replace(/\n{2,}/g, "\n");
+  if (/[\p{L}\p{N}]$/u.test(v)) v += ".";
+  return v;
+}
+
 function renderizarReglas(reglas) {
   const activas = (reglas ?? [])
     .filter((r) => r && r.activo !== false)
@@ -89,7 +99,7 @@ export function armarPrompt({ plantilla, reglas, contexto }) {
       errores.push(`Falta la clave "${clave}" en contexto_agente (la plantilla pide {{CONTEXTO:${clave}}}).`);
       return todo;
     }
-    return lf(valor).trim();
+    return normalizarValorContexto(valor);
   });
 
   cuerpo = cuerpo.replace(/\s+$/, "") + "\n";

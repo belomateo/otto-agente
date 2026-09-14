@@ -37,7 +37,7 @@ const FIXTURE_MINIMO = {
     { numero: 3, texto: "Ante un reclamo no discutís: derivás enseguida.", activo: true },
   ],
   contexto: {
-    presentacion: "Hola, soy Lucía, asistente de Mr. Otto. ¿En qué puedo ayudarte hoy?",
+    presentacion: "Hola, soy Lucía, asistente de Mr Otto. ¿En qué puedo ayudarte hoy?",
     tono: "Cercano, sin tantos emojis.",
     ancla_de_valor: "Mr Otto no alquila cualquier traje: se ajusta a medida así queda perfecto el día del evento.",
   },
@@ -255,6 +255,17 @@ function bloqueDeReglas(prompt) {
     const unida = reglas.includes("98. Primera parte y segunda parte de la misma regla.");
     registrar("18a. la regla inactiva no está", "no está", sinInactiva ? "no está" : "ESTÁ", sinInactiva);
     registrar("18b. la regla con salto queda en una línea", "una línea", unida ? "una línea" : "NO", unida);
+  }
+
+  // El tono lo escribe el dueño desde el panel, como le sale: sin punto final y con líneas en
+  // blanco adentro igual tiene que quedar en un solo bloque y con punto.
+  {
+    const fixtureT = escribir("datos-tono.json", JSON.stringify({ ...fixture, contexto: { ...fixture.contexto, tono: "  cercano\n\n\npocos emojis  " } }));
+    const t = debePasar("20. tono escrito como notas (sin punto, con líneas en blanco)", plantillaReal, fixtureT);
+    if (t !== null) {
+      const ok = t.includes("\ncercano\npocos emojis.\n");
+      registrar("20a. el tono queda en un bloque y con punto final", '"cercano" / "pocos emojis."', ok ? "así" : "NO", ok);
+    }
   }
 
   // --solo-validar no escribe.
