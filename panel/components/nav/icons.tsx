@@ -60,7 +60,7 @@ export function IconCatalogo(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-export function IconEstadisticas(props: React.SVGProps<SVGSVGElement>) {
+export function IconBitacora(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <path d="M2 9.5h3l2-4.5 3 8 2-4.5h4" />
@@ -114,6 +114,6 @@ export const NAV_ICONS: Record<string, (props: React.SVGProps<SVGSVGElement>) =>
   clientes: IconClientes,
   conocimiento: IconConocimiento,
   catalogo: IconCatalogo,
-  estadisticas: IconEstadisticas,
+  bitacora: IconBitacora,
   configuracion: IconConfiguracion,
 };

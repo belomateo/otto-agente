@@ -1,164 +1,193 @@
 'use client';
 
-// Configuración — subpestaña Lucía, con toast de guardado. Puerto de
-// d-config.html y m-config.html. Las otras subpestañas (Agenda, Herramientas,
-// Enlaces, Notas, Accesos) son de otros roles — ver STACK.md § 6 y H1.10.
+// Configuración › Lucía — avatar, presentación, contexto, reglas numeradas y el
+// prompt base plegado. Puerto de d-config.html y m-config.html en un solo layout
+// responsive. El toast «Guardado» aparece al tocar Guardar, no al abrir. Mock:
+// en Fase 2, guardar escribe reglas_agente / contexto_agente y regenera el prompt.
 
 import { useState } from 'react';
-import { Toast } from '@/components/ui-otto/Toast';
-import { reglas } from '@/lib/mock-data';
+import { ToastFlotante, useToast } from '@/components/ui-otto/ToastFlotante';
+import { useBorrador } from '@/components/ui-otto/useBorrador';
+import { reglas as REGLAS } from '@/lib/mock-data';
+import { AccionesEdicion, CAMPO, ETIQUETA, TARJETA } from './AccionesEdicion';
 
-const SUBPESTAÑAS_DESKTOP = ['Lucía', 'Agenda', 'Herramientas', 'Enlaces', 'Notas', 'Accesos'];
-const SUBPESTAÑAS_MOBILE = ['Lucía', 'Agenda', 'Herram.', 'Enlaces', 'Notas'];
+const INICIAL = {
+  presentacion: 'Hola, soy Lucía, asistente de Mr. Otto. ¿En qué puedo ayudarte hoy?',
+  contexto:
+    'Trabajás en Otto Su Misura, el alquiler de trajes a medida de Mr. Otto (Rosario, desde 1968). Hablás en rioplatense, cálida y concreta. Tu objetivo es entender el evento y agendar una prueba en el local.',
+  reglas: REGLAS.map((r) => r.t),
+};
 
-function TarjetaLucia({ compacta = false }: { compacta?: boolean }) {
+// Borrador de ejemplo: el prompt real lo genera scripts/armar-prompt.mjs (H1.3, rol agente).
+const PROMPT_BASE = [
+  'Lucía',
+  '',
+  'Sos Lucía, la asistente de WhatsApp del alquiler de trajes de Otto Su Misura.',
+  'Antes de afirmar una política, un precio o un horario, consultás la herramienta que corresponde.',
+  'Las reglas numeradas, el contexto y las notas del dueño se agregan abajo al generar el prompt.',
+].join('\n');
+
+function validarPrompt(texto: string): string | null {
+  if (texto.includes('{{') || texto.includes('[[')) return 'No se guardó: el prompt tiene «{{» o «[[» sin reemplazar.';
+  if (texto.split('\n').length > 300) return 'No se guardó: el prompt pasa de 300 líneas.';
+  if (!texto.trim()) return 'No se guardó: el prompt está vacío.';
+  return null;
+}
+
+function TarjetaLucia() {
   return (
-    <div className={`flex items-center gap-4 rounded-otto border border-borde bg-lino ${compacta ? 'gap-3 p-3.5' : 'p-4.5'}`}>
-      <div
-        className={`flex flex-none items-center justify-center rounded-pill bg-noche font-serif font-semibold text-hueso ${
-          compacta ? 'h-11 w-11 text-xl' : 'h-14 w-14 text-[26px]'
-        }`}
-      >
+    <div className={`flex items-center gap-3 md:gap-4 ${TARJETA}`}>
+      <div className="flex h-11 w-11 flex-none items-center justify-center rounded-pill bg-noche font-serif text-xl font-semibold text-hueso md:h-14 md:w-14 md:text-[26px]">
         L
       </div>
-      <div className="flex-1">
-        <div className={`font-serif font-semibold ${compacta ? 'text-[15px]' : 'text-[17px]'}`}>Lucía</div>
-        <div className={compacta ? 'text-xs text-grafito' : 'text-[13px] text-grafito'}>
-          {compacta ? 'Asistente de WhatsApp de Mr. Otto' : 'Asistente de WhatsApp de Mr. Otto · atendiendo desde marzo 2026'}
-        </div>
+      <div className="min-w-0 flex-1">
+        <div className="font-serif text-[15px] font-semibold md:text-[17px]">Lucía</div>
+        <div className="text-[14px] text-grafito md:text-[13px]">Asistente de WhatsApp de Mr. Otto · alquiler</div>
       </div>
-      {!compacta && (
-        <button className="flex-none rounded-otto border border-borde bg-lino px-3.5 py-2 text-[13px] font-medium text-grafito">
-          Cambiar avatar
-        </button>
+      <button type="button" className="hidden flex-none rounded-otto border border-borde bg-lino px-3.5 py-2 text-[14px] font-medium text-grafito md:block md:text-[13px]">
+        Cambiar avatar
+      </button>
+    </div>
+  );
+}
+
+function PromptBase({ onGuardado }: { onGuardado: (error: string | null) => void }) {
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState(PROMPT_BASE);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="rounded-otto border border-borde bg-lino">
+      <button
+        type="button"
+        onClick={() => setAbierto((a) => !a)}
+        aria-expanded={abierto}
+        className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 px-3.5 py-3.5 text-left md:px-4.5"
+      >
+        <span className="text-grafito" aria-hidden>
+          {abierto ? '▾' : '▸'}
+        </span>
+        <span className="flex-1 text-sm font-medium">Avanzado: prompt base</span>
+        <span className="basis-full text-[14px] text-grafito md:basis-auto md:text-xs">
+          solo si sabés lo que hacés · «Validar y guardar» avisa en rojo si no pasa
+        </span>
+      </button>
+      {abierto && (
+        <div className="border-t border-borde-suave px-3.5 pb-4 pt-3 md:px-4.5">
+          <textarea
+            value={texto}
+            onChange={(e) => {
+              setTexto(e.target.value);
+              setError(null);
+            }}
+            rows={8}
+            aria-label="Prompt base"
+            className={`w-full resize-y rounded-otto border px-3 py-2.5 font-mono text-[14px] leading-[1.55] outline-none md:text-[13px] ${
+              error ? 'border-ladrillo' : 'border-borde'
+            }`}
+          />
+          {error && <div className="mt-2 text-[14px] font-medium text-ladrillo md:text-[13px]">{error}</div>}
+          <button
+            type="button"
+            onClick={() => {
+              const e = validarPrompt(texto);
+              setError(e);
+              onGuardado(e);
+            }}
+            className="mt-2.5 rounded-otto border border-cobre bg-lino px-4 py-2.5 text-sm font-medium text-cobre"
+          >
+            Validar y guardar
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
-export default function ConfiguracionPage() {
-  const [guardado, setGuardado] = useState(true);
+export default function ConfiguracionLuciaPage() {
+  const { valor, setValor, sucio, guardar, deshacer } = useBorrador(INICIAL);
+  const { toast, mostrar, cerrar } = useToast();
+
+  const cambiarRegla = (i: number, texto: string) =>
+    setValor({ ...valor, reglas: valor.reglas.map((r, j) => (j === i ? texto : r)) });
 
   return (
     <>
-      {/* Escritorio */}
-      <div className="relative hidden flex-1 flex-col px-7 py-5.5 md:flex">
-        <div className="mb-3.5 font-serif text-[22px] font-semibold">Configuración</div>
-        <div className="mb-5 flex gap-0.5 border-b border-borde text-sm font-medium">
-          {SUBPESTAÑAS_DESKTOP.map((s, i) => (
-            <span
-              key={s}
-              className={i === 0 ? '-mb-px border-b-2 border-cobre px-4 py-2.5 text-cobre' : 'px-4 py-2.5 text-grafito'}
-            >
-              {s}
-              {s === 'Accesos' && (
-                <span className="ml-0.5 rounded-pill bg-ladrillo px-[7px] py-px text-[11px] font-semibold text-lino">1</span>
-              )}
-            </span>
-          ))}
-        </div>
-        <div className="flex max-w-[820px] flex-col gap-3.5">
-          <TarjetaLucia />
-          <div className="rounded-otto border border-borde bg-lino p-4.5">
-            <div className="mb-2 text-[13px] font-medium text-grafito">Presentación — lo primero que dice en cada charla nueva</div>
-            <input
-              defaultValue="Hola, soy Lucía, asistente de Mr. Otto. ¿En qué puedo ayudarte hoy?"
-              className="w-full rounded-otto border border-borde px-3 py-2.5 text-[15px] outline-none"
-            />
-          </div>
-          <div className="rounded-otto border border-borde bg-lino p-4.5">
-            <div className="mb-2 text-[13px] font-medium text-grafito">Contexto — quién es, dónde trabaja, cómo habla</div>
-            <textarea
-              defaultValue="Trabajás en Otto Su Misura, el alquiler de trajes a medida de Mr. Otto (Rosario, desde 1968). Hablás en rioplatense, cálida y concreta. Tu objetivo es entender el evento y agendar una prueba en el local."
-              className="min-h-[88px] w-full resize-none rounded-otto border border-borde px-3 py-2.5 text-[14.5px] leading-[1.6] outline-none"
-            />
-          </div>
-          <div className="rounded-otto border border-borde bg-lino p-4.5">
-            <div className="mb-2.5 flex items-center">
-              <div className="flex-1 text-[13px] font-medium text-grafito">Reglas — Lucía las cumple siempre, en orden</div>
-              <button className="rounded-[7px] border border-cobre bg-lino px-3 py-1.5 text-[12.5px] font-medium text-cobre">
-                Agregar regla
-              </button>
-            </div>
-            {reglas.map((r) => (
-              <div key={r.i} className="flex items-center gap-3 border-t border-borde-suave py-2.5">
-                <span className="w-[18px] flex-none font-serif text-sm font-semibold tabular-nums text-cobre">{r.i}</span>
-                <span className="flex-1 text-[14.5px] leading-[1.5]">{r.t}</span>
-                <span className="cursor-pointer text-[13px] text-[#C9C4B9]">✕</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center gap-2.5 rounded-otto border border-borde bg-lino px-4.5 py-3.5">
-            <span className="text-grafito">▸</span>
-            <span className="flex-1 text-sm font-medium">Avanzado: prompt base</span>
-            <span className="text-xs text-grafito">solo si sabés lo que hacés · «Validar y guardar» avisa en rojo si no pasa</span>
-          </div>
-          <div className="flex items-center gap-2.5 pb-[70px]">
-            <button onClick={() => setGuardado(true)} className="rounded-otto bg-cobre px-5 py-2.5 text-sm font-medium text-lino">
-              Guardar
-            </button>
-            <button className="rounded-otto border border-borde bg-lino px-3.5 py-2.5 text-sm font-medium text-grafito">
-              Deshacer
-            </button>
-            <a className="ml-auto cursor-pointer text-[13px]">Ver versión anterior</a>
-          </div>
-        </div>
-        {guardado && (
-          <div className="absolute bottom-6 right-7">
-            <Toast texto="Guardado · Lucía lo usa en el próximo mensaje" accion="Deshacer" />
-          </div>
-        )}
+      <TarjetaLucia />
+
+      <div className={TARJETA}>
+        <label htmlFor="presentacion" className={ETIQUETA}>
+          Presentación — lo primero que dice en cada charla nueva
+        </label>
+        <input
+          id="presentacion"
+          value={valor.presentacion}
+          onChange={(e) => setValor({ ...valor, presentacion: e.target.value })}
+          className={CAMPO}
+        />
       </div>
 
-      {/* Mobile */}
-      <div className="flex flex-1 flex-col md:hidden">
-        <div className="px-4 pt-[18px]">
-          <div className="font-serif text-[22px] font-semibold">Configuración</div>
-          <div className="mt-2.5 flex gap-0.5 overflow-hidden border-b border-borde text-[13.5px] font-medium">
-            {SUBPESTAÑAS_MOBILE.map((s, i) => (
-              <span
-                key={s}
-                className={
-                  i === 0
-                    ? '-mb-px flex-none border-b-2 border-cobre px-3 py-2.5 text-cobre'
-                    : 'flex-none px-3 py-2.5 text-grafito'
-                }
-              >
-                {s}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-          <TarjetaLucia compacta />
-          <div className="rounded-otto border border-borde bg-lino p-3.5">
-            <div className="mb-1.5 text-[12.5px] font-medium text-grafito">Presentación</div>
-            <div className="rounded-otto border border-borde px-3 py-2.5 text-sm leading-[1.5]">
-              Hola, soy Lucía, asistente de Mr. Otto. ¿En qué puedo ayudarte hoy?
-            </div>
-          </div>
-          <div className="rounded-otto border border-borde bg-lino p-3.5">
-            <div className="mb-1.5 flex items-center">
-              <div className="flex-1 text-[12.5px] font-medium text-grafito">Reglas</div>
-              <span className="text-xs font-medium text-cobre">Agregar</span>
-            </div>
-            {reglas.map((r) => (
-              <div key={r.i} className="flex gap-2.5 border-t border-borde-suave py-2.5 text-[13.5px] leading-[1.45]">
-                <span className="flex-none font-serif text-[13px] font-semibold text-cobre">{r.i}</span>
-                <span>{r.t}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setGuardado(true)} className="flex-1 rounded-otto bg-cobre py-3 text-sm font-medium text-lino">
-              Guardar
-            </button>
-            <button className="flex-1 rounded-otto border border-borde bg-lino py-3 text-sm font-medium text-grafito">
-              Deshacer
-            </button>
-          </div>
-        </div>
+      <div className={TARJETA}>
+        <label htmlFor="contexto" className={ETIQUETA}>
+          Contexto — quién es, dónde trabaja, cómo habla
+        </label>
+        <textarea
+          id="contexto"
+          value={valor.contexto}
+          onChange={(e) => setValor({ ...valor, contexto: e.target.value })}
+          rows={4}
+          className={`${CAMPO} resize-y leading-[1.6]`}
+        />
       </div>
+
+      <div className={TARJETA}>
+        <div className="mb-2.5 flex items-center gap-2">
+          <div className="flex-1 text-[14px] font-medium text-grafito md:text-[13px]">Reglas — Lucía las cumple siempre, en orden</div>
+          <button
+            type="button"
+            onClick={() => setValor({ ...valor, reglas: [...valor.reglas, ''] })}
+            className="flex-none rounded-[7px] border border-cobre bg-lino px-3 py-1.5 text-[14px] font-medium text-cobre md:text-[12.5px]"
+          >
+            Agregar regla
+          </button>
+        </div>
+        {valor.reglas.map((r, i) => (
+          <div key={i} className="flex items-center gap-3 border-t border-borde-suave py-2">
+            <span className="w-[18px] flex-none font-serif text-sm font-semibold tabular-nums text-cobre">{i + 1}</span>
+            <input
+              value={r}
+              onChange={(e) => cambiarRegla(i, e.target.value)}
+              placeholder="Escribí la regla"
+              aria-label={`Regla ${i + 1}`}
+              className="min-w-0 flex-1 rounded-otto border border-transparent px-1.5 py-1 text-[14.5px] leading-[1.5] outline-none hover:border-borde focus:border-cobre"
+            />
+            <button
+              type="button"
+              onClick={() => setValor({ ...valor, reglas: valor.reglas.filter((_, j) => j !== i) })}
+              aria-label={`Quitar la regla ${i + 1}`}
+              className="flex-none px-1 text-[14px] text-[#A9A395]"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <PromptBase
+        onGuardado={(error) =>
+          error
+            ? mostrar({ variante: 'error', texto: 'No pasó la validación: el prompt anterior sigue activo', accion: 'Cerrar' })
+            : mostrar({ texto: 'Prompt validado y guardado · Lucía lo usa en menos de un minuto', accion: 'Cerrar' })
+        }
+      />
+
+      <AccionesEdicion
+        sucio={sucio}
+        onDeshacer={deshacer}
+        onGuardar={() => mostrar({ texto: 'Guardado · Lucía lo usa en el próximo mensaje', onAccion: guardar() })}
+      />
+
+      <ToastFlotante toast={toast} onCerrar={cerrar} />
     </>
   );
 }

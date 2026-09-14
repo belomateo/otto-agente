@@ -6,8 +6,8 @@ export function KpiCard({ numero, label, sub }: { numero: string; label: string;
   return (
     <div className="rounded-otto border border-borde bg-lino px-[18px] py-4">
       <div className="font-serif text-[34px] font-semibold leading-none tabular-nums">{numero}</div>
-      <div className="mt-2 text-[13.5px] font-medium">{label}</div>
-      <div className="mt-0.5 text-xs text-grafito">{sub}</div>
+      <div className="mt-2 text-[14px] font-medium md:text-[13.5px]">{label}</div>
+      <div className="mt-0.5 text-[14px] text-grafito md:text-xs">{sub}</div>
     </div>
   );
 }
