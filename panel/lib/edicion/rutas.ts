@@ -3,7 +3,7 @@
 // entidad (soloAdmin) y la validación, en lib/edicion/editar.ts.
 import 'server-only';
 import { requerirSesion } from '@/lib/api/sesion';
-import { crear, editar, editarUnica, guardarUnica } from './editar';
+import { borrar, crear, editar, editarUnica, guardarUnica } from './editar';
 import type { ClaveEntidad } from './entidades';
 
 type ConId = { params: Promise<{ id: string }> };
@@ -30,6 +30,15 @@ export function rutaEdicionUnica(clave: ClaveEntidad) {
     const s = await requerirSesion();
     if (s instanceof Response) return s;
     return editarUnica(s, clave, request);
+  };
+}
+
+export function rutaBorrado(clave: ClaveEntidad) {
+  return async function DELETE(request: Request, ctx: ConId) {
+    const s = await requerirSesion();
+    if (s instanceof Response) return s;
+    const { id } = await ctx.params;
+    return borrar(s, clave, id, request);
   };
 }
 

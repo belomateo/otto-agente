@@ -50,21 +50,23 @@ function separarVersion(cuerpo: Fila): { version: number; resto: Fila } | Respon
   return { version, resto };
 }
 
-async function crearDesde(sesion: Sesion, ent: Entidad, cuerpo: Fila) {
+// `fijo`: columnas de sistema que pone este código y nunca el request (volver a crear una fila
+// borrada con su mismo id y la versión que sigue). `extra`: se suma a la respuesta.
+async function crearDesde(sesion: Sesion, ent: Entidad, cuerpo: Fila, o: { fijo?: Fila; extra?: Fila } = {}) {
   const bloqueo = sinPermiso(sesion, ent);
   if (bloqueo) return bloqueo;
   if (!ent.crear) return error(405, 'Esto no se crea desde el panel');
   const datos = validar(cuerpo, ent.crear);
   if (datos instanceof Response) return datos;
   try {
-    const completo = ent.completarAlta ? await ent.completarAlta(db(sesion), datos) : datos;
+    const completo = { ...(ent.completarAlta ? await ent.completarAlta(db(sesion), datos) : datos), ...o.fijo };
     const incoherente = ent.coherencia?.(completo);
     if (incoherente) return error(400, incoherente);
     const rechazo = ent.verificar ? await ent.verificar(db(sesion), null, completo) : null;
     if (rechazo) return error(rechazo.status, rechazo.mensaje);
     const { data, error: e } = await db(sesion).from(ent.tabla).insert(completo).select().single();
     if (e) return desdeErrorDeBase(e);
-    return json({ fila: data }, 201);
+    return json({ fila: data, ...o.extra }, 201);
   } catch (e) {
     return falla(e);
   }
@@ -170,16 +172,107 @@ export async function listarHistorial(sesion: Sesion, tabla: string | null, id: 
 }
 
 /**
+ * DELETE de una fila, solo en las entidades `borrable` (franjas_turnos). Pide { version } como
+ * una edición: no se borra algo que otro cambió mientras tanto. La base deja la versión borrada
+ * en el historial (0030), con quién y cuándo la borró, y se vuelve a crear con restaurar().
+ */
+export async function borrar(sesion: Sesion, clave: ClaveEntidad, id: string, request: Request) {
+  const ent = ENTIDADES[clave];
+  const bloqueo = sinPermiso(sesion, ent);
+  if (bloqueo) return bloqueo;
+  if (!ent.borrable) return error(405, 'Esto no se borra desde el panel');
+  if (!esUuid(id)) return error(400, 'Identificador inválido');
+  const cuerpo = await cuerpoJson(request);
+  if (cuerpo instanceof Response) return cuerpo;
+  const partes = separarVersion(cuerpo);
+  if (partes instanceof Response) return partes;
+  if (Object.keys(partes.resto).length) return error(400, 'Para borrar solo hace falta la versión');
+  try {
+    const { data, error: e1 } = await db(sesion)
+      .from(ent.tabla)
+      .delete()
+      .eq('id', id)
+      .eq('version', partes.version)
+      .select()
+      .maybeSingle();
+    if (e1) return desdeErrorDeBase(e1);
+    if (data) return json({ borrada: data });
+    const { data: sigue, error: e2 } = await db(sesion).from(ent.tabla).select('version').eq('id', id).maybeSingle();
+    if (e2) return desdeErrorDeBase(e2);
+    return sigue ? error(409, EDITADO_MIENTRAS_TANTO, { version_actual: sigue.version }) : error(404, 'No existe');
+  } catch (e) {
+    return falla(e);
+  }
+}
+
+/**
+ * GET de las filas borradas de una tabla que se borra desde el panel: la última versión de
+ * cada una (borrado_por y borrado_at vienen en datos_anteriores), de la borrada más reciente a
+ * la más vieja. Las que ya se volvieron a crear no aparecen.
+ */
+export async function listarBorradas(sesion: Sesion, tabla: string | null) {
+  const ent = tabla ? entidadPorTabla(tabla) : undefined;
+  if (!ent?.borrable) return error(400, 'Esa tabla no borra filas desde el panel');
+  const { data, error: e1 } = await db(sesion)
+    .from('historial_ediciones')
+    .select('id, fila_id, version, editado_por, editado_at, datos_anteriores')
+    .eq('tabla', ent.tabla)
+    .not('datos_anteriores->borrado_at', 'is', null)
+    .order('version', { ascending: false });
+  if (e1) return desdeErrorDeBase(e1);
+  const filas = data ?? [];
+  const ids = [...new Set(filas.map((f) => f.fila_id as string))];
+  let siguen = new Set<string>();
+  if (ids.length) {
+    const { data: vivas, error: e2 } = await db(sesion).from(ent.tabla).select('id').in('id', ids);
+    if (e2) return desdeErrorDeBase(e2);
+    siguen = new Set((vivas ?? []).map((v) => v.id as string));
+  }
+  const borradas: typeof filas = [];
+  for (const f of filas) {
+    const id = f.fila_id as string;
+    if (siguen.has(id) || borradas.some((b) => b.fila_id === id)) continue;
+    borradas.push(f);
+  }
+  const borradoAt = (f: (typeof filas)[number]) => String((f.datos_anteriores as Fila | null)?.borrado_at ?? '');
+  borradas.sort((a, b) => borradoAt(b).localeCompare(borradoAt(a)));
+  return json({ borradas });
+}
+
+// Volver a crear una fila borrada con su mismo id y la versión que sigue a la última del
+// historial, así su historia sigue de corrido. null = la fila existe (restauración normal).
+async function recrearSiSeBorro(sesion: Sesion, ent: Entidad, filaId: string, datos: Fila, desde: number) {
+  const { data: viva, error: e1 } = await db(sesion).from(ent.tabla).select('id').eq('id', filaId).maybeSingle();
+  if (e1) return desdeErrorDeBase(e1);
+  if (viva) return null;
+  const { data: ultima, error: e2 } = await db(sesion)
+    .from('historial_ediciones')
+    .select('version')
+    .eq('tabla', ent.tabla)
+    .eq('fila_id', filaId)
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (e2) return desdeErrorDeBase(e2);
+  return crearDesde(sesion, ent, datos, {
+    fijo: { id: filaId, version: ((ultima?.version as number | undefined) ?? 0) + 1 },
+    extra: { restaurada_desde: desde, recreada: true },
+  });
+}
+
+/**
  * POST "volver a la versión anterior": copia a la fila las columnas editables de una versión
  * del historial. Es una edición más: pasa por las mismas validaciones y deja, a su vez, su
- * propia fila de historial (la versión que se está reemplazando).
+ * propia fila de historial (la versión que se está reemplazando). Pide { version }, la que el
+ * panel tiene en pantalla.
+ * Si la fila se borró (solo en las tablas que se borran desde el panel), la vuelve a crear con
+ * esa versión (201). Ahí no hay versión en pantalla, así que no se pide; si dos la vuelven a
+ * crear a la vez, la segunda choca con el id (409).
  */
 export async function restaurar(sesion: Sesion, historialId: string, request: Request) {
   if (!esUuid(historialId)) return error(400, 'Identificador inválido');
   const cuerpo = await cuerpoJson(request);
   if (cuerpo instanceof Response) return cuerpo;
-  const partes = separarVersion(cuerpo);
-  if (partes instanceof Response) return partes;
 
   const { data: h, error: e } = await db(sesion)
     .from('historial_ediciones')
@@ -201,5 +294,15 @@ export async function restaurar(sesion: Sesion, historialId: string, request: Re
       r.error.issues.map((i) => ({ campo: i.path.join('.'), mensaje: i.message }))
     );
   }
+  if (ent.borrable) {
+    try {
+      const recreada = await recrearSiSeBorro(sesion, ent, h.fila_id as string, r.data, h.version as number);
+      if (recreada) return recreada;
+    } catch (e2) {
+      return falla(e2);
+    }
+  }
+  const partes = separarVersion(cuerpo);
+  if (partes instanceof Response) return partes;
   return aplicar(sesion, ent, h.fila_id as string, partes.version, r.data, { restaurada_desde: h.version });
 }

@@ -33,9 +33,16 @@ const POR_CODIGO: Record<string, { status: number; mensaje: string }> = {
   '55000': { status: 409, mensaje: 'Ya estaba resuelto' },
 };
 
+// Restricciones que comparten código con otras y necesitan su propio mensaje: el 23P01 de
+// las franjas (0030) no es el de los turnos (0011).
+const POR_RESTRICCION: Record<string, { status: number; mensaje: string }> = {
+  franjas_turnos_sin_solapamiento: { status: 409, mensaje: 'Se pisa con otra franja de turnos del mismo día' },
+};
+
 /** Traduce un error de supabase-js a una respuesta HTTP con un mensaje en castellano. */
 export function desdeErrorDeBase(e: ErrorDeBase) {
-  const conocido = e.code ? POR_CODIGO[e.code] : undefined;
+  const porRestriccion = Object.entries(POR_RESTRICCION).find(([nombre]) => e.message?.includes(nombre))?.[1];
+  const conocido = porRestriccion ?? (e.code ? POR_CODIGO[e.code] : undefined);
   if (conocido) return error(conocido.status, conocido.mensaje, e.message);
   console.error('[api] error de base no mapeado:', e.code, e.message, e.details ?? '');
   return error(500, 'Error inesperado de la base');

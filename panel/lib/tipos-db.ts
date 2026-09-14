@@ -1,5 +1,5 @@
 // Tipos de la base (schema public), generados con `supabase gen types typescript` contra el
-// proyecto real después de aplicar las migraciones de paneles 0011–0018. No se editan a
+// proyecto real después de aplicar las migraciones de paneles 0011–0019 y 0030. No se editan a
 // mano: si cambia el esquema, se regeneran (CLAUDE.md § 7: no hay vistas tipadas a mano).
 
 export type Json =
@@ -198,6 +198,7 @@ export type Database = {
       configuracion_agenda: {
         Row: {
           cantidad_probadores: number
+          dias_reserva_urgencia: number | null
           editado_at: string
           editado_por: string | null
           escalonado_min: number
@@ -207,6 +208,7 @@ export type Database = {
         }
         Insert: {
           cantidad_probadores: number
+          dias_reserva_urgencia?: number | null
           editado_at?: string
           editado_por?: string | null
           escalonado_min: number
@@ -216,6 +218,7 @@ export type Database = {
         }
         Update: {
           cantidad_probadores?: number
+          dias_reserva_urgencia?: number | null
           editado_at?: string
           editado_por?: string | null
           escalonado_min?: number
@@ -487,6 +490,39 @@ export type Database = {
           tema?: string
           texto?: string
           titulo?: string
+          version?: number
+        }
+        Relationships: []
+      }
+      franjas_turnos: {
+        Row: {
+          desde: string
+          dia_semana: number
+          editado_at: string
+          editado_por: string | null
+          hasta: string
+          id: string
+          probadores: number
+          version: number
+        }
+        Insert: {
+          desde: string
+          dia_semana: number
+          editado_at?: string
+          editado_por?: string | null
+          hasta: string
+          id?: string
+          probadores: number
+          version?: number
+        }
+        Update: {
+          desde?: string
+          dia_semana?: number
+          editado_at?: string
+          editado_por?: string | null
+          hasta?: string
+          id?: string
+          probadores?: number
           version?: number
         }
         Relationships: []

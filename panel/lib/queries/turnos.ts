@@ -25,8 +25,11 @@ export type AgendaDelDia = {
   fecha: string;
   /** 'Sábado 12 de septiembre' */
   titulo: string;
-  /** Horario laboral de ese día (tabla horarios); null = cerrado. */
+  /** Horario del local ese día (tabla horarios); null = cerrado. No es cuándo se dan turnos. */
   horario: { apertura: string; cierre: string; corte_desde: string | null; corte_hasta: string | null } | null;
+  /** Franjas en las que se dan turnos ese día (0030); [] = ese día no se dan turnos. En una
+   *  franja con P probadores toman turnos los probadores 1 a P. */
+  franjas: { desde: string; hasta: string; probadores: number }[];
   probadores: number | null;
   turnos: FilaTurno[];
   /** Turnos de mañana que siguen sin confirmar (chip "Sin confirmar para mañana"). */
@@ -52,13 +55,18 @@ export async function turnosDelDia(
     .order('probador', { ascending: true });
   if (!o.incluirCancelados) q = q.not('estado', 'in', ESTADOS_LIBERAN);
 
-  const [turnos, horario, config, sinConfirmar] = await Promise.all([
+  const [turnos, horario, franjas, config, sinConfirmar] = await Promise.all([
     q,
     db
       .from('horarios')
       .select('hora_apertura, hora_cierre, corte_desde, corte_hasta, activo')
       .eq('dia_semana', diaDeLaSemana(fecha))
       .maybeSingle(),
+    db
+      .from('franjas_turnos')
+      .select('desde, hasta, probadores')
+      .eq('dia_semana', diaDeLaSemana(fecha))
+      .order('desde'),
     db.from('configuracion_agenda').select('cantidad_probadores').maybeSingle(),
     db
       .from('turnos')
@@ -67,7 +75,7 @@ export async function turnosDelDia(
       .lt('inicio', manana.hasta)
       .eq('estado', 'sin-confirmar'),
   ]);
-  for (const r of [turnos, horario, config, sinConfirmar]) if (r.error) throw r.error;
+  for (const r of [turnos, horario, franjas, config, sinConfirmar]) if (r.error) throw r.error;
 
   const h = horario.data && horario.data.activo ? horario.data : null;
   return {
@@ -81,6 +89,11 @@ export async function turnosDelDia(
           corte_hasta: hhmm(h.corte_hasta),
         }
       : null,
+    franjas: (franjas.data ?? []).map((f) => ({
+      desde: hhmm(f.desde)!,
+      hasta: hhmm(f.hasta)!,
+      probadores: f.probadores,
+    })),
     probadores: config.data?.cantidad_probadores ?? null,
     sin_confirmar_manana: sinConfirmar.count ?? 0,
     turnos: (turnos.data ?? []).map((t) => {

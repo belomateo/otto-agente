@@ -13,6 +13,7 @@
 import 'server-only';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { DIAS_LARGOS } from '@/lib/formato';
 import { validarPromptBase } from './prompt';
 
 export const TEMAS_FRAGMENTO = [
@@ -61,6 +62,8 @@ export type Entidad = {
   coherencia?: (fila: Fila) => string | null;
   /** Chequeos contra el mundo real antes de escribir (principio 6). `actual` es null en un alta. */
   verificar?: (db: SupabaseClient, actual: Fila | null, final: Fila) => Promise<Rechazo | null>;
+  /** Se borra desde el panel. La base guarda la versión borrada en el historial (0030). */
+  borrable: boolean;
 };
 
 function definir(
@@ -73,6 +76,7 @@ function definir(
     completarAlta?: Entidad['completarAlta'];
     coherencia?: Entidad['coherencia'];
     verificar?: Entidad['verificar'];
+    borrable?: boolean;
   }
 ): Entidad {
   const opcionales = Object.fromEntries(Object.entries(campos).map(([k, s]) => [k, s.optional()]));
@@ -95,11 +99,16 @@ function definir(
     completarAlta: o.completarAlta,
     coherencia: o.coherencia,
     verificar: o.verificar,
+    borrable: o.borrable ?? false,
   };
 }
 
 // 'HH:MM' o 'HH:MM:SS' → 'HH:MM:SS', para comparar horas como texto.
 const hms = (v: unknown) => (typeof v === 'string' && v.length === 5 ? `${v}:00` : ((v ?? null) as string | null));
+
+// 'del sábado de 13:30 a 18:30', para los mensajes de franjas que se pisan.
+const describirFranja = (f: { dia_semana: number; desde: string; hasta: string }) =>
+  `del ${DIAS_LARGOS[f.dia_semana].toLowerCase()} de ${f.desde.slice(0, 5)} a ${f.hasta.slice(0, 5)}`;
 
 export const ENTIDADES = {
   // Catálogo › modelos: precios, colores, talles, fotos (0016).
@@ -159,17 +168,72 @@ export const ENTIDADES = {
   // Configuración › Agenda: duración de cada tipo de turno (0012).
   duraciones: definir('duraciones_turno', { duracion_min: entero(5, 600) }, { obligatorios: null }),
 
-  // Configuración › Agenda: probadores y escalonado (0012, una sola fila).
+  // Configuración › Agenda: franjas en las que se dan turnos (0030, decisión #7 del 14/9).
+  // Varias por día, cada una con cuántos probadores toman turnos (los probadores 1 a P,
+  // supuesto #22). Un día sin franjas no da turnos. El horario del local es `horarios`.
+  // Se borran (partir un día en dos, dejar de dar turnos una tarde) y el borrado queda en el
+  // historial (0030), así que se puede volver a crear.
+  franjas: definir(
+    'franjas_turnos',
+    { dia_semana: entero(0, 6), desde: hora, hasta: hora, probadores: entero(1, 20) },
+    {
+      obligatorios: ['dia_semana', 'desde', 'hasta', 'probadores'],
+      borrable: true,
+      coherencia: (f) => {
+        const [de, ha] = [hms(f.desde), hms(f.hasta)];
+        return de && ha && de < ha ? null : 'La franja tiene que terminar después de empezar';
+      },
+      // Lo mismo que frena la base (0030), dicho en castellano antes de escribir.
+      verificar: async (db, actual, final) => {
+        const [cfg, otras] = await Promise.all([
+          db.from('configuracion_agenda').select('cantidad_probadores').maybeSingle(),
+          db
+            .from('franjas_turnos')
+            .select('id, dia_semana, desde, hasta')
+            .eq('dia_semana', final.dia_semana as number)
+            .lt('desde', hms(final.hasta) as string)
+            .gt('hasta', hms(final.desde) as string),
+        ]);
+        if (cfg.error) throw cfg.error;
+        if (otras.error) throw otras.error;
+        const max = cfg.data?.cantidad_probadores as number | undefined;
+        if (max !== undefined && (final.probadores as number) > max) {
+          return { status: 400, mensaje: `La agenda tiene ${max} probador(es): una franja no puede pedir ${final.probadores}` };
+        }
+        const pisa = (otras.data ?? []).find((o) => o.id !== actual?.id);
+        return pisa ? { status: 409, mensaje: `Se pisa con la franja ${describirFranja(pisa)}` } : null;
+      },
+    }
+  ),
+
+  // Configuración › Agenda: probadores, escalonado y reserva de urgencia (0012 y 0030, una
+  // sola fila). dias_reserva_urgencia null = sin reserva (decisión #9, supuesto #21).
   agenda: definir(
     'configuracion_agenda',
-    { cantidad_probadores: entero(1, 20), escalonado_min: entero(1, 120) },
+    {
+      cantidad_probadores: entero(1, 20),
+      escalonado_min: entero(1, 120),
+      dias_reserva_urgencia: entero(1, 365).nullable(),
+    },
     {
       obligatorios: null,
-      // Bajar la cantidad de probadores con turnos por venir en los que desaparecen los
-      // dejaría huérfanos: se rechaza hasta que alguien los reubique.
+      // Bajar la cantidad de probadores deja afuera a los que desaparecen: se rechaza si una
+      // franja todavía los usa (la base también lo frena, 0030) o si tienen turnos por venir,
+      // hasta que alguien baje esas franjas o reubique esos turnos.
       verificar: async (db, actual, final) => {
         const n = final.cantidad_probadores as number;
         if (!actual || n >= (actual.cantidad_probadores as number)) return null;
+        const franjas = await db
+          .from('franjas_turnos')
+          .select('id', { count: 'exact', head: true })
+          .gt('probadores', n);
+        if (franjas.error) throw franjas.error;
+        if (franjas.count) {
+          return {
+            status: 409,
+            mensaje: `Hay ${franjas.count} franja(s) de turnos que usan más de ${n} probador(es): bajalas antes de bajar la cantidad`,
+          };
+        }
         const { count, error } = await db
           .from('turnos')
           .select('id', { count: 'exact', head: true })
