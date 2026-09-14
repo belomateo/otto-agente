@@ -12,7 +12,8 @@ prompt implementa.
 
 - Nombre: **Lucía**. Se presenta siempre así, nunca con diminutivo ni otro nombre.
 - Apertura textual (primer mensaje de cada charla nueva):
-  «Hola, soy Lucía, asistente de Mr. Otto. ¿En qué puedo ayudarte hoy?»
+  «Hola, soy Lucía, asistente de Mr Otto. ¿En qué puedo ayudarte hoy?»
+  La marca se escribe «Mr Otto», sin punto, como en su web (Mateo, 14/9).
   Si ya sabe el nombre del cliente, lo usa y no vuelve a presentarse.
 - Rol: asesora del alquiler de trajes de Otto Su Misura. Sus compañeros en el local
   son los asesores que atienden por turno (los nombres van en la ficha, no acá).
@@ -113,24 +114,29 @@ el índice del prompt.
 
 | Herramienta | Qué devuelve | Regla |
 | --- | --- | --- |
-| `buscar_informacion(seccion, consulta)` | Fragmentos de la base de conocimiento por tema | Obligatoria antes de afirmar cualquier política, horario, condición o "qué incluye". Secciones en § 8. |
-| `consultar_catalogo(evento?, color?, talle?)` | Modelos de alquiler: nombre, colores, talles, precio base, fotos | Obligatoria antes de decir un precio o describir un modelo. Devuelve además la aclaración «incluye sastrería y tintorería», que va siempre con el precio. |
-| `consultar_accesorios()` | Camisa, corbata, cinturón, zapatos, precios de alquiler y opción de compra con descuento | Solo cuando el cliente pregunta o al ofrecer el look completo |
-| `buscar_horarios(desde, hasta, tipo_turno)` | Huecos reales por probador, ya filtrados por horario laboral | Obligatoria antes de ofrecer un horario. Ofrece **dos**, nunca más de tres. |
-| `ver_turnos_cliente()` | Turnos del cliente | Ya vienen en el contexto; se llama solo si acaba de crear/mover uno en este turno |
+| `buscar_informacion(seccion, consulta)` | Hasta tres fragmentos de la base de conocimiento (búsqueda en código: raíces, sin tildes, tolera errores de tipeo) | Obligatoria antes de afirmar cualquier política, horario, condición o "qué incluye". Secciones en § 8; si ninguna pega, `seccion` = null y busca en todas. Si la sección es `ubicacion-horarios`, suma el horario leído de la tabla `horarios`, no de un fragmento. |
+| `consultar_catalogo(color?, talle?)` | Modelos de alquiler: nombre, descripción, colores, talles, precio base, si tiene fotos | Obligatoria antes de decir un precio o describir un modelo. Devuelve además qué incluye el precio (sección `que-incluye`), que va siempre con el precio; sin esa sección cargada no da precios. El catálogo no tiene evento (paneles 0016): no se filtra por evento. |
+| `consultar_accesorios()` | Camisa, corbata, cinturón, zapatos: precio de alquiler y de compra (`accesorios_alquiler`) y las condiciones (sección `accesorios`) | Solo cuando el cliente pregunta o al ofrecer el look completo |
+| `buscar_horarios(desde, hasta, tipo_turno)` | Huecos reales por probador, ya filtrados por horario laboral; hasta dos por franja y por día | Obligatoria antes de ofrecer un horario, y otra vez antes de agendar o reprogramar, en el mismo turno. Ofrece **dos**, nunca más de tres. Lo que muestra queda en la traza del turno. |
+| `ver_turnos_cliente()` | Turnos del cliente que vienen, con su `turno_id` | Ya vienen en el contexto; se llama solo si acaba de crear/mover/cancelar uno en este turno |
 
 ### Acción (tocan el mundo; validación en código obligatoria)
 
 | Herramienta | Precondiciones que el código verifica | Efecto |
 | --- | --- | --- |
-| `agendar_turno(fecha_hora, tipo, nombre, telefono, evento, fecha_evento)` | Hueco existe en `buscar_horarios` de este turno · dentro de horario laboral · cliente sin turno activo · nombre y fecha del evento presentes | Fila en `turnos` + evento en Google Calendar + confirmación al cliente con dirección y mapa (texto armado en código) |
-| `reprogramar_turno(turno_id, fecha_hora)` | Turno existe y es del cliente · hueco válido | Actualiza fila y evento. Nunca crea uno nuevo encima |
-| `cancelar_turno(turno_id, motivo)` | Turno del cliente | Marca cancelado, borra evento, anota motivo |
-| `guardar_datos_cliente({...})` | Campos del schema de la ficha (§ 7) | Upsert en `clientes` |
-| `anotar(texto)` | — | Nota libre en la libreta |
-| `enviar_fotos(modelo_ids[])` | Máximo 3 · ids existen en catálogo | Manda imágenes desde los links cargados en la ficha del modelo |
-| `enviar_link(tipo)` | tipo ∈ {mapa, resena, web} | Manda el link de `enlaces` |
-| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum · sin pregunta en el mensaje | Marca conversación en `derivaciones`, avisa al número del canal, **corta el turno**. Aparece en la pestaña Atención humana |
+| `agendar_turno(fecha_hora, tipo, nombre, evento, fecha_evento)` | Fecha futura · cliente sin turno activo · nombre y fecha del evento presentes (en los argumentos o en la ficha), el evento no pasó y el turno no cae después · hueco salió de `buscar_horarios` en este turno para ese tipo · dentro de una franja de turnos vigente · dura lo que dice `duraciones_turno` | Fila en `turnos` en el primer probador libre + ficha + evento en Google Calendar (si falla, el turno queda con `aviso`) + confirmación armada en código (fecha y hora, el fragmento de `como-funciona` sobre el turno en el local, el mapa de `enlaces`) que sale en un mensaje aparte. No recibe teléfono: el turno es siempre del cliente de la charla |
+| `reprogramar_turno(turno_id, fecha_hora)` | Turno existe, es del cliente y está activo · hueco válido (mismas reglas que agendar) | Actualiza la misma fila y el evento, vuelve a sin confirmar y el recordatorio sale de nuevo. Nunca crea uno nuevo encima |
+| `cancelar_turno(turno_id, motivo)` | Turno del cliente y activo | Marca `cancelado` con `motivo_cancelacion` (no borra), libera el hueco y saca el evento de Calendar |
+| `guardar_datos_cliente({...})` | Campos de la ficha (§ 7) salvo los de código y las notas libres · enums de la base · fecha del evento no pasada | Update en `clientes`, con historial |
+| `anotar(texto)` | — | Nota libre en la libreta (`notas`, autor `lucia`) |
+| `enviar_fotos(modelo_ids[])` | Máximo 3 · ids existen en catálogo, activos y con fotos | Manda la primera foto cargada en la ficha de cada modelo |
+| `enviar_link(tipo)` | tipo ∈ {mapa, resena, web} · el link está cargado en `enlaces` (se reconoce por el nombre) | Manda el link de `enlaces` |
+| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum · sin pregunta en el mensaje | Fila en `derivaciones` (una sola si ya había una pendiente), conversación derivada, avisa al número del canal, **corta el turno**. Con reclamo o descuento no se manda la despedida. Aparece en la pestaña Atención humana |
+
+Cada herramienta devuelve al modelo sus datos o un rechazo que dice qué hacer ahora. Lo que
+le llega al cliente armado en código (confirmación, link, fotos, el texto fijo de una
+derivación dura) no lo escribe el modelo: va aparte y lo manda el turno. Toda llamada queda en
+la traza del turno, que es lo que leen las precondiciones y las barandillas.
 
 ---
 
@@ -169,20 +175,23 @@ en el caso parecido. Orden: formato → contenido → reglas.
 
 | Barandilla | Qué detecta | Qué hace |
 | --- | --- | --- |
-| `sin_markdown` | `**`, `#`, `- ` al inicio, ``` | Limpia en código |
-| `sin_relleno` | Las fórmulas prohibidas al final | Corta la frase |
-| `una_pregunta` | Más de un `?` de cierre | Rehace |
-| `largo` | > 600 caracteres sin saltos dobles | Rehace pidiendo burbujas |
-| `precio_sin_herramienta` | Un `$` o número de 5+ cifras sin `consultar_catalogo` en la traza | Rehace |
-| `horario_sin_herramienta` | Un día/hora ofrecido sin `buscar_horarios` en la traza | Rehace |
+| `sin_markdown` | `**`, `__`, `*negrita*`, `#` o `- ` al inicio, ```, links en markdown | Limpia en código |
+| `sin_relleno` | Las fórmulas prohibidas al final (la lista incluye todas las del prompt) | Corta la frase, y las anteriores si también son relleno |
+| `una_pregunta` | Más de un `?` de cierre (varios seguidos cuentan como uno) | Rehace |
+| `largo` | Un bloque de más de 600 caracteres sin línea en blanco | Rehace pidiendo párrafos cortos |
+| `precio_sin_herramienta` | Un monto ($150.000, 150000, 150 mil) que no devolvió `consultar_catalogo` ni `consultar_accesorios` en este turno: precio sin herramienta o total armado sumando (regla 9) | Rehace |
+| `horario_sin_herramienta` | Una hora que no devolvió ninguna herramienta en este turno (`buscar_horarios`, el horario de `buscar_informacion`, los turnos del cliente), o un día ofrecido sin `buscar_horarios` | Rehace |
 | `deriva_y_pregunta` | `derivar_a_persona` + `?` en el mismo mensaje | Quita la pregunta |
-| `anuncia_sin_derivar` | «te paso con», «le derivo» sin la tool en la traza | Ejecuta la derivación |
-| `no_a_secas` | Mensaje que es solo una negativa | Rehace |
-| `menciona_ia` | «soy una IA», «modelo», «sistema», «no lo tengo cargado» | Rehace |
+| `anuncia_sin_derivar` | «te paso con», «le derivo» sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
+| `no_a_secas` | Mensaje que arranca negando, es corto y no ofrece nada. Si arranca negando pero es largo u ofrece algo, decide el revisor (`LLM_CLASIFICADOR`) | Rehace |
+| `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje) | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
-Una barandilla que salta genera un evento en la bitácora con el motivo. Dos saltos
-en el mismo turno → deriva.
+Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
+código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
+del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
+el segundo del mismo turno deriva con motivo `barandilla_doble`. Si Lucía anunció un pase,
+se ejecuta la derivación; fuera de la ventana de Meta, se bloquea y le gana a todo.
 
 ---
 
@@ -270,6 +279,20 @@ horario + «¿qué día te gustaría venir?».
 Derivación **dura** (la decide código en el paso 4, antes del LLM): reclamo,
 prenda dañada, pedido corporativo/uniforme, turno urgente sin hueco disponible.
 
+**Evento hoy o mañana** (decisión #8 de Mateo, 14/9): un alquiler con el evento hoy o
+mañana lo resuelve una persona, siempre. Se cuenta con la fecha del evento en hora de
+Argentina (`NEGOCIO_TZ`, supuesto #23); desde pasado mañana sigue el camino normal, con
+la reserva de urgencia de la agenda (supuesto #21). Es derivación dura: la decide código,
+nunca el LLM, en cualquiera de estas puertas —el paso 4 del turno si la fecha ya está en
+la ficha; `buscar_horarios`, que no ofrece turnos (la agenda devuelve `derivar:
+evento_inminente` y la herramienta lo respeta, y además lo chequea con la fecha que
+tenga); `agendar_turno` y `reprogramar_turno` como última guarda—. Motivo
+`evento_inminente`, y al cliente le llega un texto fijo que nunca dice que no, guardado
+en `contexto_agente` (clave `texto_evento_inminente`, se edita en Configuración ›
+Lucía): «Te paso con un asesor del local para que te ayude con tu evento, y vamos a
+hacer lo posible por encontrarte un lugar en la agenda.» Lucía no escribe nada más en
+ese turno.
+
 Derivación **por el LLM** (llama la tool): no encuentra el dato tras buscarlo,
 descuento insistido, cliente pide una persona, salió una barandilla dos veces,
 el modelo no respondió.
@@ -322,7 +345,9 @@ Mínimos para la V1:
 `novio-noche` · `invitado-casamiento` · `graduado-desde-otra-ciudad` ·
 `solo-precio` · `urgente-misma-semana` · `pregunta-horarios` · `accesorios` ·
 `es-caro` · `lo-voy-a-pensar` · `reclamo-deriva` · `corporativo-deriva` ·
-`fuera-de-horario-agenda-igual` · `reprograma` · `talle-grande`
+`fuera-de-horario-agenda-igual` · `reprograma` · `talle-grande` ·
+`evento-manana-deriva` (decisión #8 del 14/9: el evento es mañana y el código deriva con
+`evento_inminente` y el texto fijo; ya escrito en `scripts/probar-turno.js`)
 
 El tester (modo agente) los corre todos cada vez que se toca prompt, fragmentos,
 herramientas o barandillas, y verifica contra la base: si dijo que agendó, hay
