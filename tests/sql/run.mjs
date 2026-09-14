@@ -197,8 +197,9 @@ const TEMAS = [
   "objecion-competencia", "que-no-hacemos", "descuentos", "novio", "graduado", "invitado",
 ];
 const MOTIVOS = [
-  "reclamo", "prenda_danada", "corporativo", "turno_urgente_sin_hueco", "descuento",
-  "dato_no_encontrado", "pide_persona", "barandilla_doble", "sin_respuesta", "timeout",
+  "reclamo", "prenda_danada", "corporativo", "turno_urgente_sin_hueco", "evento_inminente",
+  "descuento", "dato_no_encontrado", "pide_persona", "barandilla_doble", "sin_respuesta",
+  "timeout",
 ];
 const EVENTOS = ["casamiento", "graduacion", "fiesta", "laboral", "otro"];
 const ROLES = ["novio", "invitado", "graduado", "padre", "otro"];
