@@ -1,7 +1,9 @@
 // Envía por la Cloud API de WhatsApp y devuelve el wamid del mensaje saliente (se guarda en
-// `mensajes` para cruzarlo con sus avisos de estado). Dos formas:
+// `mensajes` para cruzarlo con sus avisos de estado). Tres formas:
 //  · enviarTexto: texto libre. Meta lo acepta solo dentro de la ventana de 24 hs desde el último
 //    mensaje del cliente; ese chequeo lo hace quien llama (ventana.ts), no esta función.
+//  · enviarImagen: una foto por su link público (las del catálogo, bucket `catalogo`). Misma
+//    regla de la ventana que el texto libre.
 //  · enviarPlantilla: una plantilla aprobada por Meta (hito 1.14). Sale siempre, con o sin
 //    ventana. Los botones de respuesta rápida llevan un payload propio por mensaje: así la
 //    respuesta dice a qué turno o charla se refiere (botones.ts).
@@ -37,6 +39,15 @@ export function enviarTexto(
   fetcher: typeof fetch = fetch,
 ): Promise<string> {
   return mandar(cfg, { to: para, type: "text", text: { body: cuerpo } }, fetcher);
+}
+
+export function enviarImagen(
+  cfg: ConfigWhatsapp,
+  para: string,
+  link: string,
+  fetcher: typeof fetch = fetch,
+): Promise<string> {
+  return mandar(cfg, { to: para, type: "image", image: { link } }, fetcher);
 }
 
 export function enviarPlantilla(

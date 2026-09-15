@@ -19,7 +19,7 @@ Deno.test("mensaje de texto: telefono, nombre del contacto, contenido y hora", (
   assertEquals(m.waMessageId, "wamid.A1");
   assertEquals(m.telefono, "5493410000000");
   assertEquals(m.nombre, "Franco");
-  assertEquals(m.tipo, "text");
+  assertEquals(m.tipo, "texto"); // en la base el tipo va en castellano: lo lee así agruparRafaga
   assertEquals(m.contenido, "hola, precio del alquiler?");
   assertEquals(m.enviadoAt, new Date(1757700000 * 1000).toISOString());
 });

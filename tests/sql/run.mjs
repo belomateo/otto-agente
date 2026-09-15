@@ -281,6 +281,100 @@ async function testEsquemaDelAgente() {
   }
 }
 
+// Hito 2.1: un solo turno por charla (0027). Como testColaSkipLocked, con sesiones reales: un
+// worker no se lleva el trabajo de una charla que otro está atendiendo pero sí el de otra charla,
+// y dos que eligen la misma charla a la vez no la toman los dos. cola_absorber (en una
+// transacción con ROLLBACK) deja hechos solo los trabajos de los mensajes de texto de la ráfaga.
+async function testColaPorCharla() {
+  console.log("\n[2.1] Cola: un solo turno por charla, y la ráfaga absorbe sus trabajos");
+  const TELS = ["5490000000211", "5490000000212", "5490000000213"];
+  const admin = new Client({ connectionString: CONN });
+  await admin.connect();
+  await admin.query("set otto.sin_disparo = 'on'");
+  // borrar el cliente arrastra en cascada conversaciones, mensajes y cola_trabajos
+  const limpiar = () => admin.query("delete from clientes where telefono = any($1)", [TELS]);
+  const registrar = (wamid, tel, texto) =>
+    admin.query("select registrar_mensaje_entrante($1, $2, null, 'texto', $3, now(), '{}'::jsonb)", [wamid, tel, texto]);
+  const charla = async (tel) =>
+    (await admin.query("select c.id from conversaciones c join clientes cl on cl.id = c.cliente_id where cl.telefono = $1", [tel])).rows[0].id;
+  const workers = [];
+  try {
+    await limpiar();
+    const reales = (await admin.query("select count(*)::int as n from cola_trabajos where estado = 'pendiente'")).rows[0].n;
+    if (reales > 0) throw new Error(`hay ${reales} trabajo(s) reales pendientes en la cola: esperá a que el worker los tome`);
+    await registrar("wamid.T21-X1", TELS[0], "hola");
+    await registrar("wamid.T21-X2", TELS[0], "quiero alquilar un traje");
+    await registrar("wamid.T21-Y1", TELS[1], "hola");
+    const [x, y] = [await charla(TELS[0]), await charla(TELS[1])];
+
+    for (let i = 0; i < 3; i++) {
+      const w = new Client({ connectionString: CONN });
+      await w.connect();
+      workers.push(w);
+    }
+    const tomar = async (w, nombre) => (await w.query("select id, conversacion_id from cola_tomar_uno($1)", [nombre])).rows[0] ?? null;
+    const a = await tomar(workers[0], "worker-a");
+    assert(a?.conversacion_id === x, "el primer worker se lleva el trabajo más viejo (charla X)");
+    const b = await tomar(workers[1], "worker-b");
+    assert(b?.conversacion_id === y, "el segundo no toma el otro trabajo de X mientras X tiene un turno en curso: se lleva el de Y");
+    assert((await tomar(workers[2], "worker-c")) === null, "un tercero no encuentra nada: lo que queda es de una charla con un turno en curso");
+    await admin.query("select cola_terminar($1, true)", [a.id]);
+    const c = await tomar(workers[2], "worker-c");
+    assert(c?.conversacion_id === x, "cuando el turno de X termina, su trabajo siguiente ya se puede tomar");
+
+    await registrar("wamid.T21-Z1", TELS[2], "hola");
+    await registrar("wamid.T21-Z2", TELS[2], "precio?");
+    const z = await charla(TELS[2]);
+    const [r1, r2] = await Promise.all([tomar(workers[0], "worker-a"), tomar(workers[1], "worker-b")]);
+    const deZ = [r1, r2].filter((r) => r?.conversacion_id === z).length;
+    assert(deZ === 1, `dos workers a la vez sobre una charla con dos trabajos: la toma uno solo (${deZ})`);
+  } finally {
+    for (const w of workers) await w.end();
+    await limpiar();
+    await admin.end();
+  }
+
+  const client = new Client({ connectionString: CONN });
+  await client.connect();
+  try {
+    await client.query("begin");
+    await client.query("set local otto.sin_disparo = 'on'");
+    const TEL = "5490000000214";
+    const registrar = (wamid, tipo, texto, segundos, crudo = {}) =>
+      client.query("select registrar_mensaje_entrante($1, $2, null, $3, $4, now() + make_interval(secs => $5), $6::jsonb)", [
+        wamid,
+        TEL,
+        tipo,
+        texto,
+        segundos,
+        JSON.stringify(crudo),
+      ]);
+    await registrar("wamid.T21-A1", "texto", "hola", -10);
+    await registrar("wamid.T21-A2", "texto", "es para un casamiento", -5);
+    await registrar("wamid.T21-A3", "button", "Confirmo", -5, { type: "button", button: { text: "Confirmo", payload: "CONFIRMO:x" } });
+    await registrar("wamid.T21-A4", "texto", "y cuanto sale?", 60);
+    const trabajos = async () =>
+      (await client.query(
+        `select t.id, m.contenido, t.estado from cola_trabajos t join mensajes m on m.id = (t.payload->>'mensaje_id')::uuid
+          where m.conversacion_id = (select c.id from conversaciones c join clientes cl on cl.id = c.cliente_id where cl.telefono = $1)
+          order by m.enviado_at, m.contenido`,
+        [TEL]
+      )).rows;
+    const primero = (await trabajos()).find((t) => t.contenido === "hola");
+    const n = (await client.query("select cola_absorber($1, now()) as n", [primero.id])).rows[0].n;
+    const estados = Object.fromEntries((await trabajos()).map((t) => [t.contenido, t.estado]));
+    assert(
+      n === 1 && estados["es para un casamiento"] === "hecho" && estados["Confirmo"] === "pendiente" && estados["y cuanto sale?"] === "pendiente",
+      `cola_absorber: se lleva el otro texto de la ráfaga; no el botón ni el mensaje que llegó después (${JSON.stringify(estados)})`
+    );
+    const [texto] = (await client.query("select count(*)::int as n from mensajes where tipo = 'text'")).rows;
+    assert(texto.n === 0, "no queda ningún mensaje con el tipo de Meta ('text'): la base dice 'texto'");
+  } finally {
+    await client.query("rollback");
+    await client.end();
+  }
+}
+
 // Hito 1.11: lo que el webhook hace en la base (registrar_mensaje_entrante) y el ciclo de un
 // trabajo en la cola (reintentos, tope de 3, rescate de trabados). Transacción con ROLLBACK.
 async function testRegistroYCola() {
@@ -290,7 +384,7 @@ async function testRegistroYCola() {
   const TEL = "5490000000011";
   const registrar = async (wamid) =>
     (await client.query(
-      "select registrar_mensaje_entrante($1, $2, 'Prueba 1.11', 'text', 'hola', now(), '{}'::jsonb) as nuevo",
+      "select registrar_mensaje_entrante($1, $2, 'Prueba 1.11', 'texto', 'hola', now(), '{}'::jsonb) as nuevo",
       [wamid, TEL]
     )).rows[0].nuevo;
   const contar = async (tabla) =>
@@ -357,7 +451,7 @@ async function testRegistroYCola() {
     let codigo = null;
     try {
       await client.query("set local role anon");
-      await client.query("select registrar_mensaje_entrante('wamid.T111-X', '5490000000012', null, 'text', 'x', now(), '{}'::jsonb)");
+      await client.query("select registrar_mensaje_entrante('wamid.T111-X', '5490000000012', null, 'texto', 'x', now(), '{}'::jsonb)");
     } catch (err) {
       codigo = err.code;
     }
@@ -393,7 +487,7 @@ async function testEnviosProgramados() {
     ))[0].id;
   const charla = async (clienteId, ultimoMensaje, estado = "activa") => {
     const id = (await q("insert into conversaciones (cliente_id, estado) values ($1, $2) returning id", [clienteId, estado]))[0].id;
-    await q("insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at) values ($1, 'entrante', 'text', 'hola', $2)", [id, ultimoMensaje]);
+    await q("insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at) values ($1, 'entrante', 'texto', 'hola', $2)", [id, ultimoMensaje]);
     return id;
   };
 
@@ -488,7 +582,7 @@ async function testEnviosProgramados() {
     await q("insert into conversaciones (cliente_id, estado) values ($1, 'derivada')", [m]);
     const colaDe = async () =>
       (await q(`select count(*)::int as n from cola_trabajos t join conversaciones c on c.id = t.conversacion_id where c.cliente_id = $1`, [m]))[0].n;
-    await q("select registrar_mensaje_entrante('wamid.T114-TXT', '5490000001414', null, 'text', 'confirmo', now(), $1::jsonb)", [
+    await q("select registrar_mensaje_entrante('wamid.T114-TXT', '5490000001414', null, 'texto', 'confirmo', now(), $1::jsonb)", [
       JSON.stringify({ type: "text", text: { body: "confirmo" } }),
     ]);
     const conTexto = await colaDe();
@@ -514,10 +608,11 @@ async function testEnviosProgramados() {
 }
 
 (async () => {
-  console.log("Controles de la base (Fase 0 + hitos 1.15, 1.11 y 1.14) — otto-agente\n" + "=".repeat(40));
+  console.log("Controles de la base (Fase 0 + hitos 1.15, 1.11, 1.14 y 2.1) — otto-agente\n" + "=".repeat(40));
   try {
     await testIdempotenciaWebhook();
     await testColaSkipLocked();
+    await testColaPorCharla();
     await testRlsCeroFilas();
     await testEsquemaDelAgente();
     await testRegistroYCola();
