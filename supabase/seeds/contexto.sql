@@ -11,9 +11,16 @@
 -- texto_evento_inminente (decisión #8 de Mateo, 14/9) no va al prompt: es el texto fijo que
 -- manda el código cuando el evento es hoy o mañana y la charla pasa a una persona. Nunca dice
 -- que no. En la base real se insertó aparte el 14/9.
+--
+-- texto_derivacion_dura_generica (hallazgo C1 del tester, H1.7, 15/9) tampoco va al prompt:
+-- es el texto fijo que manda el código para toda derivación dura sin texto propio (timeout,
+-- sin_respuesta, barandilla_doble cuando corresponde avisar, y como red de contención cuando
+-- una barandilla descarta el texto que había armado el modelo en derivar_a_persona). En la
+-- base real se insertó aparte el 15/9.
 insert into contexto_agente (clave, valor) values
   ('presentacion', 'Hola, soy Lucía, asistente de Mr Otto. ¿En qué puedo ayudarte hoy?'),
   ('texto_evento_inminente', 'Te paso con un asesor del local para que te ayude con tu evento, y vamos a hacer lo posible por encontrarte un lugar en la agenda.'),
+  ('texto_derivacion_dura_generica', 'Te paso con alguien del equipo para que te ayude con esto. En un rato te escriben.'),
   ('tono', 'Tu tono es cercano, sin tantos emojis, y usás siempre las palabras de la casa: alquiler a medida, prendas de calidad, diseños nuevos y solución completa.'),
   ('ancla_de_valor', 'Mr Otto no alquila cualquier traje: se ajusta a medida, y si hace falta se confecciona, así queda perfecto el día del evento. El precio-calidad-servicio es el mejor del mercado, y eso lo diferencia de otros locales de alquiler. "Acá nos preocupamos de que tu apariencia sea lo primero: el día de esa fecha especial es lo que más nos importa."')
 on conflict (clave) do nothing;

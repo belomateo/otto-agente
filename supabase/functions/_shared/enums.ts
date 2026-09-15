@@ -43,6 +43,28 @@ export type MotivoDerivacion = typeof MOTIVOS_DERIVACION[number];
 // Con estos motivos no se le manda la despedida al cliente: sigue una persona (PROCESOS.md § 4).
 export const MOTIVOS_SIN_MENSAJE: readonly MotivoDerivacion[] = ["reclamo", "descuento"];
 
+// Motivos que SOLO decide el código, nunca el modelo llamando a derivar_a_persona (AGENTE.md
+// § 2 y § 10: "es derivación dura, la decide código, nunca el LLM"). Hallazgo C2 del tester
+// (15/9): nada en el schema de la herramienta se lo impedía — el modelo podía llamar
+// derivar_a_persona con motivo evento_inminente por su cuenta, tomando un atajo que se saltea
+// buscar_horarios/agendar_turno (donde el código SÍ guarda la fecha del evento) y el texto fijo
+// aprobado. evento_inminente lo decide _shared/turno/derivacion_dura.ts o las herramientas de
+// agenda (herramientas/derivacion.ts); barandilla_doble y sin_respuesta/timeout los decide
+// turno.ts después de que el LLM ya dejó de responder o de que una barandilla volvió a saltar:
+// en ninguno de los tres casos hay "un modelo" al que pedirle que elija ese motivo.
+export const MOTIVOS_SOLO_CODIGO: readonly MotivoDerivacion[] = [
+  "evento_inminente",
+  "barandilla_doble",
+  "sin_respuesta",
+  "timeout",
+];
+
+// El enum real de la herramienta derivar_a_persona: todos los motivos MENOS los que decide
+// exclusivamente el código.
+export const MOTIVOS_DERIVACION_LLM: readonly MotivoDerivacion[] = MOTIVOS_DERIVACION.filter(
+  (m) => !(MOTIVOS_SOLO_CODIGO as readonly string[]).includes(m),
+);
+
 // turnos_tipo_check (0004) · duraciones_turno (paneles, 0012).
 export const TIPOS_TURNO = ["graduado", "novio", "invitado", "doble", "triple", "prueba_final"] as const;
 export type TipoTurno = typeof TIPOS_TURNO[number];

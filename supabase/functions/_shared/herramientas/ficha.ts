@@ -19,6 +19,20 @@ export const CAMPOS_FICHA = [
 export type CampoFicha = typeof CAMPOS_FICHA[number];
 export type Ficha = Record<CampoFicha, string | null>;
 
+// Hallazgo B1 del tester (15/9): el cliente escribe "soy denise" en minúscula, y como cada
+// lugar del código usa el nombre de la ficha tal cual, un mensaje de Lucía decía «¡Listo,
+// Denise!» (ella lo redactó bien) y la confirmación armada en código, dos líneas después,
+// decía «¡Listo, denise!» (tomó el dato crudo). Se capitaliza acá, al guardar, una sola vez,
+// para que todo lo que lea la ficha después (confirmación, panel, Lucía en el próximo turno)
+// ya lo reciba consistente — parchear cada lugar que lo usa hubiera sido repetir el arreglo.
+function capitalizarNombre(nombre: string): string {
+  return nombre
+    .split(" ")
+    .filter(Boolean)
+    .map((palabra) => palabra.charAt(0).toLocaleUpperCase("es") + palabra.slice(1).toLocaleLowerCase("es"))
+    .join(" ");
+}
+
 export async function leerFicha(db: Db, clienteId: string): Promise<Ficha> {
   const filas = await db.consulta(
     `select nombre, evento, fecha_evento::text as fecha_evento, rol, dia_o_noche, talle_aprox,
@@ -42,7 +56,7 @@ export async function actualizarFicha(
   const cambios = CAMPOS_FICHA
     .map((c) => [c, campos[c]] as const)
     .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
-    .map(([c, v]) => [c, String(v).trim()] as const);
+    .map(([c, v]) => [c, c === "nombre" ? capitalizarNombre(String(v).trim()) : String(v).trim()] as const);
   if (cambios.length === 0) return [];
   const sets = cambios.map(([c], i) => `${c} = $${i + 2}`).join(", ");
   const distintos = cambios.map(([c], i) => `${c} is distinct from $${i + 2}`).join(" or ");

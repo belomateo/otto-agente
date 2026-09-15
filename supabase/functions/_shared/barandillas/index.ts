@@ -13,6 +13,7 @@
 // barandillas, se rehace una sola vez con los dos motivos (supuesto de H1.5). Cada barandilla
 // que salta queda en `saltos` con su motivo, para la bitácora.
 
+import { accesorioSinHerramienta } from "./accesorio_sin_herramienta.ts";
 import { anunciaSinDerivar } from "./anuncia_sin_derivar.ts";
 import { derivaYPregunta } from "./deriva_y_pregunta.ts";
 import { fueraVentanaMeta } from "./fuera_ventana_meta.ts";
@@ -33,6 +34,7 @@ export const BARANDILLAS: readonly Barandilla[] = [
   largo,
   precioSinHerramienta,
   horarioSinHerramienta,
+  accesorioSinHerramienta,
   derivaYPregunta,
   anunciaSinDerivar,
   noASecas,
