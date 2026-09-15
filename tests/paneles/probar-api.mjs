@@ -239,11 +239,13 @@ async function restaurarReales() {
     }
   }
 }
-// Turnos del aviso (H1.16): se borran con los del cliente de prueba; su historial, antes.
-const turnosAviso = [];
+// Turnos creados fuera de sembrar() (H1.16, estados de Turnos): se borran con los del cliente
+// de prueba (más abajo, por cliente_id); su historial, antes, porque la fila desaparece.
+const turnosExtra = [];
 async function limpiar() {
-  if (turnosAviso.length) {
-    await q("delete from historial_ediciones where tabla = 'turnos' and fila_id = any($1::uuid[])", [turnosAviso]);
+  await borrarDobleMostrador();
+  if (turnosExtra.length) {
+    await q("delete from historial_ediciones where tabla = 'turnos' and fila_id = any($1::uuid[])", [turnosExtra]);
   }
   // Primero la fila y después su historial: borrar una franja (0030) escribe historial.
   for (const { tabla, id } of creados.filas) {
@@ -287,13 +289,17 @@ async function verificarLimpieza() {
   ok(restos.length === 0, `no quedó nada de la prueba en la base (${restos.map(([k, n]) => `${k}: ${n}`).join(", ") || "todo en 0"})`);
   const reales = (await q("select count(*)::int n, count(*) filter (where version = 1)::int v1 from franjas_turnos"))[0];
   ok(reales.n === 7 && reales.v1 === 7, `las 7 franjas reales siguen en su v1 (${reales.n}, ${reales.v1} en v1)`);
-  if (turnosAviso.length) {
+  if (turnosExtra.length) {
     const t = (await q(
       `select (select count(*) from turnos where id = any($1::uuid[]))::int turnos,
               (select count(*) from historial_ediciones where fila_id = any($1::uuid[]))::int historial`,
-      [turnosAviso]
+      [turnosExtra]
     ))[0];
-    ok(t.turnos === 0 && t.historial === 0, `no quedaron los turnos del aviso ni su historial (${t.turnos}, ${t.historial})`);
+    ok(t.turnos === 0 && t.historial === 0, `no quedaron los turnos extra (aviso y estados) ni su historial (${t.turnos}, ${t.historial})`);
+  }
+  if (clientesSueltos.length) {
+    const n = (await q("select count(*)::int n from clientes where id = any($1::uuid[])", [clientesSueltos]))[0].n;
+    ok(n === 0, `no quedaron los clientes sueltos de Atención humana (${n})`);
   }
   for (const [tabla, { fila }] of Object.entries(fotos)) {
     const ahora = (await q(`select version, editado_por, editado_at from ${tabla} where id = $1`, [fila.id]))[0];
@@ -311,6 +317,91 @@ const historial = (tabla, id) =>
 const png1 = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 const png2 = Buffer.concat([png1, Buffer.from("segunda-version")]);
 
+// Un turno más para el cliente de prueba, en una fecha lejos de todo lo demás (sin riesgo de
+// pisarse con turnoId ni con las franjas reales): sirve para probar estados sin tocar el
+// turno principal. Se borra con los demás turnos de `cli`; su historial, antes (ver limpiar()).
+const nuevoTurno = async (isoInicio) => {
+  const id = (await q(
+    `insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin)
+     values ($1, 'invitado', 45, 1, $2::timestamptz, $2::timestamptz + interval '45 minutes')
+     returning id`,
+    [cli, isoInicio]
+  ))[0].id;
+  turnosExtra.push(id);
+  return id;
+};
+
+// Un cliente + charla sueltos, sin tocar `cli`/`conv` (que el aviso de turno, H1.16, ya usa
+// para verificar el link a "la charla más reciente"): para lo que solo necesita una charla
+// descartable. Se borra por cascada al borrar el cliente (creados.filas), y se verifica aparte
+// en verificarLimpieza() porque no hay ningún otro chequeo genérico de "clientes PRUEBA%".
+let contadorSuelto = 0;
+const clientesSueltos = [];
+const nuevaCharlaSuelta = async (estadoConv, motivos = []) => {
+  const idCli = (await q(
+    "insert into clientes (telefono, nombre) values ($1, $2) returning id",
+    [`+549000099${String(++contadorSuelto).padStart(2, "0")}`, `${MARCA} suelta`]
+  ))[0].id;
+  const idConv = (await q("insert into conversaciones (cliente_id, estado) values ($1, $2) returning id", [idCli, estadoConv]))[0].id;
+  for (const motivo of motivos) await q("insert into derivaciones (conversacion_id, motivo) values ($1, $2)", [idConv, motivo]);
+  creados.filas.push({ tabla: "clientes", id: idCli });
+  clientesSueltos.push(idCli);
+  return idConv;
+};
+
+// Reintenta mientras la ruta diga que falta mostrador_enviar: recién creada por SQL directo,
+// PostgREST puede tardar un instante en recargar su caché de funciones antes de verla.
+async function conReintentos(fn, intentos = 10, esperaMs = 300) {
+  let ultimo;
+  for (let i = 0; i < intentos; i++) {
+    ultimo = await fn();
+    if (!(ultimo.status === 503 && /mostrador_enviar/.test(ultimo.datos?.error ?? ""))) return ultimo;
+    await new Promise((r) => setTimeout(r, esperaMs));
+  }
+  return ultimo;
+}
+
+// Doble de mostrador_enviar(conversacion, texto) — lo crea logica en la base de verdad; acá
+// alcanza con imitar el contrato para probar el cableado del handler: inserta el mensaje
+// saliente marcado [mostrador] y actualiza ultimo_mensaje_at. Se borra al terminar (limpiar()):
+// no es una migración, es solo para esta corrida.
+async function crearDobleMostrador() {
+  // mensajes es tabla "de sistema" (0007): solo lectura para aprobados, la escribe el
+  // service_role. Para que un 'equipo' pueda escribir ahí desde el panel hace falta
+  // security definer (mismo caso legítimo que historial_antes_de_editar, 0017) — es de
+  // esperar que la función real de logica también lo necesite. El doble chequea
+  // es_usuario_aprobado() a mano, ya que definer se salta la RLS de mensajes.
+  await db.query(`
+    create or replace function mostrador_enviar(p_conversacion uuid, p_texto text)
+    returns jsonb
+    language plpgsql
+    security definer
+    set search_path = public
+    as $f$
+    declare
+      v_id uuid;
+    begin
+      if not es_usuario_aprobado() then
+        raise exception 'No tenés permiso para esto' using errcode = '42501';
+      end if;
+      if not exists (select 1 from conversaciones where id = p_conversacion) then
+        raise exception 'La charla no existe' using errcode = 'P0002';
+      end if;
+      insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at)
+      values (p_conversacion, 'saliente', 'texto', '[mostrador] ' || p_texto, now())
+      returning id into v_id;
+      update conversaciones set ultimo_mensaje_at = now() where id = p_conversacion;
+      return jsonb_build_object('mensaje_id', v_id);
+    end;
+    $f$;
+    revoke execute on function mostrador_enviar(uuid, text) from public, anon;
+    grant execute on function mostrador_enviar(uuid, text) to authenticated;
+  `);
+}
+async function borrarDobleMostrador() {
+  await db.query("drop function if exists mostrador_enviar(uuid, text)");
+}
+
 let panel;
 try {
   await db.connect();
@@ -323,7 +414,8 @@ try {
   // La solicitud del admin de prueba queda pendiente a propósito: prueba que nadie resuelve la suya.
   await q("update perfiles set rol = 'admin', estado = 'aprobado' where id = $1", [A.id]);
   await sembrar();
-  ok(true, "3 usuarios temporales, datos de prueba sembrados y filas reales fotografiadas");
+  await crearDobleMostrador();
+  ok(true, "3 usuarios temporales, datos de prueba sembrados, filas reales fotografiadas y el doble de mostrador_enviar creado");
 
   // Sin generador a propósito: con las ramas juntas, scripts/armar-prompt.mjs existe y el panel
   // lo encontraría solo. Apuntarlo a un archivo que no existe prueba el 503 igual en la rama de
@@ -453,14 +545,82 @@ try {
       `Charla (${x.status}): ${x.datos.cliente?.resumen}`
     );
   }
+  let derivId;
   {
     const x = await api(sa, "GET", "/api/atencion");
     const d = x.datos.derivaciones?.find((v) => v.n === MARCA);
+    derivId = d?.id;
     ok(
       x.status === 200 && tiene(d, ["n", "hace", "motivo", "cb", "cf", "borde", "resumen"]) && d.motivo === "Turno urgente" && d.resumen === "para un casamiento" && x.datos.pendientes >= 1,
       `Atención humana (${x.status}): ${d && [d.n, d.hace, d.motivo, d.resumen].join(" | ")}`
     );
   }
+
+  seccion("Atención humana — tomar, devolver a Lucía y cerrar (PROCESOS.md § 4, pasos 6 y 7)");
+  {
+    const m0 = await api(sn, "POST", `/api/bandeja/${conv}/mensajes`, { texto: "todavía no la tomé" });
+    ok(m0.status === 409, `responder por mostrador antes de tomar la charla → 409 (${m0.status}: ${m0.datos.error})`);
+
+    const t1 = await api(sn, "POST", `/api/bandeja/${conv}/tomar`);
+    const dTras = (await q("select estado, atendida_por, atendida_at from derivaciones where id = $1", [derivId]))[0];
+    ok(
+      t1.status === 200 && t1.datos.ya_estaba === false && t1.datos.conversacion.estado === "derivada" && dTras.estado === "atendida" && dTras.atendida_por === N.email && Boolean(dTras.atendida_at),
+      `tomar: 'activa' → 'derivada' y la derivación pendiente queda atendida por quien la tomó (${t1.status}, ${dTras.estado}, ${dTras.atendida_por})`
+    );
+    const t2 = await api(sa, "POST", `/api/bandeja/${conv}/tomar`);
+    ok(t2.status === 200 && t2.datos.ya_estaba === true, `tomarla de nuevo no cambia nada (ya_estaba, ${t2.status})`);
+
+    const m1 = await conReintentos(() => api(sn, "POST", `/api/bandeja/${conv}/mensajes`, { texto: "Ya te confirmo el traje" }));
+    const msj = (await q("select direccion, tipo, contenido from mensajes where conversacion_id = $1 order by enviado_at desc limit 1", [conv]))[0];
+    ok(
+      m1.status === 201 && msj?.direccion === "saliente" && msj?.contenido === "[mostrador] Ya te confirmo el traje",
+      `responder por mostrador con la charla tomada → 201 y el mensaje queda marcado [mostrador] (${m1.status}, "${msj?.contenido}")`
+    );
+    const m2 = await api(sn, "POST", `/api/bandeja/${conv}/mensajes`, { texto: "   " });
+    ok(m2.status === 400, `mostrador con texto vacío → 400 (${m2.status})`);
+    const m3 = await api(sn, "POST", "/api/bandeja/11111111-1111-1111-1111-111111111111/mensajes", { texto: "hola" });
+    ok(m3.status === 404, `mostrador a una charla que no existe → 404 (${m3.status})`);
+
+    const dv1 = await api(sa, "POST", `/api/bandeja/${conv}/devolver`);
+    ok(dv1.status === 200 && dv1.datos.ya_estaba === false && dv1.datos.conversacion.estado === "activa", `devolver a Lucía: 'derivada' → 'activa' (${dv1.status})`);
+    const dv2 = await api(sn, "POST", `/api/bandeja/${conv}/devolver`);
+    ok(dv2.status === 200 && dv2.datos.ya_estaba === true, `devolverla de nuevo no cambia nada (ya_estaba, ${dv2.status})`);
+    const m4 = await api(sa, "POST", `/api/bandeja/${conv}/mensajes`, { texto: "Lucía está atendiendo" });
+    ok(m4.status === 409, `con Lucía atendiendo de nuevo, mostrador vuelve a dar 409 (${m4.status})`);
+
+    const c1 = await api(sn, "POST", `/api/bandeja/${conv}/cerrar`);
+    ok(c1.status === 200 && c1.datos.ya_estaba === false && c1.datos.conversacion.estado === "cerrada", `cerrar: → 'cerrada' (${c1.status})`);
+    const c2 = await api(sa, "POST", `/api/bandeja/${conv}/cerrar`);
+    ok(c2.status === 200 && c2.datos.ya_estaba === true, `cerrarla de nuevo no cambia nada (ya_estaba, ${c2.status})`);
+    const t3 = await api(sa, "POST", `/api/bandeja/${conv}/tomar`);
+    const dv3 = await api(sa, "POST", `/api/bandeja/${conv}/devolver`);
+    ok(t3.status === 409 && dv3.status === 409, `una charla cerrada no se puede tomar ni devolver (${t3.status}, ${dv3.status})`);
+    const m5 = await api(sn, "POST", `/api/bandeja/${conv}/mensajes`, { texto: "hola" });
+    ok(m5.status === 409, `mostrador a una charla cerrada → 409 (${m5.status})`);
+
+    const nx = await api(sa, "POST", "/api/bandeja/11111111-1111-1111-1111-111111111111/tomar");
+    const mal = await api(sa, "POST", "/api/bandeja/abc/tomar");
+    ok(nx.status === 404 && mal.status === 400, `charla que no existe → 404; id mal formado → 400 (${nx.status}, ${mal.status})`);
+    const rechazo = await api(st, "POST", `/api/bandeja/${conv}/tomar`);
+    ok(rechazo.status === 403, `una cuenta rechazada no puede tomar charlas (${rechazo.status})`);
+
+    // Por la API de Supabase, sin pasar por mi ruta: la firma la sigue poniendo la base. Una
+    // charla suelta (no `cli`/`conv`, que el aviso de turno usa para el link a "la charla más
+    // reciente" del cliente).
+    const otraConv = await nuevaCharlaSuelta("activa", ["pide_persona"]);
+    const otraDer = (await q("select id from derivaciones where conversacion_id = $1", [otraConv]))[0].id;
+    const directo = await sn.directo
+      .from("derivaciones")
+      .update({ estado: "atendida", atendida_por: "mentira", atendida_at: "2020-01-01" })
+      .eq("id", otraDer)
+      .select("atendida_por, atendida_at")
+      .single();
+    ok(
+      directo.data?.atendida_por === N.email && !String(directo.data?.atendida_at ?? "").startsWith("2020"),
+      `por la API de Supabase, sin pasar por mi ruta, atendida_por también lo pone la base (${directo.data?.atendida_por})`
+    );
+  }
+
   {
     const x = await api(sa, "GET", "/api/turnos?fecha=2031-01-15");
     const t = x.datos.turnos?.find((v) => v.n === MARCA);
@@ -485,6 +645,50 @@ try {
     );
     const y = await api(sa, "GET", `/api/clientes/${cli}`);
     ok(y.status === 200 && y.datos.datos?.nombre === MARCA && y.datos.turnos.length === 1 && typeof y.datos.cliente.version === "number", `Ficha del cliente (${y.status})`);
+  }
+
+  seccion("Turnos › estados desde la pestaña Turnos (PROCESOS.md § 2, 'En el local' y 'Retiro y devolución')");
+  {
+    const v0 = (await q("select version from turnos where id = $1", [turnoId]))[0].version;
+    const salteo = await api(sn, "PATCH", `/api/turnos/${turnoId}`, { version: v0, estado: "retiro" });
+    ok(salteo.status === 409 && salteo.datos.error.includes("sin-confirmar"), `no se puede pasar de 'sin-confirmar' a 'retiro' salteando 'alquiló' (${salteo.status}: ${salteo.datos.error})`);
+
+    const x1 = await api(sn, "PATCH", `/api/turnos/${turnoId}`, { version: v0, estado: "alquilo" });
+    ok(x1.status === 200 && x1.datos.fila.estado === "alquilo" && x1.datos.fila.editado_por === N.email, `un 'equipo' marca 'alquiló' (${x1.status}, editado_por ${x1.datos.fila?.editado_por})`);
+    const inv2 = await api(sa, "PATCH", `/api/turnos/${turnoId}`, { version: x1.datos.fila.version, estado: "devolvio" });
+    ok(inv2.status === 409, `no se puede pasar de 'alquiló' a 'devolvió' salteando 'retiró' (${inv2.status})`);
+    const x2 = await api(sa, "PATCH", `/api/turnos/${turnoId}`, { version: x1.datos.fila.version, estado: "retiro" });
+    ok(x2.status === 200 && x2.datos.fila.estado === "retiro", `'alquiló' → 'retiró' (${x2.status})`);
+    const x3 = await api(sa, "PATCH", `/api/turnos/${turnoId}`, { version: x2.datos.fila.version, estado: "devolvio" });
+    ok(x3.status === 200 && x3.datos.fila.estado === "devolvio", `'retiró' → 'devolvió' (${x3.status})`);
+    const x4 = await api(sa, "PATCH", `/api/turnos/${turnoId}`, { version: x3.datos.fila.version, estado: "alquilo" });
+    ok(x4.status === 409, `'devolvió' es un estado final: no se puede volver a 'alquiló' (${x4.status})`);
+    const vieja = await api(sa, "PATCH", `/api/turnos/${turnoId}`, { version: v0, estado: "no-vino" });
+    ok(vieja.status === 409 && vieja.datos.error.includes("editó mientras tanto"), `con una versión vieja, 409 sin pisar nada (${vieja.status})`);
+
+    const h = await historial("turnos", turnoId);
+    const viaApi = await api(sa, "GET", `/api/historial?tabla=turnos&id=${turnoId}`);
+    ok(
+      h.length === 3 && h[0].datos_anteriores.estado === "sin-confirmar" && viaApi.status === 200 && viaApi.datos.versiones.length === 3,
+      `tres cambios de estado → tres filas de historial, con la de antes de 'alquiló' y GET /api/historial (nueva en la lista blanca de hoy) también las trae (${h.length}, ${viaApi.status})`
+    );
+    const v1id = h.find((r) => r.version === 1)?.id;
+    const restaurarV1 = await api(sa, "POST", `/api/historial/${v1id}/restaurar`, { version: x3.datos.fila.version });
+    ok(restaurarV1.status === 422, `volver a la v1 ('sin-confirmar') no es un estado que se escriba desde acá → 422, sin tocar nada (${restaurarV1.status})`);
+
+    const turnoCancelar = await nuevoTurno("2031-02-01T09:00:00Z");
+    const sinMotivo = await api(sn, "PATCH", `/api/turnos/${turnoCancelar}`, { version: 1, estado: "cancelado" });
+    ok(sinMotivo.status === 400 && sinMotivo.datos.error.includes("motivo"), `cancelar sin motivo → 400 (${sinMotivo.status}: ${sinMotivo.datos.error})`);
+    const conMotivo = await api(sn, "PATCH", `/api/turnos/${turnoCancelar}`, { version: 1, estado: "cancelado", motivo_cancelacion: "el cliente avisó que no puede" });
+    const filaCancelada = (await q("select estado, motivo_cancelacion, cancelado_at from turnos where id = $1", [turnoCancelar]))[0];
+    ok(
+      conMotivo.status === 200 && filaCancelada.estado === "cancelado" && filaCancelada.motivo_cancelacion === "el cliente avisó que no puede" && Boolean(filaCancelada.cancelado_at),
+      `cancelar con motivo → 200, y 0011 pone cancelado_at solo (${conMotivo.status}, cancelado_at ${Boolean(filaCancelada.cancelado_at)})`
+    );
+
+    const turnoNoVino = await nuevoTurno("2031-02-02T09:00:00Z");
+    const noVino = await api(sa, "PATCH", `/api/turnos/${turnoNoVino}`, { version: 1, estado: "no-vino" });
+    ok(noVino.status === 200 && noVino.datos.fila.estado === "no-vino", `marcar 'no vino' (${noVino.status})`);
   }
   {
     const x = await api(sa, "GET", "/api/conocimiento");
@@ -762,11 +966,11 @@ try {
     const tD = await nuevo(5, 3, "cancelado");
     const tE = await nuevo(-60, 3); // ya terminó
     const tF = await nuevo(15, 3, "no-vino");
-    turnosAviso.push(tA, tB, tC, tD, tE, tF);
+    turnosExtra.push(tA, tB, tC, tD, tE, tF);
     const cfg = (await q("select id, version, aviso_turno_min from configuracion_agenda"))[0];
 
     const g = await api(sn, "GET", "/api/turnos/avisos");
-    const nuestros = (g.datos.turnos ?? []).filter((t) => turnosAviso.includes(t.id));
+    const nuestros = (g.datos.turnos ?? []).filter((t) => turnosExtra.includes(t.id));
     ok(
       g.status === 200 && g.datos.aviso_turno_min === 30 && nuestros.map((t) => t.id).join() === [tC, tA].join(),
       `GET /api/turnos/avisos (equipo): salen el que empezó hace 20' y el de dentro de 10', en ese orden; no el de 2 h, el terminado, el cancelado ni el no-vino (${g.status}, ${nuestros.length})`
@@ -809,7 +1013,7 @@ try {
     const g3 = await api(sn, "GET", "/api/turnos/avisos");
     ok(g3.status === 200 && !g3.datos.turnos.some((t) => t.id === tA || t.id === tC), "después del OK el cartel ya no sale");
     const tG = await nuevo(26, 2); // otro en la ventana, para dos OK a la vez
-    turnosAviso.push(tG);
+    turnosExtra.push(tG);
     const dos = await Promise.all([api(sa, "POST", `/api/turnos/${tG}/ok`), api(sn, "POST", `/api/turnos/${tG}/ok`)]);
     const primero = dos.find((x) => x.datos.ya_estaba === false);
     const segundo = dos.find((x) => x.datos.ya_estaba === true);

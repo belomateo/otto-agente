@@ -1,5 +1,5 @@
 // Tipos de la base (schema public), generados con `supabase gen types typescript` contra el
-// proyecto real después de aplicar las migraciones de paneles 0011–0019, 0030 y 0031. No se editan a
+// proyecto real después de aplicar las migraciones de paneles 0011–0019, 0030, 0031 y 0032. No se editan a
 // mano: si cambia el esquema, se regeneran (CLAUDE.md § 7: no hay vistas tipadas a mano).
 
 export type Json =
@@ -428,6 +428,59 @@ export type Database = {
           version?: number
         }
         Relationships: []
+      }
+      envios_programados: {
+        Row: {
+          actualizado_at: string
+          cliente_id: string
+          creado_at: string
+          enviado_at: string | null
+          error: string | null
+          estado: string
+          id: string
+          intentos: number
+          plantilla: string
+          referencia: string
+          tipo: string
+          wa_message_id: string | null
+        }
+        Insert: {
+          actualizado_at?: string
+          cliente_id: string
+          creado_at?: string
+          enviado_at?: string | null
+          error?: string | null
+          estado?: string
+          id?: string
+          intentos?: number
+          plantilla: string
+          referencia: string
+          tipo: string
+          wa_message_id?: string | null
+        }
+        Update: {
+          actualizado_at?: string
+          cliente_id?: string
+          creado_at?: string
+          enviado_at?: string | null
+          error?: string | null
+          estado?: string
+          id?: string
+          intentos?: number
+          plantilla?: string
+          referencia?: string
+          tipo?: string
+          wa_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "envios_programados_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       eventos_agente: {
         Row: {
@@ -905,6 +958,7 @@ export type Database = {
           confirmado_at: string | null
           confirmado_por: string | null
           creado_at: string
+          devuelto_at: string | null
           duracion_min: number
           editado_at: string
           editado_por: string | null
@@ -929,6 +983,7 @@ export type Database = {
           confirmado_at?: string | null
           confirmado_por?: string | null
           creado_at?: string
+          devuelto_at?: string | null
           duracion_min: number
           editado_at?: string
           editado_por?: string | null
@@ -953,6 +1008,7 @@ export type Database = {
           confirmado_at?: string | null
           confirmado_por?: string | null
           creado_at?: string
+          devuelto_at?: string | null
           duracion_min?: number
           editado_at?: string
           editado_por?: string | null
@@ -1016,6 +1072,14 @@ export type Database = {
       }
     }
     Functions: {
+      atencion_resolver: {
+        Args: { p_accion: string; p_conversacion: string }
+        Returns: Json
+      }
+      cola_absorber: {
+        Args: { p_hasta: string; p_trabajo: string }
+        Returns: number
+      }
       cola_rescatar_trabados: { Args: never; Returns: number }
       cola_terminar: {
         Args: { p_error?: string; p_id: string; p_ok: boolean }
@@ -1041,7 +1105,41 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      conversacion_abierta_de: { Args: { p_cliente: string }; Returns: string }
       dar_ok_aviso_turno: { Args: { p_turno: string }; Returns: Json }
+      envio_disponible: {
+        Args: { p_referencia: string; p_tipo: string }
+        Returns: boolean
+      }
+      envio_reservar: {
+        Args: {
+          p_cliente: string
+          p_plantilla: string
+          p_referencia: string
+          p_tipo: string
+        }
+        Returns: string
+      }
+      envio_terminar: {
+        Args: {
+          p_error?: string
+          p_id: string
+          p_ok: boolean
+          p_texto: string
+          p_wa_message_id: string
+        }
+        Returns: undefined
+      }
+      envios_pendientes: {
+        Args: { p_ahora?: string; p_tipo: string; p_tz: string }
+        Returns: {
+          cliente_id: string
+          inicio: string
+          nombre: string
+          referencia: string
+          telefono: string
+        }[]
+      }
       es_admin: { Args: never; Returns: boolean }
       es_usuario_aprobado: { Args: never; Returns: boolean }
       immutable_unaccent: { Args: { "": string }; Returns: string }
@@ -1073,6 +1171,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      turno_confirmar_por_boton: {
+        Args: { p_conversacion: string; p_turno: string }
+        Returns: string
       }
     }
     Enums: {
