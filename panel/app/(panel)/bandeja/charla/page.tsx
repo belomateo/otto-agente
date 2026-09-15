@@ -1,19 +1,27 @@
-// Charla abierta en mobile — m-charla.html. En desktop el hilo ya se ve al
-// lado de la lista en /bandeja (no hay pantalla propia), así que si alguien
-// entra acá directo desde una compu ve el mismo split que /bandeja.
+'use client';
 
-import { ConversationList } from '../ConversationList';
+// Charla abierta — /bandeja/charla?id=<id> (m-charla.html en mobile). Es el link que usan el
+// cartel de turno (H1.17) y, en Fase 2, cualquier otra pantalla que apunte a una charla puntual.
+// En desktop el hilo ya se ve al lado de la lista en /bandeja (no hay pantalla propia), así que
+// entrar acá directo desde una compu muestra el mismo split, con esta charla ya elegida.
+
+import { useSearchParams } from 'next/navigation';
+import { useDatos } from '@/components/api/useDatos';
+import type { FilaBandeja } from '@/lib/queries/bandeja';
+import { BandejaSplit } from '../BandejaSplit';
 import { ChatThread } from '../ChatThread';
 
 export default function CharlaMobilePage() {
+  const id = useSearchParams().get('id');
+  const { datos, cargando, error, recargar } = useDatos<{ conversaciones: FilaBandeja[] }>('/api/bandeja');
+
   return (
     <>
       <div className="hidden flex-1 md:flex">
-        <ConversationList variante="desktop" />
-        <ChatThread variante="desktop" />
+        <BandejaSplit conversaciones={datos?.conversaciones ?? []} cargando={cargando} error={error} onReintentar={recargar} idInicial={id} />
       </div>
       <div className="flex flex-1 md:hidden">
-        <ChatThread variante="mobile" />
+        <ChatThread variante="mobile" conversacionId={id} />
       </div>
     </>
   );
