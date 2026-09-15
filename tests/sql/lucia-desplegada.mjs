@@ -98,6 +98,14 @@ async function esperarRespuesta(antes) {
   throw new Error("el worker no terminó el turno a tiempo");
 }
 
+// 2.2 (decisión #17): lo que manda el sistema sale sin «¡» ni «¿» y en 3 mensajes como máximo.
+function revisarFormato(respuesta, cuando) {
+  assert(
+    respuesta.every((m) => !/[¡¿]/.test(m)) && respuesta.length <= 3,
+    `${cuando}: sin ¡ ni ¿ y en ${respuesta.length} mensaje/s (máximo 3)`,
+  );
+}
+
 async function erroresDelTurno(conv) {
   return (await filas("select detalle from eventos_agente where conversacion_id = $1 and tipo = 'error' order by creado_at", [conv])).map(
     (r) => JSON.stringify(r.detalle).slice(0, 200),
@@ -114,6 +122,7 @@ try {
   const conv = await charla();
   assert(r1.length > 0, `Lucía contestó desde el worker desplegado: «${r1.join(" / ").slice(0, 180)}»`);
   if (!r1.length) console.log("    errores:", await erroresDelTurno(conv));
+  revisarFormato(r1, "la respuesta a la ráfaga");
   const trabajos = await filas("select estado, payload from cola_trabajos where conversacion_id = $1", [conv]);
   assert(
     trabajos.length === 2 && trabajos.every((t) => t.estado === "hecho") && trabajos.filter((t) => t.payload.absorbido_por).length === 1,
@@ -141,6 +150,7 @@ try {
     usados++;
     const r = await esperarRespuesta(antes);
     console.log(`    · «${texto}»\n      → «${r.join(" / ").slice(0, 260)}»`);
+    revisarFormato(r, `la respuesta a «${texto.slice(0, 30)}…»`);
     [turno] = await filas("select t.* from turnos t join clientes c on c.id = t.cliente_id where c.telefono = $1", [TEL]);
     if (turno) break;
   }

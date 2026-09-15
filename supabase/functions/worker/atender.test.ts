@@ -10,6 +10,7 @@ import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import { calendarioPropio } from "../_shared/agenda/calendario_propio.ts";
 import { type ClienteSql, type Db, dbDesde } from "../_shared/db.ts";
 import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts";
+import { HASTA_UN_MENSAJE } from "../_shared/whatsapp/preparar.ts";
 import {
   atenderCola,
   type Dependencias,
@@ -26,7 +27,12 @@ const TEL = "5490000019101"; // en la lista de Lucía
 const TEL_AFUERA = "5490000019102"; // fuera de la lista
 const TEL_FICTICIO = "5490000000103"; // ficticio: no sale nada por Meta
 const BASE_FOTOS = "https://ejemplo.supabase.co/storage/v1/object/public/catalogo/";
-const RESPUESTAS = ["¡Hola! Soy Lucía, de Mr Otto.", "¿Para qué evento es el traje?"];
+// Dos párrafos ya preparados (sin ¡ ni ¿) que juntos pasan los 300 caracteres: salen como dos
+// mensajes, uno por párrafo (2.2).
+const RESPUESTAS = [
+  "Hola, soy Lucía, de Mr Otto. Te cuento cómo es: venís con turno al local, te probás los modelos que más te gusten y en sastrería lo ajustan a tu medida para el día del evento.",
+  "Para qué evento es el traje? Si ya tenés la fecha, pasámela y te busco un horario para que vengas a probártelo con tiempo, sin apuro y con asesoramiento.",
+];
 
 function urlDeLaBase(): string {
   const u = Deno.env.get("SUPABASE_DB_URL");
@@ -214,6 +220,17 @@ prueba("Lucía contesta: corre el turno una vez, manda cada burbuja por Meta y g
   assertEquals((await trabajos(c, TEL)).map((t) => t.estado), ["hecho"]);
   const ev = (await eventos(c, TEL)).find((e) => e.detalle.etapa === "worker-lucia");
   assertEquals([ev?.tipo, ev?.detalle.enviadas], ["ok", 2]);
+});
+
+prueba("lo que sale va preparado (2.2): sin ¡ ni ¿, lo corto en un solo mensaje, y la charla guarda eso mismo", async (c) => {
+  assert(RESPUESTAS.join("\n\n").length > HASTA_UN_MENSAJE); // las de siempre siguen siendo dos mensajes
+  await mensajeDelCliente(c, TEL, "hola");
+  const { d, meta } = armar(c, { respuestas: ["¡Hola! Soy Lucía, de Mr Otto.", "¿Para qué evento es el traje?"] });
+
+  await atenderCola(c.db, d, "worker-prueba");
+  const esperado = "Hola! Soy Lucía, de Mr Otto.\n\nPara qué evento es el traje?";
+  assertEquals(meta.envios.map(textoDe), [esperado]);
+  assertEquals((await salientes(c, TEL)).map((s) => [s.contenido, s.wa_message_id]), [[esperado, "wamid.SALIDA-0"]]);
 });
 
 prueba("ráfaga: tres mensajes seguidos → un solo turno, y los otros dos trabajos quedan absorbidos", async (c) => {

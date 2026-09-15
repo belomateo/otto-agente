@@ -11,6 +11,7 @@ import type { Calendario } from "../_shared/herramientas/tipos.ts";
 import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts";
 import { botonDeTurno } from "../_shared/whatsapp/botones.ts";
 import { type ConfigWhatsapp, enviarImagen, enviarTexto } from "../_shared/whatsapp/enviar.ts";
+import { prepararParaEnviar } from "../_shared/whatsapp/preparar.ts";
 import { puedeTextoLibre } from "../_shared/whatsapp/ventana.ts";
 
 // AGENTE.md § 3 paso 3: se espera a que el cliente deje de escribir 4 s, así una ráfaga se
@@ -117,12 +118,17 @@ async function responder(db: Db, d: Dependencias, conversacionId: string, telefo
     return;
   }
   const simulado = esTelefonoFicticio(telefono);
-  const waMessageId = simulado ? null : await conReintento(d, () => enviarTexto(d.wa, telefono, texto, d.fetcher));
-  await db.consulta(
-    "insert into mensajes (conversacion_id, wa_message_id, direccion, tipo, contenido) values ($1::uuid, $2, 'saliente', 'texto', $3)",
-    [conversacionId, waMessageId, texto],
-  );
-  await evento(db, conversacionId, "ok", { etapa, respuesta: texto, wa_message_id: waMessageId, ...(simulado ? { simulado: true } : {}) });
+  const partes = prepararParaEnviar([texto]);
+  const wamids: (string | null)[] = [];
+  for (const parte of partes) {
+    const waMessageId = simulado ? null : await conReintento(d, () => enviarTexto(d.wa, telefono, parte, d.fetcher));
+    await db.consulta(
+      "insert into mensajes (conversacion_id, wa_message_id, direccion, tipo, contenido) values ($1::uuid, $2, 'saliente', 'texto', $3)",
+      [conversacionId, waMessageId, parte],
+    );
+    wamids.push(waMessageId);
+  }
+  await evento(db, conversacionId, "ok", { etapa, respuesta: partes.join("\n\n"), wa_message_ids: wamids, ...(simulado ? { simulado: true } : {}) });
 }
 
 // Las burbujas que el turno guardó (paso 9, sin wamid) y el cliente nunca recibió: afuera de la
@@ -143,8 +149,26 @@ async function borrarSinEnviar(db: Db, conversacionId: string, burbujas: string[
 // Lo que devolvió el turno sale por Meta en orden: primero las burbujas, cada una completa su fila
 // con el wamid; después las fotos. Si una burbuja no sale ni con el reintento se cortan las que
 // siguen (el orden importa). El turno no se repite: ya corrió, ya agendó si tenía que agendar.
+// Si el turno guardó sus burbujas tal como las escribió (el turno de antes de 2.3), se cambian en
+// la charla por las preparadas: la charla guarda lo que de verdad le llega al cliente.
+async function reemplazarBurbujas(db: Db, conversacionId: string, viejas: string[], nuevas: string[]) {
+  await borrarSinEnviar(db, conversacionId, viejas);
+  for (const texto of nuevas) {
+    await db.consulta(
+      `insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at)
+       select $1::uuid, 'saliente', 'texto', $2, greatest(clock_timestamp(), max(enviado_at) + interval '10 milliseconds')
+         from mensajes where conversacion_id = $1::uuid`,
+      [conversacionId, texto],
+    );
+  }
+}
+
 async function entregar(db: Db, d: Dependencias, conversacionId: string, telefono: string, r: ResultadoTurno) {
-  const burbujas = r.mensajesAlCliente;
+  // Lo que sale lo prepara el envío (2.2, decisión #17): sin «¡» ni «¿» y en 1, 2 o 3 mensajes
+  // según el largo. Si el turno ya lo preparó, esto no cambia nada.
+  const burbujas = prepararParaEnviar(r.mensajesAlCliente);
+  const yaPreparadas = burbujas.length === r.mensajesAlCliente.length && burbujas.every((b, i) => b === r.mensajesAlCliente[i]);
+  if (!yaPreparadas) await reemplazarBurbujas(db, conversacionId, r.mensajesAlCliente, burbujas);
   const resumen = {
     burbujas: burbujas.length,
     fotos: r.imagenes.length,
