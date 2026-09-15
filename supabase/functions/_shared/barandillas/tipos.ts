@@ -24,6 +24,7 @@ export type EntradaBarandilla = {
   traza: Traza;
   ahora: Date;
   ultimoMensajeClienteAt: Date | null;
+  esPrimerMensaje: boolean;
   revisor?: Revisor;
 };
 

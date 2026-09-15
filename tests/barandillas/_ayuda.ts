@@ -18,7 +18,7 @@ export function traza(p: { herramientas?: string[]; precios?: number[]; horas?: 
 }
 
 export function entrada(texto: string, extra: Partial<EntradaBarandilla> = {}): EntradaBarandilla {
-  return { texto, traza: trazaNueva(), ahora: AHORA, ultimoMensajeClienteAt: HACE_UN_MINUTO, ...extra };
+  return { texto, traza: trazaNueva(), ahora: AHORA, ultimoMensajeClienteAt: HACE_UN_MINUTO, esPrimerMensaje: false, ...extra };
 }
 
 // Doble del revisor (LLM_CLASIFICADOR): contesta lo que se le pida y cuenta las llamadas.

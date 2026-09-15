@@ -114,6 +114,10 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
     // Paso 4b — el clasificador, red para la intención de derivar cuando no hay palabra clave.
     historial = await leerHistorial(db, p.conversacionId, rafaga.desde);
+    // Sin nada antes de esta ráfaga, es la primera vez que Lucía le contesta algo en esta charla
+    // (hallazgo M2 del tester, 15/9: lo usa presentacion_repetida para no dejar que se vuelva a
+    // presentar en un mensaje que no es el primero).
+    const esPrimerMensaje = historial.length === 0;
     const clasificacion = await clasificar(ultimasLineasParaClasificar(historial, mensaje), p.fetcher);
     if (!clasificacion) {
       eventos.push({ tipo: "error", detalle: { etapa: "clasificar", error: "sin respuesta del clasificador; se sigue sin derivar por esta vía" } });
@@ -174,7 +178,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       const mensajesRevisados: string[] = [];
       let seDescartoAlgo = false;
       for (const pieza of piezas) {
-        const b = await aplicarBarandillas({ texto: pieza, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt });
+        const b = await aplicarBarandillas({ texto: pieza, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje });
         for (const s of b.saltos) eventos.push({ tipo: "error", detalle: { etapa: "barandilla-en-derivacion", barandilla: s.barandilla, accion: s.accion, motivo: s.motivo } });
         if (b.decision === "enviar") mensajesRevisados.push(...enBurbujas(b.texto));
         else if (b.decision !== "bloquear") seDescartoAlgo = true;
@@ -211,7 +215,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
     // Paso 8 — barandillas sobre lo que escribió Lucía. Hasta un "rehacer".
     const evaluar = (texto: string, saltosPrevios: number) =>
-      aplicarBarandillas({ texto, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt }, { saltosPrevios });
+      aplicarBarandillas({ texto, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje }, { saltosPrevios });
 
     let b = await evaluar(r.textoFinal, 0);
     if (b.decision === "rehacer") {

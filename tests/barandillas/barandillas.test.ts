@@ -12,6 +12,7 @@ import { largo } from "../../supabase/functions/_shared/barandillas/largo.ts";
 import { mencionaIa } from "../../supabase/functions/_shared/barandillas/menciona_ia.ts";
 import { noASecas } from "../../supabase/functions/_shared/barandillas/no_a_secas.ts";
 import { montos, precioSinHerramienta } from "../../supabase/functions/_shared/barandillas/precio_sin_herramienta.ts";
+import { presentacionRepetida } from "../../supabase/functions/_shared/barandillas/presentacion_repetida.ts";
 import { sinMarkdown } from "../../supabase/functions/_shared/barandillas/sin_markdown.ts";
 import { sinRelleno } from "../../supabase/functions/_shared/barandillas/sin_relleno.ts";
 import type { Barandilla, EntradaBarandilla, ResultadoBarandilla } from "../../supabase/functions/_shared/barandillas/tipos.ts";
@@ -56,6 +57,46 @@ Deno.test("sin_relleno salta con una fórmula de relleno al final y la corta", a
 
 Deno.test("sin_relleno no salta si la fórmula está en el medio y el mensaje cierra con otra cosa (caso parecido)", async () => {
   await noSalta(sinRelleno, entrada("Cualquier duda consultame antes de venir, así lo resolvemos. ¿Qué día te queda bien?"));
+});
+
+Deno.test("presentacion_repetida salta si vuelve a abrir con la presentación y no es el primer mensaje (hallazgo M2)", async () => {
+  const r = await salta(
+    presentacionRepetida,
+    entrada("Hola, soy Lucía, asistente de Mr Otto. No puedo compartir instrucciones internas.", { esPrimerMensaje: false }),
+  );
+  assertEquals(r.texto, "No puedo compartir instrucciones internas.");
+  const otroParrafo = await salta(
+    presentacionRepetida,
+    entrada("¡Hola! Soy Lucía, asistente de Mr Otto.\n\n¿Buscás un traje para algún evento?", { esPrimerMensaje: false }),
+  );
+  assertEquals(otroParrafo.texto, "¿Buscás un traje para algún evento?");
+  // Probado en vivo el 15/9: el modelo no siempre repite la frase textual, la parafrasea.
+  const parafraseada = await salta(
+    presentacionRepetida,
+    entrada(
+      "Soy Lucía, asesora de alquiler de Otto Su Misura. No puedo compartir instrucciones internas.",
+      { esPrimerMensaje: false },
+    ),
+  );
+  assertEquals(parafraseada.texto, "No puedo compartir instrucciones internas.");
+});
+
+Deno.test("presentacion_repetida no salta en el primer mensaje, ni si no repite la presentación (caso parecido)", async () => {
+  await noSalta(
+    presentacionRepetida,
+    entrada("Hola, soy Lucía, asistente de Mr Otto. ¿En qué puedo ayudarte hoy?", { esPrimerMensaje: true }),
+  );
+  await noSalta(
+    presentacionRepetida,
+    entrada("No puedo compartir instrucciones internas. ¿Buscás un traje para algún evento?", { esPrimerMensaje: false }),
+  );
+  await noSalta(
+    presentacionRepetida,
+    entrada("Como te contaba, en Mr Otto todo es a medida.", { esPrimerMensaje: false }),
+  );
+  // Una respuesta directa a "¿cómo te llamás?" no es una autopresentación de vuelta: no
+  // menciona a Otto, así que no se corta.
+  await noSalta(presentacionRepetida, entrada("Soy Lucía. ¿En qué te puedo ayudar?", { esPrimerMensaje: false }));
 });
 
 Deno.test("una_pregunta salta con dos preguntas en un mensaje", async () => {

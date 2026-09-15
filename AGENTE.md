@@ -182,6 +182,7 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | --- | --- | --- |
 | `sin_markdown` | `**`, `__`, `*negrita*`, `#` o `- ` al inicio, ```, links en markdown | Limpia en código |
 | `sin_relleno` | Las fórmulas prohibidas al final (la lista incluye todas las del prompt) | Corta la frase, y las anteriores si también son relleno |
+| `presentacion_repetida` | De las primeras 3 oraciones, alguna trae «soy Lucía» + «Mr Otto» juntos, y no es el primer mensaje de la charla (hallazgo M2 del tester, 15/9: se presenta dos veces si una pregunta la pone a la defensiva) | Corta hasta ahí (incluido un «¡Hola!» suelto antes, si lo hay) |
 | `una_pregunta` | Más de un `?` de cierre (varios seguidos cuentan como uno) | Rehace |
 | `largo` | Un bloque de más de 600 caracteres sin línea en blanco | Rehace pidiendo párrafos cortos |
 | `precio_sin_herramienta` | Un monto ($150.000, 150000, 150 mil) que no devolvió `consultar_catalogo` ni `consultar_accesorios` en este turno: precio sin herramienta o total armado sumando (regla 9) | Rehace |
@@ -193,7 +194,7 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje); además, desde el 15/9 (hallazgo M3 del tester), un patrón más amplio: "ia" cerca de una palabra de meta-funcionamiento («instrucción», «configuración», «protege», «entrena», «responde de forma segura»), para cubrir una frase que rodea el tema sin decir ninguna de las exactas de arriba | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
-Son 12 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
+Son 13 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
 código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
 del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
 el segundo del mismo turno deriva con motivo `barandilla_doble`. Si Lucía anunció un pase,

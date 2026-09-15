@@ -22,6 +22,7 @@ import { largo } from "./largo.ts";
 import { mencionaIa } from "./menciona_ia.ts";
 import { noASecas } from "./no_a_secas.ts";
 import { precioSinHerramienta } from "./precio_sin_herramienta.ts";
+import { presentacionRepetida } from "./presentacion_repetida.ts";
 import { sinMarkdown } from "./sin_markdown.ts";
 import { sinRelleno } from "./sin_relleno.ts";
 import type { Accion, Barandilla, EntradaBarandilla } from "./tipos.ts";
@@ -30,6 +31,7 @@ import { unaPregunta } from "./una_pregunta.ts";
 export const BARANDILLAS: readonly Barandilla[] = [
   sinMarkdown,
   sinRelleno,
+  presentacionRepetida,
   unaPregunta,
   largo,
   precioSinHerramienta,
