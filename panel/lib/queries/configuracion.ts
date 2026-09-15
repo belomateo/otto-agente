@@ -21,7 +21,7 @@ export type Configuracion = {
     duraciones: Pick<Fila<'duraciones_turno'>, 'id' | 'tipo' | 'duracion_min' | 'version'>[];
     configuracion: Pick<
       Fila<'configuracion_agenda'>,
-      'id' | 'cantidad_probadores' | 'escalonado_min' | 'dias_reserva_urgencia' | 'version'
+      'id' | 'cantidad_probadores' | 'escalonado_min' | 'dias_reserva_urgencia' | 'aviso_turno_min' | 'version'
     > | null;
   };
   herramientas: Fila<'herramientas_agente'>[];
@@ -40,7 +40,7 @@ export async function obtenerConfiguracion(db: ClienteDb): Promise<Configuracion
       db.from('duraciones_turno').select('id, tipo, duracion_min, version').order('duracion_min').order('tipo'),
       db
         .from('configuracion_agenda')
-        .select('id, cantidad_probadores, escalonado_min, dias_reserva_urgencia, version')
+        .select('id, cantidad_probadores, escalonado_min, dias_reserva_urgencia, aviso_turno_min, version')
         .maybeSingle(),
       db.from('herramientas_agente').select('*').order('orden'),
       db.from('enlaces').select('*').order('nombre'),

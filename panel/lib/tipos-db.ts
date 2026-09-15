@@ -1,5 +1,5 @@
 // Tipos de la base (schema public), generados con `supabase gen types typescript` contra el
-// proyecto real después de aplicar las migraciones de paneles 0011–0019 y 0030. No se editan a
+// proyecto real después de aplicar las migraciones de paneles 0011–0019, 0030 y 0031. No se editan a
 // mano: si cambia el esquema, se regeneran (CLAUDE.md § 7: no hay vistas tipadas a mano).
 
 export type Json =
@@ -197,6 +197,7 @@ export type Database = {
       }
       configuracion_agenda: {
         Row: {
+          aviso_turno_min: number | null
           cantidad_probadores: number
           dias_reserva_urgencia: number | null
           editado_at: string
@@ -207,6 +208,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          aviso_turno_min?: number | null
           cantidad_probadores: number
           dias_reserva_urgencia?: number | null
           editado_at?: string
@@ -217,6 +219,7 @@ export type Database = {
           version?: number
         }
         Update: {
+          aviso_turno_min?: number | null
           cantidad_probadores?: number
           dias_reserva_urgencia?: number | null
           editado_at?: string
@@ -894,10 +897,13 @@ export type Database = {
       turnos: {
         Row: {
           aviso: string | null
+          aviso_ok_at: string | null
+          aviso_ok_por: string | null
           cancelado_at: string | null
           cliente_id: string
           confirmado: boolean
           confirmado_at: string | null
+          confirmado_por: string | null
           creado_at: string
           duracion_min: number
           editado_at: string
@@ -915,10 +921,13 @@ export type Database = {
         }
         Insert: {
           aviso?: string | null
+          aviso_ok_at?: string | null
+          aviso_ok_por?: string | null
           cancelado_at?: string | null
           cliente_id: string
           confirmado?: boolean
           confirmado_at?: string | null
+          confirmado_por?: string | null
           creado_at?: string
           duracion_min: number
           editado_at?: string
@@ -936,10 +945,13 @@ export type Database = {
         }
         Update: {
           aviso?: string | null
+          aviso_ok_at?: string | null
+          aviso_ok_por?: string | null
           cancelado_at?: string | null
           cliente_id?: string
           confirmado?: boolean
           confirmado_at?: string | null
+          confirmado_por?: string | null
           creado_at?: string
           duracion_min?: number
           editado_at?: string
@@ -967,7 +979,41 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      turnos_por_avisar: {
+        Row: {
+          aviso: string | null
+          aviso_ok_at: string | null
+          aviso_ok_por: string | null
+          cancelado_at: string | null
+          cliente_id: string | null
+          confirmado: boolean | null
+          confirmado_at: string | null
+          confirmado_por: string | null
+          creado_at: string | null
+          duracion_min: number | null
+          editado_at: string | null
+          editado_por: string | null
+          estado: string | null
+          fin: string | null
+          google_event_id: string | null
+          id: string | null
+          inicio: string | null
+          motivo_cancelacion: string | null
+          probador: number | null
+          recordatorio_enviado_at: string | null
+          tipo: string | null
+          version: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "turnos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       cola_rescatar_trabados: { Args: never; Returns: number }
@@ -995,6 +1041,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      dar_ok_aviso_turno: { Args: { p_turno: string }; Returns: Json }
       es_admin: { Args: never; Returns: boolean }
       es_usuario_aprobado: { Args: never; Returns: boolean }
       immutable_unaccent: { Args: { "": string }; Returns: string }
