@@ -11,3 +11,7 @@ verify_jwt = false
 # JWT de usuario.
 [functions.worker]
 verify_jwt = false
+
+# Los envíos por plantilla (1.14): la llaman los crons de 0022 con x-worker-secret.
+[functions.cron-envios]
+verify_jwt = false
