@@ -35,3 +35,7 @@ se confirma o se corrige con Mr Otto; ninguno frena una fase.
 | 28 | Sin nombre en la ficha no sale ninguna plantilla (Meta no acepta variables vacías y un «Hola, .» no sale); queda listado en la respuesta del cron | H1.14 | — |
 | 29 | El agradecimiento sale hasta 7 días después de la devolución; los más viejos no, para que al prender los envíos no salga una tanda de golpe | H1.14 | Mr Otto |
 | 30 | El botón «Confirmo» se contesta con el texto fijo `texto_turno_confirmado` («¡Gracias por confirmar! Te esperamos en el local.»), editable, y confirma el turno aunque la charla la tenga una persona | H1.14, `contexto_agente` | Mr Otto |
+| 31 | Ráfaga: Lucía contesta cuando el cliente dejó de escribir 4 s (AGENTE.md § 3), con 12 s como máximo de espera. Todo lo que escribió hasta que arranca el turno se contesta junto; lo que llega después tiene su propio turno | Worker, 2.1 | — |
+| 32 | Los teléfonos 5490000000… son ficticios, de las pruebas: el worker les contesta con Lucía y guarda la respuesta, pero no manda nada por Meta | Worker, 2.1 | — |
+| 33 | Lucía todavía no contesta lo que no es texto (foto, audio, ubicación, sticker): el mensaje queda en la charla para el equipo. El botón «Necesito reprogramar» tampoco: queda anotado en la bitácora | Worker, agente | Mr Otto / agente |
+| 34 | Si Meta no acepta una burbuja ni con un reintento, las que siguen no salen, se borran de la charla y quedan en la bitácora con el error. El turno no se repite (ya agendó, si tenía que agendar) | Worker, 2.1 | — |
