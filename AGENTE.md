@@ -84,7 +84,8 @@ una función separada en `_shared/`, testeable sola.
 1. webhook-whatsapp      recibe → verifica firma → dedup → guarda mensaje → encola
 2. worker                toma el trabajo (SKIP LOCKED)
 3. agrupar_rafaga        espera 4 s: si llegan más mensajes del mismo cliente, se contestan juntos
-     └ si lo único que llegó no es texto (foto, audio, sticker — supuesto #33)
+     └ si lo único que llegó no es texto NI un botón de plantilla (foto, audio, sticker —
+       supuesto #33; un botón SÍ cuenta como texto: es una frase que el cliente tocó, no una foto)
        → texto fijo en código, sin pasar por ningún LLM, y FIN
 4. clasificar            LLM_CLASIFICADOR → { intencion, urgencia, derivar_duro: bool }   [JSON estricto]
      └ si derivar_duro (reclamo / prenda dañada / corporativo / turno urgente sin hueco)

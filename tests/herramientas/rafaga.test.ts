@@ -1,6 +1,9 @@
-// agrupar_rafaga (AGENTE.md § 3 paso 3) y el campo soloNoTexto (supuesto #33, H2.1, 15/9): si
-// lo único que llegó en la ventana no es texto (foto, audio, sticker...), no es lo mismo que
-// "no pasó nada" — turno.ts lo usa para no quedarse en silencio.
+// agrupar_rafaga (AGENTE.md § 3 paso 3), el campo soloNoTexto (supuesto #33, H2.1, 15/9) y los
+// botones (auditoría de Mateo, 15/9): si lo único que llegó en la ventana no es texto (foto,
+// audio, sticker...), no es lo mismo que "no pasó nada" — turno.ts lo usa para no quedarse en
+// silencio. Un botón de plantilla ("Necesito reprogramar") SÍ cuenta como texto: no es una foto,
+// es una frase que el cliente tocó en vez de escribir (el de "Confirmo" nunca llega acá: se
+// resuelve antes, en atender.ts, sin correr el turno).
 
 import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import { agruparRafaga } from "../../supabase/functions/_shared/turno/rafaga.ts";
@@ -51,5 +54,12 @@ prueba("agrupar_rafaga: una foto con epígrafe Y un mensaje de texto en la misma
   await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: "les mando la foto", enviadoAt: new Date(AHORA.getTime() + 1000) });
   const r = await agruparRafaga(ctx.db, conversacionId, new Date(AHORA.getTime() + 2000));
   assertEquals(r.texto, "les mando la foto");
+  assertEquals(r.soloNoTexto, false);
+});
+
+prueba("agrupar_rafaga: el botón «Necesito reprogramar» cuenta como texto, no como soloNoTexto", async ({ ctx, sql, conversacionId }) => {
+  await insertar(sql, conversacionId, { direccion: "entrante", tipo: "button", contenido: "Necesito reprogramar", enviadoAt: AHORA });
+  const r = await agruparRafaga(ctx.db, conversacionId, AHORA);
+  assertEquals(r.texto, "Necesito reprogramar");
   assertEquals(r.soloNoTexto, false);
 });

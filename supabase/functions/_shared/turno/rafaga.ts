@@ -9,6 +9,16 @@ import type { Db } from "../db.ts";
 
 export type MensajeEntrante = { id: string; contenido: string; enviadoAt: Date };
 
+// Tipos de mensaje que se leen como texto de verdad. 'texto' es lo normal; 'button' es la
+// respuesta a un botón de una plantilla (H1.14) — Meta manda el label que tocó el cliente como
+// contenido ("Necesito reprogramar"). El de "Confirmo" nunca llega hasta acá: atender.ts lo
+// resuelve antes, en código, sin correr el turno. El de "Necesito reprogramar" sí sigue de largo
+// (queda anotado y el turno corre igual, AGENTE.md § 3): antes de este arreglo cascase acá como
+// "no es texto" y Lucía contestaba que no puede leer fotos — un botón no es una foto, es una
+// frase que el cliente eligió tocar en vez de escribir, y reprogramar_turno la resuelve igual
+// que si la hubiera tipeado.
+export const TIPOS_QUE_SON_TEXTO = ["texto", "button"];
+
 export type Rafaga = {
   texto: string;
   mensajeIds: string[];
@@ -31,10 +41,10 @@ export async function agruparRafaga(db: Db, conversacionId: string, ahora: Date)
   const desdeIso = ultimoSaliente[0]?.enviado_at ?? "1970-01-01T00:00:00Z";
   const filas = await db.consulta<{ id: string; contenido: string | null; enviado_at: string }>(
     `select id::text as id, contenido, enviado_at from mensajes
-      where conversacion_id = $1 and direccion = 'entrante' and tipo = 'texto'
-        and enviado_at > $2::timestamptz and enviado_at <= $3::timestamptz and contenido is not null
+      where conversacion_id = $1 and direccion = 'entrante' and tipo = any($2::text[])
+        and enviado_at > $3::timestamptz and enviado_at <= $4::timestamptz and contenido is not null
       order by enviado_at, id`,
-    [conversacionId, desdeIso, ahora.toISOString()],
+    [conversacionId, TIPOS_QUE_SON_TEXTO, desdeIso, ahora.toISOString()],
   );
   let soloNoTexto = false;
   let ultimoEnviadoAt = filas.length ? new Date(filas[filas.length - 1].enviado_at) : null;

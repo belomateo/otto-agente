@@ -6,6 +6,7 @@
 // así lo tiene que ver el modelo para poder reconocerlo.
 
 import type { Db } from "../db.ts";
+import { TIPOS_QUE_SON_TEXTO } from "./rafaga.ts";
 
 export type MensajeChat = { role: "user" | "assistant"; content: string };
 
@@ -13,13 +14,15 @@ const MAXIMO_MENSAJES = 40;
 
 // `hasta`: el corte de rafaga.ts (Rafaga.desde) — todo con enviado_at <= hasta es historial;
 // lo que es más nuevo que eso ya es la ráfaga de este turno, que se manda aparte como el
-// mensaje actual (si no se cortara acá, aparecería dos veces).
+// mensaje actual (si no se cortara acá, aparecería dos veces). Mismos tipos que agrupar_rafaga
+// (TIPOS_QUE_SON_TEXTO): un botón que el cliente tocó en una charla anterior tiene que seguir
+// viéndose en su historial, igual que si lo hubiera escrito.
 export async function leerHistorial(db: Db, conversacionId: string, hasta: Date): Promise<MensajeChat[]> {
   const filas = await db.consulta<{ direccion: string; contenido: string | null }>(
     `select direccion, contenido from mensajes
-      where conversacion_id = $1 and tipo = 'texto' and contenido is not null and enviado_at <= $2::timestamptz
-      order by enviado_at desc, id desc limit $3`,
-    [conversacionId, hasta.toISOString(), MAXIMO_MENSAJES],
+      where conversacion_id = $1 and tipo = any($2::text[]) and contenido is not null and enviado_at <= $3::timestamptz
+      order by enviado_at desc, id desc limit $4`,
+    [conversacionId, TIPOS_QUE_SON_TEXTO, hasta.toISOString(), MAXIMO_MENSAJES],
   );
   return filas
     .reverse()
