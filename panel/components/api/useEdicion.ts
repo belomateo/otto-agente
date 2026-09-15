@@ -28,12 +28,21 @@ export function useEdicion<T extends { version: number }>(inicial: T) {
     setValor(nuevo);
   }
 
-  async function guardar(ruta: string, cambios: Partial<T>): Promise<string | null> {
+  /**
+   * `cambios` es lo que espera el servidor (las columnas de la entidad), que no siempre es
+   * igual a la forma del borrador en pantalla (por ejemplo, talles como texto separado por
+   * comas acá y como array allá): por eso no se tipa como `Partial<T>`. Si la fila que
+   * devuelve el servidor tampoco es exactamente `T` (mismo caso: la fila real trae `talles`,
+   * no `talles_texto`), `mapear` arma el borrador de nuevo a partir de esa fila; si no se
+   * pasa, se asume que la fila ya tiene la forma de `T`.
+   */
+  async function guardar(ruta: string, cambios: Record<string, unknown>, mapear?: (filaCruda: unknown) => T): Promise<string | null> {
     setGuardando(true);
     try {
-      const { fila } = await enviar<{ fila: T }>(ruta, 'PATCH', { version: guardado.version, ...cambios });
-      setGuardado(fila);
-      setValor(fila);
+      const { fila } = await enviar<{ fila: unknown }>(ruta, 'PATCH', { version: guardado.version, ...cambios });
+      const nuevo = mapear ? mapear(fila) : (fila as T);
+      setGuardado(nuevo);
+      setValor(nuevo);
       return null;
     } catch (e) {
       return e instanceof ErrorApi ? e.message : 'No se pudo guardar';
