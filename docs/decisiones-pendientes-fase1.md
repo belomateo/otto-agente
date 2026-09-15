@@ -73,6 +73,47 @@ informe del verificador, §3.3 a §3.5.
   motivos por stderr). `paneles` adapta `panel/lib/edicion/prompt.ts`, que hoy llama
   `--validar`.
 
+## Resueltas por Mateo (15/9)
+
+- **#10 → cartel de turno 30 minutos antes, en todo el panel.** Mateo: «cuando esté por
+  acercarse un turno, media hora antes tiene que salir un cartel en todo el sistema, no importa
+  dónde esté ni en qué lugar, con toda la información del turno y un botón de OK para saber que
+  ese turno está confirmado».
+  - Cuándo: desde `inicio − aviso_turno_min` hasta que alguien aprieta OK o termina el turno.
+    `aviso_turno_min` vale 30 y vive en `configuracion_agenda` (se edita en Configuración ›
+    Agenda: principio 2). Solo turnos que no estén 'cancelado' ni 'no-vino'.
+  - Dónde: en cualquier pestaña del panel, en escritorio y en celular, encima de lo que se esté
+    haciendo, para todo usuario aprobado. Si hay dos turnos cerca, se apilan. Sale mientras el
+    panel esté abierto; con el navegador cerrado no hay cartel (un aviso por WhatsApp al local
+    queda como posible agregado).
+  - Qué muestra: nombre y teléfono del cliente, hora de inicio y fin, tipo de turno, probador,
+    evento y fecha del evento, rol, talle aproximado, color preferido, notas, si el cliente ya
+    confirmó por WhatsApp, y los links a la charla y a la ficha.
+  - El OK: lo aprieta alguien del equipo; el cartel se cierra para todos en el próximo refresco
+    y queda quién y cuándo (`aviso_ok_por`, `aviso_ok_at`). Si el turno seguía 'sin-confirmar',
+    pasa a 'confirmado' con `confirmado_por` = el email de quien apretó; si ya lo había
+    confirmado el cliente con el botón de WhatsApp (`confirmado_por` = 'cliente'), solo registra
+    que el equipo lo vio. Es una acción de una persona: no choca con PROCESOS.md § 2, donde el
+    LLM nunca confirma.
+  - Quién: `paneles`, hito 1.16: migración `*turnos*` de su rango 0030–0039 con
+    `turnos.aviso_ok_at`, `aviso_ok_por` y `confirmado_por`, y `configuracion_agenda.aviso_turno_min`
+    con seed 30; un GET de los turnos por avisar y el POST del OK, con historial. `front`, hito
+    1.17: el cartel en el layout del panel, que consulta cada 30 segundos o menos, y el campo en
+    Configuración › Agenda. `logica` marca `confirmado_por = 'cliente'` cuando llega el botón de
+    la plantilla (1.14).
+- **#11 → Google Calendar y los recordatorios quedan en Fase 1.** Mateo quiere los turnos en
+  Google Calendar (1.12) y los recordatorios por plantilla (1.14). Las plantillas las carga
+  Mateo en Meta el 16/9 con los textos de docs/plantillas-whatsapp.md. Para Calendar hace falta
+  una cuenta de servicio de Google (una API key no alcanza para escribir en un calendario
+  privado) y el ID del calendario.
+- **#12 → el webhook de WhatsApp sigue en n8n por ahora.** Mateo (15/9): mientras se pueda
+  probar, no hace falta todavía el App Secret ni cambiar el webhook. Consecuencia: Lucía no
+  contesta sola por WhatsApp hasta que Meta mande los mensajes al webhook de Supabase, con el App
+  Secret para verificar la firma. Se hace al conectar el worker real (Fase 2), antes de que
+  Lucía le hable a un cliente; hasta entonces se prueba con el emulador. El control 6 de 1.11
+  pasa a ese momento. El token de WhatsApp actual es permanente y sirve en producción; conviene
+  rotarlo porque pasó por el chat.
+
 Lo que sigue abajo es el texto original de cada punto, como referencia.
 
 1. **Solapamiento de turnos por probador.** `turnos_probador_inicio_idx` es un
