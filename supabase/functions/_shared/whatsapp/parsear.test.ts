@@ -56,6 +56,19 @@ Deno.test("foto sin epígrafe: tipo image y contenido null", () => {
   assertEquals([m.tipo, m.contenido], ["image", null]);
 });
 
+Deno.test("una reacción (👍) o un aviso del sistema no entran: no son mensajes para contestar", () => {
+  const payload = envolver({
+    messaging_product: "whatsapp",
+    metadata,
+    messages: [
+      { from: "5493410000000", id: "wamid.R1", timestamp: "1757700006", type: "reaction", reaction: { message_id: "wamid.SALIENTE", emoji: "👍" } },
+      { from: "5493410000000", id: "wamid.S1", timestamp: "1757700007", type: "system", system: { body: "cambió de número", type: "customer_changed_number" } },
+      { from: "5493410000000", id: "wamid.T1", timestamp: "1757700008", type: "text", text: { body: "gracias" } },
+    ],
+  });
+  assertEquals(mensajesEntrantes(payload).map((m) => m.waMessageId), ["wamid.T1"]);
+});
+
 Deno.test("dos mensajes en el mismo POST: salen los dos, en orden", () => {
   const payload = envolver({
     messaging_product: "whatsapp",
