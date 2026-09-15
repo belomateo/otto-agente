@@ -15,7 +15,7 @@ dice cada plantilla. Idioma: español (Argentina).
 - **Variables:** `{{1}}` nombre · `{{2}}` día («jueves 6 de junio») · `{{3}}` hora («16:00»).
 
 > Hola, {{1}}. Te recordamos tu turno en Otto Su Misura: mañana {{2}} a las {{3}}, en
-> España 764, Rosario. ¿Nos confirmás que venís?
+> España 764, Rosario. Nos confirmás que venís?
 
 **Botones:** `Confirmo` · `Necesito reprogramar`
 
@@ -29,7 +29,7 @@ Con «Necesito reprogramar», Lucía retoma la charla y le ofrece otro horario.
   reseña): tiene un costo por mensaje más alto que las de utilidad.
 - **Variables:** `{{1}}` nombre · `{{2}}` el link para dejar la reseña en Google.
 
-> ¡Gracias por elegirnos, {{1}}! Esperamos que el evento haya salido espectacular. Si te
+> Gracias por elegirnos, {{1}}! Esperamos que el evento haya salido espectacular. Si te
 > gustó cómo te atendimos, nos ayuda mucho que dejes tu reseña en Google: {{2}}
 >
 > Y si tenés fotos del evento, nos encantaría verlas. 😊
@@ -45,7 +45,7 @@ Con «Necesito reprogramar», Lucía retoma la charla y le ofrece otro horario.
 
 > Hola, {{1}}. Te escribo de Otto Su Misura por el traje que estabas buscando. Cuando
 > quieras, te reservo un turno en el local para que lo veas puesto y el equipo te asesore
-> con el calce, los colores y los accesorios. ¿Te busco un horario?
+> con el calce, los colores y los accesorios. Te busco un horario?
 
 **Botones:** `Sí, buscame uno` · `Más adelante`
 

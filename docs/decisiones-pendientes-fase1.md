@@ -137,6 +137,15 @@ informe del verificador, §3.3 a §3.5.
   a la Edge Function `webhook-whatsapp`, con un token de verificación nuevo y los mismos 10 campos
   que tenía. La firma de Meta se verifica en cada POST (`firma.ts`). Lucía contesta solo a los
   números de `LUCIA_TELEFONOS` hasta que Mateo la abra a todos.
+- **#17 → pedidos de la dueña (15/9, por Mateo).**
+  - El mail del cliente: lo completa el extractor en segundo plano cuando el cliente lo escribe, y
+    Lucía lo pide al ofrecer turnos si todavía no lo tenemos. Si no lo quiere dar, agenda igual.
+  - Lo que escribe el sistema sale sin «¡» ni «¿»: se sacan en código, al preparar el envío.
+  - Cada respuesta sale en 1, 2 o 3 mensajes según su largo: hasta 300 caracteres, 1; de 301 a
+    700, 2; más de 700, 3, que es el máximo.
+  - Hitos: 2.2 (logica: preparar los mensajes y el formato del mail en la base), 2.3 (agente: el
+    mail en la charla y el turno usando la preparación), 2.4 (paneles: el mail en la API) y 2.5
+    (front: el mail en las pantallas).
 
 Lo que sigue abajo es el texto original de cada punto, como referencia.
 
