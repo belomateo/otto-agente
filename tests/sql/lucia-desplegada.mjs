@@ -171,6 +171,21 @@ try {
   } else {
     console.log("    errores:", await erroresDelTurno(conv));
   }
+
+  console.log("\n[3] Responder desde el panel: el equipo toma la charla y escribe");
+  await db.query("update conversaciones set estado = 'derivada' where id = $1", [conv]);
+  const [{ r: enviado }] = await filas("select mostrador_enviar($1, $2) as r", [conv, "Hola Lucas, soy del local: te espero el martes."]);
+  let salio = null;
+  for (let i = 0; i < 20 && !salio; i++) {
+    await esperar(2000);
+    [salio] = await filas("select detalle from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = 'mostrador'", [conv]);
+  }
+  assert(
+    salio?.detalle.mensaje_id === enviado.mensaje_id && salio.detalle.simulado === true,
+    "el worker desplegado lo tomó y lo mandó (simulado: el teléfono es ficticio), sin pasar por Lucía",
+  );
+  const [enCharla] = await filas("select contenido from mensajes where id = $1", [enviado.mensaje_id]);
+  assert(enCharla?.contenido.startsWith("[mostrador] "), "queda en la charla con la marca [mostrador]: Lucía sabe que lo escribió una persona");
 } catch (err) {
   console.error("\n💥 Error inesperado:", err);
   fallas++;

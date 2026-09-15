@@ -282,6 +282,35 @@ prueba("teléfono ficticio: corre el turno y guarda la respuesta, pero no sale n
   assertEquals(ev?.detalle.simulado, true);
 });
 
+prueba("un teléfono ficticio no necesita estar en LUCIA_TELEFONOS: Lucía le contesta igual, sin Meta", async (c) => {
+  const OTRO_FICTICIO = "5490000000104";
+  await mensajeDelCliente(c, OTRO_FICTICIO, "hola");
+  const { d, turno, meta } = armar(c);
+
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals([turno.llamadas.length, meta.envios.length], [1, 0]);
+});
+
+prueba("el mostrador: el mensaje del equipo sale por Meta sin la marca, con su wamid, y no pasa por Lucía", async (c) => {
+  await mensajeDelCliente(c, TEL_AFUERA, "hola, necesito hablar con alguien"); // fuera de la lista: igual sale
+  const conv = (await c.sql.query(
+    "select c.id from conversaciones c join clientes cl on cl.id = c.cliente_id where cl.telefono = $1",
+    [TEL_AFUERA],
+  )).rows[0].id;
+  await c.sql.query("update conversaciones set estado = 'derivada' where id = $1", [conv]);
+  const texto = "Hola, soy Ana del local. ¿Te llamo?";
+  const { mensaje_id } = (await c.sql.query("select mostrador_enviar($1, $2) as r", [conv, texto])).rows[0].r;
+  const { d, turno, meta } = armar(c);
+
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals(turno.llamadas.length, 0);
+  assertEquals(meta.envios.map(textoDe), [texto]);
+  const m = (await c.sql.query("select contenido, wa_message_id from mensajes where id = $1", [mensaje_id])).rows[0];
+  assertEquals([m.contenido, m.wa_message_id], [`[mostrador] ${texto}`, "wamid.SALIDA-0"]);
+  const ev = (await eventos(c, TEL_AFUERA)).find((e) => e.detalle.etapa === "mostrador");
+  assertEquals(ev?.tipo, "ok");
+});
+
 prueba("una caída de Meta se salva con el reintento: salen las dos burbujas", async (c) => {
   await mensajeDelCliente(c, TEL, "hola");
   const { d, meta, reloj: r } = armar(c, { falla: (i) => i === 0 });
