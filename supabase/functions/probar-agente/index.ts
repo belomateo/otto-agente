@@ -31,6 +31,14 @@ function urlDeLaBase(): string {
 }
 
 const pool = new pg.Pool({ connectionString: urlDeLaBase(), max: 5 });
+// Sin esto, que un cliente OCIOSO del pool se caiga (corte de red, el pooler de Supabase que
+// cierra una conexión idle) tira un 'error' no manejado y mata el proceso entero — encontrado
+// de verdad el 15/9 corriendo el tester en paralelo: el emulador se cayó a mitad de los
+// guiones con "Connection terminated unexpectedly". Con este listener, node-postgres solo
+// descarta ese cliente y sigue: la próxima consulta abre uno nuevo.
+pool.on("error", (err) => {
+  console.error("probar-agente: un cliente ocioso del pool se desconectó, se descarta y sigue:", err.message);
+});
 
 type Cuerpo = { telefono?: unknown; mensaje?: unknown };
 

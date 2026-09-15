@@ -365,31 +365,55 @@ const GUIONES = {
 
 // ── correr uno, correr todos, informe ────────────────────────────────────────────────────
 
-async function correrUno(sql, nombre) {
+// Una conexión NUEVA por guion (no una compartida para toda la corrida): si el pooler de
+// Supabase corta una conexión ociosa a mitad de un guion — pasó de verdad el 15/9, "Connection
+// terminated unexpectedly" en medio de una corrida larga — el próximo guion arranca con una
+// conexión sana en vez de heredar una ya rota. `sql.on("error", ...)` es imprescindible:
+// pg.Client es un EventEmitter, y un 'error' sin escuchar tira una excepción no capturada que
+// mata el proceso de Node entero (así se cayó la corrida esa vez, a mitad de "lo-voy-a-pensar").
+async function conConexionPropia(url, fn) {
+  const sql = new pg.Client({ connectionString: url });
+  let seRompio = null;
+  sql.on("error", (err) => { seRompio = err; });
+  await sql.connect();
+  try {
+    const resultado = await fn(sql);
+    if (seRompio) throw seRompio;
+    return resultado;
+  } finally {
+    await sql.end().catch(() => {});
+  }
+}
+
+async function correrUno(url, nombre) {
   const g = GUIONES[nombre];
   const resultado = { nombre, ok: true, detalles: [], error: null, respuestas: [] };
-  let idsCatalogo = [];
   try {
-    await limpiarTelefono(sql, g.telefono);
-    if (g.necesitaCatalogo) idsCatalogo = await sembrarCatalogo(sql);
+    await conConexionPropia(url, async (sql) => {
+      let idsCatalogo = [];
+      try {
+        await limpiarTelefono(sql, g.telefono);
+        if (g.necesitaCatalogo) idsCatalogo = await sembrarCatalogo(sql);
 
-    let ultimaRespuesta = null;
-    for (const mensaje of g.mensajes) {
-      ultimaRespuesta = await mandar(g.telefono, mensaje);
-      resultado.respuestas.push(ultimaRespuesta.mensajes || []);
-      if (ultimaRespuesta.derivo) break; // si ya derivó, no tiene sentido seguir mandando mensajes del guion
-    }
+        let ultimaRespuesta = null;
+        for (const mensaje of g.mensajes) {
+          ultimaRespuesta = await mandar(g.telefono, mensaje);
+          resultado.respuestas.push(ultimaRespuesta.mensajes || []);
+          if (ultimaRespuesta.derivo) break; // si ya derivó, no tiene sentido seguir mandando mensajes del guion
+        }
 
-    for (const [ok, detalle] of await g.verificar(sql, g.telefono, resultado.respuestas, ultimaRespuesta)) {
-      resultado.detalles.push({ ok: !!ok, detalle });
-      if (!ok) resultado.ok = false;
-    }
+        for (const [ok, detalle] of await g.verificar(sql, g.telefono, resultado.respuestas, ultimaRespuesta)) {
+          resultado.detalles.push({ ok: !!ok, detalle });
+          if (!ok) resultado.ok = false;
+        }
+      } finally {
+        if (idsCatalogo.length) await borrarCatalogo(sql, idsCatalogo).catch(() => {});
+        await limpiarTelefono(sql, g.telefono).catch(() => {});
+      }
+    });
   } catch (e) {
     resultado.ok = false;
     resultado.error = String(e?.message ?? e);
-  } finally {
-    if (idsCatalogo.length) await borrarCatalogo(sql, idsCatalogo).catch(() => {});
-    await limpiarTelefono(sql, g.telefono).catch(() => {});
   }
   return resultado;
 }
@@ -412,26 +436,20 @@ async function main() {
 
   const url = process.env.SUPABASE_DB_URL;
   if (!url) { console.error("Falta SUPABASE_DB_URL"); process.exit(1); }
-  const sql = new pg.Client({ connectionString: url });
-  await sql.connect();
 
   const resultados = [];
-  try {
-    for (const nombre of nombres) {
-      process.stdout.write(`▶ ${nombre} ... `);
-      const r = await correrUno(sql, nombre);
-      resultados.push(r);
-      console.log(r.ok ? "✅" : "❌");
-      if (!r.ok) {
-        if (r.error) console.log(`   💥 ${r.error}`);
-        for (const d of r.detalles) if (!d.ok) console.log(`   ❌ ${d.detalle}`);
-      }
-      for (const [i, msj] of r.respuestas.entries()) {
-        console.log(`   [${i + 1}] ${g_mensajes(nombre, i)} → ${msj.join(" | ") || "(sin mensaje)"}`);
-      }
+  for (const nombre of nombres) {
+    process.stdout.write(`▶ ${nombre} ... `);
+    const r = await correrUno(url, nombre);
+    resultados.push(r);
+    console.log(r.ok ? "✅" : "❌");
+    if (!r.ok) {
+      if (r.error) console.log(`   💥 ${r.error}`);
+      for (const d of r.detalles) if (!d.ok) console.log(`   ❌ ${d.detalle}`);
     }
-  } finally {
-    await sql.end();
+    for (const [i, msj] of r.respuestas.entries()) {
+      console.log(`   [${i + 1}] ${g_mensajes(nombre, i)} → ${msj.join(" | ") || "(sin mensaje)"}`);
+    }
   }
 
   function g_mensajes(nombre, i) {
