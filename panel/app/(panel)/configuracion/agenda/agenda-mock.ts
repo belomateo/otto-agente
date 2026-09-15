@@ -1,10 +1,13 @@
-// Agenda mock (H1.2, con las decisiones #7 y #9 del 14/9). El horario del local
-// (lunes a viernes 10 a 19, sábado 9:30 a 18:30, domingo cerrado) queda para la
-// atención humana y los avisos fuera de horario. Los turnos van por franjas, cada
-// una con su cantidad de probadores (notas de Otto España, 14/9): lunes a viernes de
+// Agenda mock (H1.2, con las decisiones #7 y #9 del 14/9, y el campo de aviso de la #10 del
+// 15/9). El horario del local (lunes a viernes 10 a 19, sábado 9:30 a 18:30, domingo cerrado)
+// queda para la atención humana y los avisos fuera de horario. Los turnos van por franjas,
+// cada una con su cantidad de probadores (notas de Otto España, 14/9): lunes a viernes de
 // 13 a 19 con 3, sábado de 9:30 a 12 con 3 y de 13:30 a 18:30 con 2, domingo sin
-// turnos. Reserva para urgencias: 7 días (supuesto #21). En Fase 2 salen de
-// `horarios`, `franjas_turnos` y `configuracion_agenda`, que crea paneles.
+// turnos. Reserva para urgencias: 7 días (supuesto #21). Aviso antes del turno: 30 min
+// (decisión #10, cartel de turno, H1.17). En Fase 2 salen de `horarios`, `franjas_turnos` y
+// `configuracion_agenda`, que crea paneles. Este mock no comparte estado con el de
+// components/cartel-turno/mock.ts: cambiar el número acá no cambia cuándo aparece ese cartel
+// de prueba (ver Supuestos de docs/hitos/1.17-cartel-turno.md).
 
 export type Franja = { desde: string; hasta: string; probadores: number };
 
@@ -26,6 +29,8 @@ export type ConfigAgenda = {
   escalonado: number;
   /** Días que quedan para eventos cercanos; null = sin reserva. */
   reservaUrgencia: number | null;
+  /** Minutos antes del turno en que sale el cartel del equipo (H1.17, decisión #10). */
+  avisoTurnoMin: number;
   duraciones: Duracion[];
 };
 
@@ -61,6 +66,7 @@ export const AGENDA: ConfigAgenda = {
   probadores: 3,
   escalonado: 15,
   reservaUrgencia: 7,
+  avisoTurnoMin: 30,
   duraciones: [
     { tipo: 'Graduado', minutos: 45 },
     { tipo: 'Novio', minutos: 45 },
