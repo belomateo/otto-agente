@@ -8,6 +8,12 @@ project_id = "fhyuvdliwppqkneddezn"
 verify_jwt = false
 
 # Lo llaman la base (trigger al encolar y cron de contención) con x-worker-secret, no con un
-# JWT de usuario.
+# JWT de usuario. Desde 2.1 corre el turno de Lucía, que lee _shared/prompt.md en tiempo de
+# ejecución: el archivo viaja con la función.
 [functions.worker]
+verify_jwt = false
+static_files = ["./functions/_shared/prompt.md"]
+
+# Los envíos por plantilla (1.14): la llaman los crons de 0022 con x-worker-secret.
+[functions.cron-envios]
 verify_jwt = false

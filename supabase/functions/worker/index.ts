@@ -1,94 +1,47 @@
-// Worker: toma trabajos de la cola (FOR UPDATE SKIP LOCKED, vía cola_tomar_uno) y corre el
-// turno del agente. En Fase 1 el agente es un stub que contesta un texto fijo; el turno real
-// (_shared/turno, rol agente) se conecta en Fase 2. Lo llaman el trigger al encolar y el cron
-// de contención de cada minuto, siempre con la cabecera x-worker-secret.
-import { createClient } from "npm:@supabase/supabase-js@2.116.0";
-import { enviarTexto } from "../_shared/whatsapp/enviar.ts";
+// Worker: toma trabajos de la cola (cola_tomar_uno: SKIP LOCKED y un solo turno por charla) y
+// los atiende con atender.ts, donde contesta Lucía (hito 2.1). Lo llaman el trigger al encolar y
+// el cron de contención de cada minuto, siempre con la cabecera x-worker-secret.
+// Se conecta directo a Postgres con SUPABASE_DB_URL, que Supabase le da a toda Edge Function: el
+// turno de Lucía (_shared/turno) habla SQL por esa conexión.
+// @deno-types="npm:@types/pg@8.11.10"
+import pg from "npm:pg@8.13.1";
+import { calendarioPropio } from "../_shared/agenda/calendario_propio.ts";
+import { type ClienteSql, dbDesde } from "../_shared/db.ts";
+import { correrTurno } from "../_shared/turno/turno.ts";
+import { atenderCola, type Dependencias, leerListaTelefonos } from "./atender.ts";
 
 const SECRETO = Deno.env.get("WORKER_SECRET") ?? "";
-const WA = {
-  token: Deno.env.get("WA_ACCESS_TOKEN") ?? "",
-  phoneNumberId: Deno.env.get("WA_PHONE_NUMBER_ID") ?? "",
+
+const dependencias: Dependencias = {
+  wa: { token: Deno.env.get("WA_ACCESS_TOKEN") ?? "", phoneNumberId: Deno.env.get("WA_PHONE_NUMBER_ID") ?? "" },
+  // WORKER_STUB_TELEFONOS era la lista del stub de Fase 1: vale mientras no esté LUCIA_TELEFONOS.
+  telefonosLucia: leerListaTelefonos(Deno.env.get("LUCIA_TELEFONOS") ?? Deno.env.get("WORKER_STUB_TELEFONOS")),
+  enviosEncendidos: Deno.env.get("CRONS_ENVIOS") === "on",
+  tz: Deno.env.get("NEGOCIO_TZ") || "America/Argentina/Cordoba",
+  derivacionTel: Deno.env.get("DERIVACION_ALQUILER_TEL")?.trim() || null,
+  baseFotos: `${Deno.env.get("SUPABASE_URL") ?? ""}/storage/v1/object/public/catalogo/`,
+  calendario: calendarioPropio,
+  turno: correrTurno,
+  fetcher: fetch,
+  ahora: () => new Date(),
+  dormir: (ms) => new Promise((listo) => setTimeout(listo, ms)),
 };
-// El stub solo le contesta a estos números (separados por coma, formato de Meta). A cualquier
-// otro no le responde nada: si un cliente real escribe antes de Fase 2, no recibe un
-// "recibido" automático. Vacío = no le contesta a nadie.
-const TELEFONOS_PRUEBA = new Set(
-  (Deno.env.get("WORKER_STUB_TELEFONOS") ?? "").split(",").map((t) => t.trim()).filter(Boolean),
-);
-const RESPUESTA_STUB = "Recibido. (Prueba del sistema de Otto Su Misura: todavía no responde Lucía.)";
-const MAX_POR_LLAMADA = 10;
-
-const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
-  auth: { persistSession: false },
-});
-
-type Trabajo = { id: string; conversacion_id: string; payload: Record<string, unknown> };
-
-async function evento(conversacionId: string, tipo: string, detalle: Record<string, unknown>) {
-  const { error } = await supabase.from("eventos_agente").insert({ conversacion_id: conversacionId, tipo, detalle });
-  if (error) console.error("no se pudo escribir la bitácora", error);
-}
-
-async function procesar(t: Trabajo) {
-  const { data: conv, error } = await supabase
-    .from("conversaciones")
-    .select("estado, clientes(telefono)")
-    .eq("id", t.conversacion_id)
-    .single();
-  if (error || !conv) throw new Error(`conversación ${t.conversacion_id}: ${error?.message ?? "no existe"}`);
-
-  // La derivaron entre que se encoló y ahora: la tiene una persona, Lucía no contesta.
-  if (conv.estado !== "activa") {
-    await evento(t.conversacion_id, "ok", { etapa: "worker-stub", nota: `conversación ${conv.estado}: sin respuesta` });
-    return;
-  }
-
-  const cliente = conv.clientes as unknown as { telefono: string } | null;
-  const telefono = cliente?.telefono;
-  if (!telefono || !TELEFONOS_PRUEBA.has(telefono)) {
-    await evento(t.conversacion_id, "ok", { etapa: "worker-stub", nota: "número fuera de la lista de prueba: sin respuesta" });
-    return;
-  }
-
-  const waMessageId = await enviarTexto(WA, telefono, RESPUESTA_STUB);
-  const { error: errMsg } = await supabase.from("mensajes").insert({
-    conversacion_id: t.conversacion_id,
-    wa_message_id: waMessageId,
-    direccion: "saliente",
-    tipo: "text",
-    contenido: RESPUESTA_STUB,
-  });
-  if (errMsg) console.error("se envió pero no se pudo guardar el mensaje saliente", errMsg);
-  await evento(t.conversacion_id, "ok", { etapa: "worker-stub", respuesta: RESPUESTA_STUB, wa_message_id: waMessageId });
-}
 
 Deno.serve(async (req) => {
   if (req.method !== "POST" || SECRETO === "" || req.headers.get("x-worker-secret") !== SECRETO) {
     return new Response("forbidden", { status: 403 });
   }
 
-  const worker = `worker-${crypto.randomUUID().slice(0, 8)}`;
-  let procesados = 0;
-  for (let i = 0; i < MAX_POR_LLAMADA; i++) {
-    const { data, error } = await supabase.rpc("cola_tomar_uno", { p_worker: worker });
-    if (error) {
-      console.error("cola_tomar_uno falló", error);
-      break;
-    }
-    // setof: la cola vacía devuelve cero filas.
-    const trabajo = (Array.isArray(data) ? data[0] : null) as Trabajo | null;
-    if (!trabajo) break;
-
-    try {
-      await procesar(trabajo);
-      await supabase.rpc("cola_terminar", { p_id: trabajo.id, p_ok: true });
-    } catch (err) {
-      console.error("falló el trabajo", trabajo.id, err);
-      await supabase.rpc("cola_terminar", { p_id: trabajo.id, p_ok: false, p_error: String(err) });
-      await evento(trabajo.conversacion_id, "error", { etapa: "worker-stub", error: String(err) });
-    }
-    procesados++;
+  const cliente = new pg.Client({ connectionString: Deno.env.get("SUPABASE_DB_URL") });
+  // Un corte de la conexión no puede tirar el proceso: la consulta en curso falla, el trabajo
+  // vuelve a la cola y lo levanta el cron.
+  cliente.on("error", (e) => console.error("worker: se cortó la conexión con la base", e.message));
+  await cliente.connect();
+  try {
+    const worker = `worker-${crypto.randomUUID().slice(0, 8)}`;
+    const procesados = await atenderCola(dbDesde(cliente as unknown as ClienteSql), dependencias, worker);
+    return Response.json({ procesados });
+  } finally {
+    await cliente.end().catch(() => {});
   }
-  return Response.json({ procesados });
 });

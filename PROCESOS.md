@@ -43,8 +43,9 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
 | Confirmación al cliente | 🔧 | Texto fijo: día, hora, España 764, mapa, un acompañante, 45 min con 10 de tolerancia, la reserva del traje se abona en el local, avisar si no puede | `mensajes` |
 | Recontacto si NO agendó | 🔧 | Consultó y no agendó → plantilla al día siguiente y a las 72 hs, una vez cada una | `recontactos` |
 | 24 hs antes | 🔧 | Plantilla `recordatorio_turno_24h` con botones. `recordatorio_enviado_at` | `turnos` |
-| Confirmación | 🔧 | **Solo** cuando llega la respuesta al botón "Confirmo" se marca `confirmado=true`. Ninguna interpretación del LLM lo marca. "Reprogramar" → Lucía retoma con `reprogramar_turno` | `turnos.confirmado_at` |
+| Confirmación | 🔧 | **Solo** cuando llega la respuesta al botón "Confirmo" se marca `confirmado=true`, con `confirmado_por = 'cliente'`. Ninguna interpretación del LLM lo marca. "Reprogramar" → Lucía retoma con `reprogramar_turno` | `turnos.confirmado_at` |
 | Sin respuesta al recordatorio | 👤 | Aparece en Turnos con estado "sin confirmar"; el equipo decide llamar | panel |
+| 30 min antes | 🔧→👤 | Cartel en todo el panel con los datos del turno (decisión #10). El OK de alguien del equipo lo cierra para todos y, si el turno seguía sin confirmar, lo confirma con `confirmado_por` = su email | `turnos.aviso_ok_at` |
 | En el local | 👤 | Turno de 45'; el asesor toma medidas; se reserva con el 100% (esto lo hace el equipo, Lucía nunca cobra) | el asesor marca "alquiló" en Turnos |
 | Prueba final | 🔧+👤 | Al marcar "alquiló", el sistema propone el turno de prueba final (15') un día antes del evento y lo agenda si el asesor confirma | `turnos` (tipo prueba_final) |
 | Retiro y devolución | 👤 | El asesor marca "retiró" y "devolvió" en Turnos | `turnos.estado` |
