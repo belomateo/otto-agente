@@ -1,10 +1,11 @@
-// Control 1 del hito 1.5: cada una de las 11 barandillas tiene al menos un test que la dispara
-// y otro, con el caso parecido, que NO la dispara. Cuando salta, se verifica también la acción
-// de su fila en AGENTE.md § 6 y que deje un motivo para la bitácora.
+// Control 1 del hito 1.5: cada barandilla tiene al menos un test que la dispara y otro, con el
+// caso parecido, que NO la dispara. Cuando salta, se verifica también la acción de su fila en
+// AGENTE.md § 6 y que deje un motivo para la bitácora.
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { accesorioSinHerramienta } from "../../supabase/functions/_shared/barandillas/accesorio_sin_herramienta.ts";
 import { anunciaSinDerivar } from "../../supabase/functions/_shared/barandillas/anuncia_sin_derivar.ts";
+import { confirmacionDoble } from "../../supabase/functions/_shared/barandillas/confirmacion_doble.ts";
 import { derivaYPregunta } from "../../supabase/functions/_shared/barandillas/deriva_y_pregunta.ts";
 import { fueraVentanaMeta } from "../../supabase/functions/_shared/barandillas/fuera_ventana_meta.ts";
 import { horarioSinHerramienta, horas } from "../../supabase/functions/_shared/barandillas/horario_sin_herramienta.ts";
@@ -33,6 +34,32 @@ async function noSalta(b: Barandilla, e: EntradaBarandilla) {
 }
 
 // ── formato ──────────────────────────────────────────────────────────────────────────────
+
+Deno.test("confirmacion_doble salta si agendar_turno o reprogramar_turno salió bien en este turno", async () => {
+  const r = await salta(
+    confirmacionDoble,
+    entrada("¡Listo, Lucas! Te reservé el turno para el martes.", { traza: traza({ herramientas: ["agendar_turno"] }) }),
+  );
+  assertEquals(r.texto, "");
+  const r2 = await salta(
+    confirmacionDoble,
+    entrada("¡Listo, Lucas! Te reprogramé el turno.", { traza: traza({ herramientas: ["reprogramar_turno"] }) }),
+  );
+  assertEquals(r2.texto, "");
+});
+
+Deno.test("confirmacion_doble no salta sin agendar_turno/reprogramar_turno en la traza, ni si ya no queda texto (caso parecido)", async () => {
+  await noSalta(
+    confirmacionDoble,
+    entrada("Tengo estos dos horarios, ¿cuál te queda mejor?", { traza: traza({ herramientas: ["buscar_horarios"] }) }),
+  );
+  await noSalta(confirmacionDoble, entrada("", { traza: traza({ herramientas: ["agendar_turno"] }) }));
+  // Un rechazo de agendar_turno no cuenta (ok: false): el modelo sigue pudiendo escribir su
+  // propio mensaje explicando el rechazo, no hay ninguna confirmación de código que lo tape.
+  const trazaConRechazo = traza();
+  trazaConRechazo.llamadas.push({ herramienta: "agendar_turno", argumentos: {}, ok: false, rechazo: "turno_activo" });
+  await noSalta(confirmacionDoble, entrada("Ya tenés un turno activo, ¿lo reprogramamos?", { traza: trazaConRechazo }));
+});
 
 Deno.test("sin_markdown salta con negritas, viñetas y títulos, y lo limpia en código", async () => {
   const r = await salta(sinMarkdown, entrada("**Precio:** te cuento\n- camisa\n- corbata\n# Horarios"));

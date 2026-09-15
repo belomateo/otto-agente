@@ -17,6 +17,10 @@ export type Rafaga = {
   // como el mensaje actual. Sin este corte, el mensaje de ahora aparecería dos veces.
   desde: Date;
   ultimoEnviadoAt: Date | null; // para la barandilla fuera_ventana_meta
+  // Supuesto #33: si no hay texto pero SÍ hubo algo entrante en la ventana (foto, audio,
+  // sticker, ubicación...), no es lo mismo que "no pasó nada" — turno.ts contesta con el texto
+  // fijo de contexto_agente en vez de quedarse en silencio.
+  soloNoTexto: boolean;
 };
 
 export async function agruparRafaga(db: Db, conversacionId: string, ahora: Date): Promise<Rafaga> {
@@ -32,10 +36,23 @@ export async function agruparRafaga(db: Db, conversacionId: string, ahora: Date)
       order by enviado_at, id`,
     [conversacionId, desdeIso, ahora.toISOString()],
   );
+  let soloNoTexto = false;
+  let ultimoEnviadoAt = filas.length ? new Date(filas[filas.length - 1].enviado_at) : null;
+  if (filas.length === 0) {
+    const [otros] = await db.consulta<{ n: number; ultimo: string | null }>(
+      `select count(*)::int as n, max(enviado_at) as ultimo from mensajes
+        where conversacion_id = $1 and direccion = 'entrante'
+          and enviado_at > $2::timestamptz and enviado_at <= $3::timestamptz`,
+      [conversacionId, desdeIso, ahora.toISOString()],
+    );
+    soloNoTexto = (otros?.n ?? 0) > 0;
+    if (otros?.ultimo) ultimoEnviadoAt = new Date(otros.ultimo);
+  }
   return {
     texto: filas.map((f) => String(f.contenido)).join("\n"),
     mensajeIds: filas.map((f) => String(f.id)),
     desde: new Date(desdeIso),
-    ultimoEnviadoAt: filas.length ? new Date(filas[filas.length - 1].enviado_at) : null,
+    ultimoEnviadoAt,
+    soloNoTexto,
   };
 }
