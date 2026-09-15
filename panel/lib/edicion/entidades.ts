@@ -206,14 +206,17 @@ export const ENTIDADES = {
     }
   ),
 
-  // Configuración › Agenda: probadores, escalonado y reserva de urgencia (0012 y 0030, una
-  // sola fila). dias_reserva_urgencia null = sin reserva (decisión #9, supuesto #21).
+  // Configuración › Agenda: probadores, escalonado, reserva de urgencia y aviso de turno (0012,
+  // 0030 y 0031, una sola fila). dias_reserva_urgencia null = sin reserva (decisión #9,
+  // supuesto #21). aviso_turno_min: cuántos minutos antes de cada turno sale el cartel
+  // (decisión #10); desde el panel no se vacía.
   agenda: definir(
     'configuracion_agenda',
     {
       cantidad_probadores: entero(1, 20),
       escalonado_min: entero(1, 120),
       dias_reserva_urgencia: entero(1, 365).nullable(),
+      aviso_turno_min: entero(1, 240),
     },
     {
       obligatorios: null,

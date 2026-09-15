@@ -19,6 +19,11 @@ export type FilaTurno = TurnoDelDia & {
   confirmado: boolean;
   /** Aviso de sincronización con Google Calendar (0011); null = sin aviso. */
   aviso: string | null;
+  /** Quién confirmó (0031): 'cliente' por el botón de WhatsApp, o el email de quien dio OK al cartel. */
+  confirmado_por: string | null;
+  /** OK del cartel del turno (0031, decisión #10); null = nadie lo dio. */
+  aviso_ok_at: string | null;
+  aviso_ok_por: string | null;
 };
 
 export type AgendaDelDia = {
@@ -48,7 +53,9 @@ export async function turnosDelDia(
 
   let q = db
     .from('turnos')
-    .select('id, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado, aviso, clientes(nombre, telefono)')
+    .select(
+      'id, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado, aviso, confirmado_por, aviso_ok_at, aviso_ok_por, clientes(nombre, telefono)'
+    )
     .gte('inicio', desde)
     .lt('inicio', hasta)
     .order('inicio', { ascending: true })
@@ -109,6 +116,9 @@ export async function turnosDelDia(
         duracion_min: t.duracion_min,
         confirmado: t.confirmado,
         aviso: t.aviso,
+        confirmado_por: t.confirmado_por,
+        aviso_ok_at: t.aviso_ok_at,
+        aviso_ok_por: t.aviso_ok_por,
         h: hora(t.inicio),
         n: nombreDe(t.clientes),
         t: `${ETIQUETA_TIPO_TURNO[t.tipo] ?? t.tipo} · ${t.duracion_min}’`,
