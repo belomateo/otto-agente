@@ -281,6 +281,31 @@ prueba("derivar_a_persona acepta una despedida sin pregunta (caso parecido)", as
   assertEquals(await contar(sql, derivacionesDe, [conversacionId]), 1);
 });
 
+// Hallazgo propio, 15/9, al re-correr los 15 guiones después del fix de C2: con la puerta de
+// evento_inminente cerrada, el guion evento-manana-deriva derivó igual con motivo
+// turno_urgente_sin_hueco sin haber llamado nunca a buscar_horarios — la fecha del evento no se
+// guardó y salió un texto propio en vez del fijo. Mismo problema que C2, un escalón más abajo.
+prueba("derivar_a_persona rechaza turno_urgente_sin_hueco si no llamó a buscar_horarios en este turno", async ({ ctx, sql, conversacionId }) => {
+  const r = await ejecutarHerramienta(
+    "derivar_a_persona",
+    { motivo: "turno_urgente_sin_hueco", mensaje_al_cliente: "Como el evento es pronto, te paso con un asesor." },
+    ctx,
+  );
+  esRechazo(r, "sin_buscar_horarios");
+  assertEquals(await contar(sql, derivacionesDe, [conversacionId]), 0);
+});
+
+prueba("derivar_a_persona acepta turno_urgente_sin_hueco si buscar_horarios ya corrió en este turno (caso parecido)", async ({ ctx, sql, conversacionId }) => {
+  ctx.traza.llamadas.push({ herramienta: "buscar_horarios", argumentos: { desde: "2026-09-20", hasta: "2026-09-27" }, ok: true });
+  const r = await ejecutarHerramienta(
+    "derivar_a_persona",
+    { motivo: "turno_urgente_sin_hueco", mensaje_al_cliente: "No encontramos un hueco a tiempo, te paso con el equipo." },
+    ctx,
+  );
+  esOk(r);
+  assertEquals(await contar(sql, derivacionesDe, [conversacionId]), 1);
+});
+
 // ── cualquier herramienta ────────────────────────────────────────────────────────────────
 
 prueba("una herramienta que no existe o un parámetro de más se rechazan sin tocar nada", async ({ ctx }) => {

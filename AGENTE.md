@@ -136,7 +136,7 @@ el índice del prompt.
 | `anotar(texto)` | — | Nota libre en la libreta (`notas`, autor `lucia`) |
 | `enviar_fotos(modelo_ids[])` | Máximo 3 · ids existen en catálogo, activos y con fotos | Manda la primera foto cargada en la ficha de cada modelo |
 | `enviar_link(tipo)` | tipo ∈ {mapa, resena, web} · el link está cargado en `enlaces` (se reconoce por el nombre) | Manda el link de `enlaces` |
-| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum · sin pregunta en el mensaje | Fila en `derivaciones` (una sola si ya había una pendiente), conversación derivada, avisa al número del canal, **corta el turno**. Con reclamo o descuento no se manda la despedida. Aparece en la pestaña Atención humana |
+| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum **sin los que decide solo el código** (`evento_inminente`, `barandilla_doble`, `sin_respuesta`, `timeout` — ver § 10) · sin pregunta en el mensaje | Fila en `derivaciones` (una sola si ya había una pendiente), conversación derivada, avisa al número del canal, **corta el turno**. Con reclamo o descuento no se manda la despedida. Aparece en la pestaña Atención humana. El `mensaje_al_cliente` (texto libre del modelo) pasa por las barandillas igual que cualquier otro texto antes de salir (hallazgo C1 del tester, 15/9: antes no pasaba) |
 
 Cada herramienta devuelve al modelo sus datos o un rechazo que dice qué hacer ahora. Lo que
 le llega al cliente armado en código (confirmación, link, fotos, el texto fijo de una
@@ -190,10 +190,10 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | `deriva_y_pregunta` | `derivar_a_persona` + `?` en el mismo mensaje | Quita la pregunta |
 | `anuncia_sin_derivar` | «te paso con», «le derivo» sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
 | `no_a_secas` | Mensaje que arranca negando, es corto y no ofrece nada. Si arranca negando pero es largo u ofrece algo, decide el revisor (`LLM_CLASIFICADOR`) | Rehace |
-| `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje) | Rehace |
+| `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje); además, desde el 15/9 (hallazgo M3 del tester), un patrón más amplio: "ia" cerca de una palabra de meta-funcionamiento («instrucción», «configuración», «protege», «entrena», «responde de forma segura»), para cubrir una frase que rodea el tema sin decir ninguna de las exactas de arriba | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
-Son 12 en el código (una más que en la lista de arriba, sumada el 15/9: ver `accesorio_sin_herramienta` en la fila de contenido). Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
+Son 12 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
 código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
 del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
 el segundo del mismo turno deriva con motivo `barandilla_doble`. Si Lucía anunció un pase,
@@ -299,9 +299,17 @@ Lucía): «Te paso con un asesor del local para que te ayude con tu evento, y va
 hacer lo posible por encontrarte un lugar en la agenda.» Lucía no escribe nada más en
 ese turno.
 
-Derivación **por el LLM** (llama la tool): no encuentra el dato tras buscarlo,
-descuento insistido, cliente pide una persona, salió una barandilla dos veces,
-el modelo no respondió.
+Derivación **por el LLM** (llama la tool, con un motivo de `MOTIVOS_DERIVACION_LLM`):
+no encuentra el dato tras buscarlo, descuento insistido, cliente pide una persona.
+
+Ni "salió una barandilla dos veces" ni "el modelo no respondió" pueden ser una
+derivación que el LLM decide llamando a la tool: para cuando el código se entera de
+cualquiera de las dos, ya no hay ningún modelo esperando que le pidan un motivo. Son
+**solo de código**, igual que evento hoy/mañana (hallazgo C2 del tester, 15/9: antes el
+schema de `derivar_a_persona` aceptaba estos motivos igual, y el modelo podía llamarlos
+por su cuenta con un texto propio en vez del flujo garantizado). `MOTIVOS_SOLO_CODIGO`
+(`_shared/enums.ts`) es la lista completa: `evento_inminente`, `barandilla_doble`,
+`sin_respuesta`, `timeout`; ninguno está en el enum que ve la herramienta.
 
 Al derivar: `derivaciones` recibe la fila con motivo y resumen (lo arma el
 extractor); se avisa por WhatsApp al número del canal de alquiler; la conversación

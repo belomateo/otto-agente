@@ -125,6 +125,11 @@ prueba("cancelar_turno marca cancelado con motivo, no borra, libera el hueco y s
   await crearTurno(sql, { clienteId: await crearCliente(sql), inicio: local(SABADO, "10:00"), probador: 1 });
 });
 
+prueba("guardar_datos_cliente capitaliza el nombre al guardarlo (hallazgo B1 del tester, 15/9)", async ({ ctx, sql, clienteId }) => {
+  esOk(await ejecutarHerramienta("guardar_datos_cliente", { nombre: "denise gomez", evento: null, fecha_evento: null, rol: null, dia_o_noche: null, talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null }, ctx));
+  assertEquals((await fila(sql, "select nombre from clientes where id = $1", [clienteId])).nombre, "Denise Gomez");
+});
+
 prueba("guardar_datos_cliente escribe solo lo que vino y deja historial de la versión anterior", async ({ ctx, sql, clienteId }) => {
   await sql.query("update clientes set ciudad = 'Rosario' where id = $1", [clienteId]);
   const antes = await contar(sql, "select count(*)::int as n from historial_ediciones where tabla = 'clientes' and fila_id = $1", [clienteId]);

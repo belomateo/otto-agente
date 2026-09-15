@@ -154,17 +154,37 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     llamadasLlm.push(...r.llamadasLlm);
 
     // ¿Alguna herramienta ya cortó el turno (derivar_a_persona, o evento_inminente adentro del
-    // loop)? El aviso de a quién y por qué ya lo trae el efecto: no hay barandilla que aplicarle
-    // a un texto que ya salió por una tool, y el texto propio de Lucía (si escribió antes de
-    // llamarla) se manda igual, antes de la despedida armada en código.
+    // loop)? El aviso de a quién y por qué ya lo trae el efecto.
     const efectoQueCorta = r.efectos.find((e) => e.cortaTurno);
     if (efectoQueCorta) {
       eventos.push(...eventosDeLaTraza(ctxHerramientas.traza));
       if (efectoQueCorta.avisoEquipo) {
         eventos.push({ tipo: "derivacion", detalle: { motivo: efectoQueCorta.avisoEquipo.motivo, derivacion_id: efectoQueCorta.avisoEquipo.derivacionId, origen: "herramienta" } });
       }
+      // Hallazgo C1 del tester (15/9): este texto —el propio de Lucía si escribió algo antes de
+      // llamar la tool, MÁS la despedida libre de derivar_a_persona (mensaje_al_cliente, texto
+      // del MODELO, no del código)— nunca pasaba por ninguna barandilla, porque este `return` es
+      // anterior al bloque de barandillas de más abajo. En vivo, eso dejó salir «el sistema no me
+      // permite…», justo la frase que menciona_ia existe para frenar. Ahora se revisa cada pieza
+      // igual que al texto normal. Acá no hay margen para "rehacer" (el turno ya terminó): si una
+      // pieza no sale limpia como "enviar", se descarta esa pieza (nunca se manda lo que saltó) y,
+      // si se descartó algo, se completa con el texto fijo genérico en vez de dejar la despedida
+      // vacía.
+      const piezas = [...(r.textoFinal ? [r.textoFinal] : []), ...r.efectos.flatMap((e) => e.mensajesAlCliente ?? [])];
+      const mensajesRevisados: string[] = [];
+      let seDescartoAlgo = false;
+      for (const pieza of piezas) {
+        const b = await aplicarBarandillas({ texto: pieza, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt });
+        for (const s of b.saltos) eventos.push({ tipo: "error", detalle: { etapa: "barandilla-en-derivacion", barandilla: s.barandilla, accion: s.accion, motivo: s.motivo } });
+        if (b.decision === "enviar") mensajesRevisados.push(...enBurbujas(b.texto));
+        else if (b.decision !== "bloquear") seDescartoAlgo = true;
+      }
+      if (seDescartoAlgo) {
+        const textoSeguro = await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_DURA);
+        if (textoSeguro) mensajesRevisados.push(...enBurbujas(textoSeguro));
+      }
       resultado = {
-        mensajesAlCliente: [...enBurbujas(r.textoFinal), ...r.efectos.flatMap((e) => e.mensajesAlCliente ?? [])],
+        mensajesAlCliente: mensajesRevisados,
         imagenes: r.efectos.flatMap((e) => e.imagenes ?? []),
         derivo: true,
         motivoDerivacion: efectoQueCorta.avisoEquipo?.motivo as MotivoDerivacion | undefined,
@@ -273,8 +293,18 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       eventos.push({ tipo: "error", detalle: { etapa: "extraer", error: String((e as Error)?.message ?? e) } });
     }
 
-    // Paso 11 — bitácora. Siempre, pase lo que pase arriba.
-    await registrarEventos(db, p.conversacionId, eventos);
-    await registrarConsumo(db, p.conversacionId, llamadasLlm);
+    // Paso 11 — bitácora. Siempre, pase lo que pase arriba: si esto tira (hallazgo propio,
+    // 15/9 — una conexión de Postgres que se cae a mitad del turno, ver el comentario de
+    // pool.on('error') en probar-agente/index.ts), NO puede tirar el resultado del turno con
+    // ella. Antes sí pasaba: un `throw` en un `finally` reemplaza lo que el `try` ya había
+    // resuelto, así que un fallo acá — solo bitácora, nada que el cliente vea — tiraba a la
+    // basura una respuesta ya buena y ya guardada en `mensajes` (paso 9, arriba) y probar-agente
+    // devolvía 500 en vez del resultado real.
+    try {
+      await registrarEventos(db, p.conversacionId, eventos);
+      await registrarConsumo(db, p.conversacionId, llamadasLlm);
+    } catch (e) {
+      console.error("bitácora del turno no se pudo guardar (no afecta la respuesta al cliente):", (e as Error)?.message ?? e);
+    }
   }
 }
