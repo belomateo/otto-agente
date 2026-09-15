@@ -131,6 +131,12 @@ informe del verificador, §3.3 a §3.5.
   números de `LUCIA_TELEFONOS` (el de Mateo); a los demás no les contesta hasta que Mateo lo abra.
   Falta cómo llegan los mensajes: hoy Meta los manda a n8n (#12), así que o n8n se los reenvía al
   webhook de Supabase, o el webhook de Meta pasa a Supabase con el App Secret.
+- **#16 → el webhook de WhatsApp pasa a Supabase (reemplaza a #12).** El 15/9 el workspace de n8n
+  ya no existía (404 "No workspace here" en toda la instancia): Meta mandaba los mensajes a una
+  dirección muerta. Con el App Secret de Mateo y su OK, la suscripción de la app "Agente Sofia" pasó
+  a la Edge Function `webhook-whatsapp`, con un token de verificación nuevo y los mismos 10 campos
+  que tenía. La firma de Meta se verifica en cada POST (`firma.ts`). Lucía contesta solo a los
+  números de `LUCIA_TELEFONOS` hasta que Mateo la abra a todos.
 
 Lo que sigue abajo es el texto original de cada punto, como referencia.
 
