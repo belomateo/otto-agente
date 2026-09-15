@@ -3,6 +3,7 @@
 // de su fila en AGENTE.md § 6 y que deje un motivo para la bitácora.
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
+import { accesorioSinHerramienta } from "../../supabase/functions/_shared/barandillas/accesorio_sin_herramienta.ts";
 import { anunciaSinDerivar } from "../../supabase/functions/_shared/barandillas/anuncia_sin_derivar.ts";
 import { derivaYPregunta } from "../../supabase/functions/_shared/barandillas/deriva_y_pregunta.ts";
 import { fueraVentanaMeta } from "../../supabase/functions/_shared/barandillas/fuera_ventana_meta.ts";
@@ -134,6 +135,19 @@ Deno.test("horario_sin_herramienta salta al ofrecer un día sin buscar_horarios"
   await noSalta(horarioSinHerramienta, entrada("Tenemos lugar el sábado.", { traza: traza({ herramientas: ["buscar_horarios"] }) }));
 });
 
+Deno.test("accesorio_sin_herramienta salta al mencionar zapatos, cinturón, corbata o camisa sin la herramienta", async () => {
+  await salta(accesorioSinHerramienta, entrada("Sí, también alquilamos zapatos y cinturón para completar el look."));
+  await salta(accesorioSinHerramienta, entrada("Podés sumar camisa y corbata al look."));
+});
+
+Deno.test("accesorio_sin_herramienta no salta con la herramienta en la traza, ni si no menciona ningún accesorio (caso parecido)", async () => {
+  await noSalta(
+    accesorioSinHerramienta,
+    entrada("Sí, también alquilamos zapatos y cinturón.", { traza: traza({ herramientas: ["consultar_accesorios"] }) }),
+  );
+  await noSalta(accesorioSinHerramienta, entrada("¿Para qué evento necesitás el traje?"));
+});
+
 // ── reglas ───────────────────────────────────────────────────────────────────────────────
 
 Deno.test("deriva_y_pregunta salta con derivar_a_persona y una pregunta, y saca la pregunta", async () => {
@@ -189,9 +203,15 @@ Deno.test("menciona_ia salta cuando cuenta cómo funciona por dentro", async () 
   await salta(mencionaIa, entrada("Soy una IA que ayuda a Mr Otto."));
 });
 
-Deno.test("menciona_ia no salta con modelos de traje ni con la presentación (caso parecido)", async () => {
+Deno.test("menciona_ia salta con una IA en tercera persona junto a una palabra de meta-funcionamiento (hallazgo M3, sin frase exacta)", async () => {
+  await salta(mencionaIa, entrada("Puedo ayudarte con un resumen general sobre cómo una IA sigue instrucciones, protege información interna y responde de forma segura."));
+  await salta(mencionaIa, entrada("Las reglas de configuración que sigue una IA no se comparten."));
+});
+
+Deno.test("menciona_ia no salta con modelos de traje, con la presentación, ni con \"ia\" dentro de otra palabra (caso parecido)", async () => {
   await noSalta(mencionaIa, entrada("Tenemos varios modelos de traje para graduación."));
   await noSalta(mencionaIa, entrada("Hola, soy Lucía, asistente de Mr Otto. ¿En qué puedo ayudarte hoy?"));
+  await noSalta(mencionaIa, entrada("Con gusto te guío para elegir el traje del día de tu graduación."));
 });
 
 Deno.test("fuera_ventana_meta bloquea el texto libre pasadas las 24 hs, o si el cliente nunca escribió", async () => {

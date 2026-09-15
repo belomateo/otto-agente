@@ -14,10 +14,15 @@ import type { ContextoHerramienta, Efectos } from "./tipos.ts";
 
 export const CLAVE_TEXTO_EVENTO_INMINENTE = "texto_evento_inminente";
 
+// Lo mínimo que hace falta para derivar: una herramienta ya tiene todo esto en su
+// ContextoHerramienta (lo satisface sin cast, por estructura); el turno (turno.ts), que deriva
+// desde afuera de cualquier herramienta, arma este objeto más chico a mano.
+export type ContextoDerivacion = { db: Db; conversacionId: string; derivacionTel?: string | null };
+
 // Crea la fila en derivaciones (o reusa la pendiente de esta charla) y deja la conversación
 // derivada: Lucía no contesta hasta que alguien la devuelva desde el panel.
 export async function registrarDerivacion(
-  ctx: ContextoHerramienta,
+  ctx: ContextoDerivacion,
   motivo: MotivoDerivacion,
 ): Promise<{ id: string; yaEstaba: boolean }> {
   const previa = await ctx.db.consulta(

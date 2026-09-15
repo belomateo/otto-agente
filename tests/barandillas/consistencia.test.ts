@@ -20,7 +20,7 @@ Deno.test("las fórmulas de relleno que prohíbe el prompt están todas en sin_r
   assertEquals(faltan, [], "fórmulas del prompt que la barandilla no corta");
 });
 
-Deno.test("las 11 barandillas de AGENTE.md § 6 son las del código, cada una en su archivo", () => {
+Deno.test("las barandillas de AGENTE.md § 6 son las del código, en el mismo orden y cada una en su archivo", () => {
   const agente = leer("../../AGENTE.md");
   const inicio = agente.search(/^## 6\. /m);
   const fin = agente.slice(inicio + 1).search(/^## \d+\. /m) + inicio + 1;

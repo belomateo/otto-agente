@@ -7,6 +7,8 @@ import {
   DIA_O_NOCHE,
   EVENTOS,
   MOTIVOS_DERIVACION,
+  MOTIVOS_DERIVACION_LLM,
+  MOTIVOS_SOLO_CODIGO,
   ROLES_CLIENTE,
   SECCIONES,
   TIPOS_LINK,
@@ -69,7 +71,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "motivos de derivación: schema de derivar_a_persona = base = PROCESOS.md § 4",
+  name: "motivos de derivación: base = PROCESOS.md § 4 (el enum completo); schema de derivar_a_persona = ese enum SIN los que decide solo el código",
   sanitizeOps: false,
   sanitizeResources: false,
   fn: () =>
@@ -80,9 +82,13 @@ Deno.test({
       assert(desde >= 0, "PROCESOS.md ya no lista los motivos");
       const tramo = PROCESOS.slice(desde, PROCESOS.indexOf(".\n", desde));
       const doc = [...tramo.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
-      assertEquals(schema, [...MOTIVOS_DERIVACION]);
-      assertEquals(ordenado(base), ordenado(schema), "derivaciones_motivo_check");
-      assertEquals(doc, schema, "PROCESOS.md § 4");
+      assertEquals(doc, [...MOTIVOS_DERIVACION], "PROCESOS.md § 4 (el enum completo, no solo lo que ve el LLM)");
+      assertEquals(ordenado(base), ordenado(doc), "derivaciones_motivo_check (el enum completo)");
+      // Hallazgo C2 del tester (15/9): evento_inminente/barandilla_doble/sin_respuesta/timeout
+      // los decide el código, nunca el LLM (AGENTE.md § 2 y § 10) — no pueden estar en lo que
+      // el modelo puede elegir al llamar a la herramienta.
+      assertEquals(schema, [...MOTIVOS_DERIVACION_LLM], "schema de derivar_a_persona");
+      for (const m of MOTIVOS_SOLO_CODIGO) assert(!schema.includes(m), `${m} es solo de código: no puede estar en el schema del LLM`);
     }),
 });
 

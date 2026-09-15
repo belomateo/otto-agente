@@ -101,6 +101,11 @@ una función separada en `_shared/`, testeable sola.
 Si el paso 6 no devuelve texto ni acción → derivar (principio 8). Si el turno pasa
 de 25 s → derivar con texto fijo.
 
+En el paso 6 las herramientas corren con la agenda real: el turno y el emulador arman su
+contexto con `contextoDeHerramientas` (`_shared/turno/`), que les pasa
+`agendaDesdeBase(db, tz)` de logica (`_shared/agenda/huecos.ts`, H1.13). Las pruebas de
+herramientas usan un doble (`AgendaDoble`).
+
 ---
 
 ## 4. Herramientas de Lucía
@@ -116,7 +121,7 @@ el índice del prompt.
 | --- | --- | --- |
 | `buscar_informacion(seccion, consulta)` | Hasta tres fragmentos de la base de conocimiento (búsqueda en código: raíces, sin tildes, tolera errores de tipeo) | Obligatoria antes de afirmar cualquier política, horario, condición o "qué incluye". Secciones en § 8; si ninguna pega, `seccion` = null y busca en todas. Si la sección es `ubicacion-horarios`, suma el horario leído de la tabla `horarios`, no de un fragmento. |
 | `consultar_catalogo(color?, talle?)` | Modelos de alquiler: nombre, descripción, colores, talles, precio base, si tiene fotos | Obligatoria antes de decir un precio o describir un modelo. Devuelve además qué incluye el precio (sección `que-incluye`), que va siempre con el precio; sin esa sección cargada no da precios. El catálogo no tiene evento (paneles 0016): no se filtra por evento. |
-| `consultar_accesorios()` | Camisa, corbata, cinturón, zapatos: precio de alquiler y de compra (`accesorios_alquiler`) y las condiciones (sección `accesorios`) | Solo cuando el cliente pregunta o al ofrecer el look completo |
+| `consultar_accesorios()` | Camisa, corbata, cinturón, zapatos: precio de alquiler y de compra (`accesorios_alquiler`) y las condiciones (sección `accesorios`) | Obligatoria antes de confirmar qué accesorios se alquilan o compran, aunque no llegue a decir un precio (hallazgo del 14/9 al correr los 14 guiones: sin esto, contestaba "sí, alquilamos zapatos" de memoria). Se usa cuando el cliente pregunta o al ofrecer el look completo |
 | `buscar_horarios(desde, hasta, tipo_turno)` | Huecos reales por probador, ya filtrados por horario laboral; hasta dos por franja y por día | Obligatoria antes de ofrecer un horario, y otra vez antes de agendar o reprogramar, en el mismo turno. Ofrece **dos**, nunca más de tres. Lo que muestra queda en la traza del turno. |
 | `ver_turnos_cliente()` | Turnos del cliente que vienen, con su `turno_id` | Ya vienen en el contexto; se llama solo si acaba de crear/mover/cancelar uno en este turno |
 
@@ -131,7 +136,7 @@ el índice del prompt.
 | `anotar(texto)` | — | Nota libre en la libreta (`notas`, autor `lucia`) |
 | `enviar_fotos(modelo_ids[])` | Máximo 3 · ids existen en catálogo, activos y con fotos | Manda la primera foto cargada en la ficha de cada modelo |
 | `enviar_link(tipo)` | tipo ∈ {mapa, resena, web} · el link está cargado en `enlaces` (se reconoce por el nombre) | Manda el link de `enlaces` |
-| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum · sin pregunta en el mensaje | Fila en `derivaciones` (una sola si ya había una pendiente), conversación derivada, avisa al número del canal, **corta el turno**. Con reclamo o descuento no se manda la despedida. Aparece en la pestaña Atención humana |
+| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum **sin los que decide solo el código** (`evento_inminente`, `barandilla_doble`, `sin_respuesta`, `timeout` — ver § 10) · sin pregunta en el mensaje | Fila en `derivaciones` (una sola si ya había una pendiente), conversación derivada, avisa al número del canal, **corta el turno**. Con reclamo o descuento no se manda la despedida. Aparece en la pestaña Atención humana. El `mensaje_al_cliente` (texto libre del modelo) pasa por las barandillas igual que cualquier otro texto antes de salir (hallazgo C1 del tester, 15/9: antes no pasaba) |
 
 Cada herramienta devuelve al modelo sus datos o un rechazo que dice qué hacer ahora. Lo que
 le llega al cliente armado en código (confirmación, link, fotos, el texto fijo de una
@@ -181,13 +186,14 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | `largo` | Un bloque de más de 600 caracteres sin línea en blanco | Rehace pidiendo párrafos cortos |
 | `precio_sin_herramienta` | Un monto ($150.000, 150000, 150 mil) que no devolvió `consultar_catalogo` ni `consultar_accesorios` en este turno: precio sin herramienta o total armado sumando (regla 9) | Rehace |
 | `horario_sin_herramienta` | Una hora que no devolvió ninguna herramienta en este turno (`buscar_horarios`, el horario de `buscar_informacion`, los turnos del cliente), o un día ofrecido sin `buscar_horarios` | Rehace |
+| `accesorio_sin_herramienta` | Menciona zapato(s), cinturón, corbata o camisa sin `consultar_accesorios` en este turno (hallazgo del 15/9 con un principal más económico: la palabra "obligatoria" del prompt sola no alcanzaba) | Rehace |
 | `deriva_y_pregunta` | `derivar_a_persona` + `?` en el mismo mensaje | Quita la pregunta |
 | `anuncia_sin_derivar` | «te paso con», «le derivo» sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
 | `no_a_secas` | Mensaje que arranca negando, es corto y no ofrece nada. Si arranca negando pero es largo u ofrece algo, decide el revisor (`LLM_CLASIFICADOR`) | Rehace |
-| `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje) | Rehace |
+| `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje); además, desde el 15/9 (hallazgo M3 del tester), un patrón más amplio: "ia" cerca de una palabra de meta-funcionamiento («instrucción», «configuración», «protege», «entrena», «responde de forma segura»), para cubrir una frase que rodea el tema sin decir ninguna de las exactas de arriba | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
-Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
+Son 12 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
 código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
 del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
 el segundo del mismo turno deriva con motivo `barandilla_doble`. Si Lucía anunció un pase,
@@ -293,9 +299,17 @@ Lucía): «Te paso con un asesor del local para que te ayude con tu evento, y va
 hacer lo posible por encontrarte un lugar en la agenda.» Lucía no escribe nada más en
 ese turno.
 
-Derivación **por el LLM** (llama la tool): no encuentra el dato tras buscarlo,
-descuento insistido, cliente pide una persona, salió una barandilla dos veces,
-el modelo no respondió.
+Derivación **por el LLM** (llama la tool, con un motivo de `MOTIVOS_DERIVACION_LLM`):
+no encuentra el dato tras buscarlo, descuento insistido, cliente pide una persona.
+
+Ni "salió una barandilla dos veces" ni "el modelo no respondió" pueden ser una
+derivación que el LLM decide llamando a la tool: para cuando el código se entera de
+cualquiera de las dos, ya no hay ningún modelo esperando que le pidan un motivo. Son
+**solo de código**, igual que evento hoy/mañana (hallazgo C2 del tester, 15/9: antes el
+schema de `derivar_a_persona` aceptaba estos motivos igual, y el modelo podía llamarlos
+por su cuenta con un texto propio en vez del flujo garantizado). `MOTIVOS_SOLO_CODIGO`
+(`_shared/enums.ts`) es la lista completa: `evento_inminente`, `barandilla_doble`,
+`sin_respuesta`, `timeout`; ninguno está en el enum que ve la herramienta.
 
 Al derivar: `derivaciones` recibe la fila con motivo y resumen (lo arma el
 extractor); se avisa por WhatsApp al número del canal de alquiler; la conversación
