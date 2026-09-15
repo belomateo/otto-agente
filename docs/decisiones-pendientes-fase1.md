@@ -114,6 +114,24 @@ informe del verificador, §3.3 a §3.5.
   pasa a ese momento. El token de WhatsApp actual es permanente y sirve en producción; conviene
   rotarlo porque pasó por el chat.
 
+## Resueltas por Mateo (15/9, a la tarde)
+
+- **#13 → el calendario de los turnos es el propio.** Mateo: «por ahora usemos el calendario que
+  programemos acá». La fila en `turnos` es el turno, y el panel lo muestra en la pestaña Turnos y
+  con el cartel de 30 minutos (1.16 y 1.17). Google Calendar (1.12) queda en pausa y no hace falta
+  la cuenta de servicio. Si vuelve, es otra implementación de la interfaz `Calendario`: la de ahora
+  es `_shared/agenda/calendario_propio.ts`.
+- **#14 → las plantillas de Meta, más adelante.** Los recordatorios, el agradecimiento y los
+  recontactos (1.14) siguen desplegados y apagados (`CRONS_ENVIOS` sin cargar) hasta que Mateo
+  cargue las plantillas y Meta las apruebe. Mientras tanto Lucía solo puede escribir dentro de la
+  ventana de 24 hs desde el último mensaje del cliente.
+- **#15 → Lucía agenda de verdad por WhatsApp, con la lógica del negocio.** Mateo: «por ahora
+  quiero que el agente agende con la lógica del negocio». Se adelanta el primer paso de Fase 2: el
+  worker corre el turno completo de `agente` en vez del stub (hito 2.1, `logica`). Empieza con los
+  números de `LUCIA_TELEFONOS` (el de Mateo); a los demás no les contesta hasta que Mateo lo abra.
+  Falta cómo llegan los mensajes: hoy Meta los manda a n8n (#12), así que o n8n se los reenvía al
+  webhook de Supabase, o el webhook de Meta pasa a Supabase con el App Secret.
+
 Lo que sigue abajo es el texto original de cada punto, como referencia.
 
 1. **Solapamiento de turnos por probador.** `turnos_probador_inicio_idx` es un
