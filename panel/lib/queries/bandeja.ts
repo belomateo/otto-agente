@@ -6,7 +6,7 @@ import type { Conversacion } from '@/lib/mock-data';
 import type { Json } from '@/lib/tipos-db';
 import { CHIP_CONVERSACION, ESTILO_MOTIVO, ETIQUETA_EVENTO } from '@/lib/etiquetas';
 import { fechaEnZona, hora, momentoCorto } from '@/lib/formato';
-import { nombreDe, normalizar, proximoTurno, resumenFicha, textoDeMensaje, type ClienteDb } from './comun';
+import { autorDeMensaje, nombreDe, normalizar, proximoTurno, resumenFicha, textoDeMensaje, type ClienteDb } from './comun';
 
 export const FILTROS_BANDEJA = ['todas', 'lucia', 'persona', 'sin-respuesta'] as const;
 export type FiltroBandeja = (typeof FILTROS_BANDEJA)[number];
@@ -74,6 +74,10 @@ export type MensajeCharla = {
   direccion: string;
   tipo: string;
   texto: string;
+  /** Quién lo escribió: 'cliente' (entrante), 'lucia' o 'mostrador' (el equipo, botón de
+   *  mostrador). Antes de esto todo saliente se dibujaba como de Lucía (corrección pedida por
+   *  Mateo tras la auditoría de logica). */
+  autor: 'cliente' | 'lucia' | 'mostrador';
   /** '10:01' */
   hora: string;
   /** 'YYYY-MM-DD' en la zona del negocio, para separar por día. */
@@ -136,6 +140,7 @@ export async function obtenerCharla(db: ClienteDb, id: string): Promise<Charla |
       direccion: m.direccion,
       tipo: m.tipo,
       texto: textoDeMensaje(m),
+      autor: autorDeMensaje(m),
       hora: hora(m.enviado_at),
       fecha: fechaEnZona(new Date(m.enviado_at)),
     })),
