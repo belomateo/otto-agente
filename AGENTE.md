@@ -121,7 +121,7 @@ el índice del prompt.
 | --- | --- | --- |
 | `buscar_informacion(seccion, consulta)` | Hasta tres fragmentos de la base de conocimiento (búsqueda en código: raíces, sin tildes, tolera errores de tipeo) | Obligatoria antes de afirmar cualquier política, horario, condición o "qué incluye". Secciones en § 8; si ninguna pega, `seccion` = null y busca en todas. Si la sección es `ubicacion-horarios`, suma el horario leído de la tabla `horarios`, no de un fragmento. |
 | `consultar_catalogo(color?, talle?)` | Modelos de alquiler: nombre, descripción, colores, talles, precio base, si tiene fotos | Obligatoria antes de decir un precio o describir un modelo. Devuelve además qué incluye el precio (sección `que-incluye`), que va siempre con el precio; sin esa sección cargada no da precios. El catálogo no tiene evento (paneles 0016): no se filtra por evento. |
-| `consultar_accesorios()` | Camisa, corbata, cinturón, zapatos: precio de alquiler y de compra (`accesorios_alquiler`) y las condiciones (sección `accesorios`) | Solo cuando el cliente pregunta o al ofrecer el look completo |
+| `consultar_accesorios()` | Camisa, corbata, cinturón, zapatos: precio de alquiler y de compra (`accesorios_alquiler`) y las condiciones (sección `accesorios`) | Obligatoria antes de confirmar qué accesorios se alquilan o compran, aunque no llegue a decir un precio (hallazgo del 14/9 al correr los 14 guiones: sin esto, contestaba "sí, alquilamos zapatos" de memoria). Se usa cuando el cliente pregunta o al ofrecer el look completo |
 | `buscar_horarios(desde, hasta, tipo_turno)` | Huecos reales por probador, ya filtrados por horario laboral; hasta dos por franja y por día | Obligatoria antes de ofrecer un horario, y otra vez antes de agendar o reprogramar, en el mismo turno. Ofrece **dos**, nunca más de tres. Lo que muestra queda en la traza del turno. |
 | `ver_turnos_cliente()` | Turnos del cliente que vienen, con su `turno_id` | Ya vienen en el contexto; se llama solo si acaba de crear/mover/cancelar uno en este turno |
 
@@ -186,13 +186,14 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | `largo` | Un bloque de más de 600 caracteres sin línea en blanco | Rehace pidiendo párrafos cortos |
 | `precio_sin_herramienta` | Un monto ($150.000, 150000, 150 mil) que no devolvió `consultar_catalogo` ni `consultar_accesorios` en este turno: precio sin herramienta o total armado sumando (regla 9) | Rehace |
 | `horario_sin_herramienta` | Una hora que no devolvió ninguna herramienta en este turno (`buscar_horarios`, el horario de `buscar_informacion`, los turnos del cliente), o un día ofrecido sin `buscar_horarios` | Rehace |
+| `accesorio_sin_herramienta` | Menciona zapato(s), cinturón, corbata o camisa sin `consultar_accesorios` en este turno (hallazgo del 15/9 con un principal más económico: la palabra "obligatoria" del prompt sola no alcanzaba) | Rehace |
 | `deriva_y_pregunta` | `derivar_a_persona` + `?` en el mismo mensaje | Quita la pregunta |
 | `anuncia_sin_derivar` | «te paso con», «le derivo» sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
 | `no_a_secas` | Mensaje que arranca negando, es corto y no ofrece nada. Si arranca negando pero es largo u ofrece algo, decide el revisor (`LLM_CLASIFICADOR`) | Rehace |
 | `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje) | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
-Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
+Son 12 en el código (una más que en la lista de arriba, sumada el 15/9: ver `accesorio_sin_herramienta` en la fila de contenido). Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
 código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
 del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
 el segundo del mismo turno deriva con motivo `barandilla_doble`. Si Lucía anunció un pase,

@@ -3,6 +3,7 @@
 // de su fila en AGENTE.md § 6 y que deje un motivo para la bitácora.
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
+import { accesorioSinHerramienta } from "../../supabase/functions/_shared/barandillas/accesorio_sin_herramienta.ts";
 import { anunciaSinDerivar } from "../../supabase/functions/_shared/barandillas/anuncia_sin_derivar.ts";
 import { derivaYPregunta } from "../../supabase/functions/_shared/barandillas/deriva_y_pregunta.ts";
 import { fueraVentanaMeta } from "../../supabase/functions/_shared/barandillas/fuera_ventana_meta.ts";
@@ -132,6 +133,19 @@ Deno.test("horario_sin_herramienta no confunde cantidades con horas (caso pareci
 Deno.test("horario_sin_herramienta salta al ofrecer un día sin buscar_horarios", async () => {
   await salta(horarioSinHerramienta, entrada("Tenemos lugar el sábado."));
   await noSalta(horarioSinHerramienta, entrada("Tenemos lugar el sábado.", { traza: traza({ herramientas: ["buscar_horarios"] }) }));
+});
+
+Deno.test("accesorio_sin_herramienta salta al mencionar zapatos, cinturón, corbata o camisa sin la herramienta", async () => {
+  await salta(accesorioSinHerramienta, entrada("Sí, también alquilamos zapatos y cinturón para completar el look."));
+  await salta(accesorioSinHerramienta, entrada("Podés sumar camisa y corbata al look."));
+});
+
+Deno.test("accesorio_sin_herramienta no salta con la herramienta en la traza, ni si no menciona ningún accesorio (caso parecido)", async () => {
+  await noSalta(
+    accesorioSinHerramienta,
+    entrada("Sí, también alquilamos zapatos y cinturón.", { traza: traza({ herramientas: ["consultar_accesorios"] }) }),
+  );
+  await noSalta(accesorioSinHerramienta, entrada("¿Para qué evento necesitás el traje?"));
 });
 
 // ── reglas ───────────────────────────────────────────────────────────────────────────────
