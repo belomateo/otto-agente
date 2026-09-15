@@ -5,9 +5,14 @@
 // Server Component: trae el perfil real (nombre, rol) para el pie del Sidebar/
 // MasSheet. El middleware ya garantiza que quien llega hasta acá tiene sesión
 // y perfil aprobado (si no, lo redirige a /login o /esperando antes).
+//
+// El CartelTurno vive acá (y no dentro de cada page.tsx) para no remontarse al
+// navegar entre pestañas: un turno cerrado con OK no tiene que reaparecer solo
+// porque se cambió de pantalla (H1.17, decisión #10 del 15/9).
 
 import { Sidebar } from '@/components/nav/Sidebar';
 import { TabbarMobile } from '@/components/nav/TabbarMobile';
+import { CartelTurno } from '@/components/cartel-turno/CartelTurno';
 import { crearClienteServidor } from '@/lib/supabase/server';
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
@@ -31,6 +36,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           <TabbarMobile usuario={usuario} />
         </div>
       </div>
+      <CartelTurno />
     </div>
   );
 }

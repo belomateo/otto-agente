@@ -1,10 +1,10 @@
 'use client';
 
-// Configuración › Agenda (DISENO.md § 8, PROCESOS.md § 5 y decisiones #7 y #9 del
-// 14/9). Horario del local, franjas de turnos por día con su cantidad de probadores,
-// probadores del local, escalonado, reserva para urgencias y duración por tipo de
-// turno. Lo que se edita acá son los datos; las reglas sobre esos datos (qué hueco
-// es válido) son código de logica (H1.13). Mock hasta Fase 2.
+// Configuración › Agenda (DISENO.md § 8, PROCESOS.md § 5 y decisiones #7, #9 y #10 del
+// 14/9 y 15/9). Horario del local, franjas de turnos por día con su cantidad de probadores,
+// probadores del local, escalonado, reserva para urgencias, aviso antes del turno (H1.17,
+// el cartel) y duración por tipo de turno. Lo que se edita acá son los datos; las reglas
+// sobre esos datos (qué hueco es válido) son código de logica (H1.13). Mock hasta Fase 2.
 
 import { Switch } from '@/components/ui-otto/Switch';
 import { ToastFlotante, useToast } from '@/components/ui-otto/ToastFlotante';
@@ -48,7 +48,7 @@ export default function AgendaPage() {
     setValor({ ...valor, duraciones: valor.duraciones.map((d, j) => (j === i ? { ...d, minutos } : d)) });
 
   const errores = valor.dias.map((d) => erroresFranjas(d.franjas, valor.probadores));
-  const hayErrores = valor.probadores < 1 || errores.some((e) => e.length > 0);
+  const hayErrores = valor.probadores < 1 || valor.avisoTurnoMin < 1 || errores.some((e) => e.length > 0);
   const reserva = valor.reservaUrgencia;
 
   return (
@@ -147,7 +147,7 @@ export default function AgendaPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-3.5">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-4 md:gap-3.5">
         <div className={TARJETA}>
           <label htmlFor="probadores" className={`block ${TITULO}`}>
             Probadores del local
@@ -200,6 +200,26 @@ export default function AgendaPage() {
             {reserva
               ? `Los turnos de los próximos ${reserva} ${reserva === 1 ? 'día' : 'días'} quedan para eventos dentro de ese plazo; a un evento más lejano Lucía le ofrece desde el día ${reserva + 1}. Vacío: sin reserva.`
               : 'Sin reserva: Lucía ofrece el primer hueco libre a cualquier evento.'}
+          </p>
+        </div>
+        <div className={TARJETA}>
+          <label htmlFor="avisoTurno" className={`block ${TITULO}`}>
+            Aviso antes del turno
+          </label>
+          <span className="flex items-center gap-2 text-[14px] text-grafito">
+            <input
+              id="avisoTurno"
+              inputMode="numeric"
+              value={valor.avisoTurnoMin}
+              onChange={(e) => setValor({ ...valor, avisoTurnoMin: soloNumero(e.target.value) })}
+              className={HORA}
+            />
+            min
+          </span>
+          <p className={`mt-2 ${valor.avisoTurnoMin < 1 ? ERROR : NOTA}`}>
+            {valor.avisoTurnoMin < 1
+              ? 'Tiene que ser al menos 1 minuto.'
+              : 'Cuánto antes de cada turno aparece el cartel del equipo con los datos del cliente.'}
           </p>
         </div>
       </div>
