@@ -325,7 +325,10 @@ try {
   await sembrar();
   ok(true, "3 usuarios temporales, datos de prueba sembrados y filas reales fotografiadas");
 
-  panel = arrancarPanel();
+  // Sin generador a propósito: con las ramas juntas, scripts/armar-prompt.mjs existe y el panel
+  // lo encontraría solo. Apuntarlo a un archivo que no existe prueba el 503 igual en la rama de
+  // paneles y en la integración.
+  panel = arrancarPanel({ ARMAR_PROMPT_SCRIPT: AQUI + "no-existe-el-generador.mjs" });
   await esperarPanel(panel);
   const sa = await iniciarSesion(A.email, A.password);
   const sn = await iniciarSesion(N.email, N.password);
