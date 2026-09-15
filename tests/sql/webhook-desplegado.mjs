@@ -2,8 +2,9 @@
 // firma, dedup, avisos de estado, latencia y el disparo del worker desde la base.
 // Uso: `node tests/sql/webhook-desplegado.mjs` con WA_APP_SECRET en .env, o con
 // PRUEBA_APP_SECRET si en Supabase hay cargado un App Secret de prueba.
-// Usa un teléfono de prueba que no está en WORKER_STUB_TELEFONOS (el worker procesa el
-// trabajo pero no le contesta a nadie) y borra todo lo que crea al terminar.
+// Usa un teléfono que no existe, que no está en LUCIA_TELEFONOS y que no es de los ficticios
+// 5490000000… (a esos Lucía les contesta siempre): el worker procesa el trabajo pero no le
+// contesta a nadie. Borra todo lo que crea al terminar.
 import "dotenv/config";
 import crypto from "node:crypto";
 import pg from "pg";
@@ -11,7 +12,7 @@ import pg from "pg";
 const BASE = `${process.env.SUPABASE_URL}/functions/v1`;
 const APP_SECRET = process.env.PRUEBA_APP_SECRET || process.env.WA_APP_SECRET;
 const VERIFY = process.env.WA_VERIFY_TOKEN;
-const TEL = "5490000000077";
+const TEL = "5490000019077";
 
 if (!APP_SECRET || !VERIFY || !process.env.SUPABASE_URL) {
   console.error("Faltan SUPABASE_URL, WA_VERIFY_TOKEN y WA_APP_SECRET (o PRUEBA_APP_SECRET).");
@@ -119,8 +120,8 @@ try {
   }
   assert(hecho !== null, `el trabajo pasó a 'hecho'${hecho ? ` (lo tomó ${hecho.tomado_por})` : " — no pasó en 90 s"}`);
   assert(
-    hecho?.nota === "número fuera de la lista de prueba: sin respuesta",
-    "la bitácora registra que no se le contestó (el número no está en la lista de prueba)"
+    hecho?.nota === "número fuera de LUCIA_TELEFONOS: sin respuesta",
+    "la bitácora registra que no se le contestó (el número no está en LUCIA_TELEFONOS)"
   );
 
   console.log("\n[6] El worker solo acepta a quien trae el secreto");
