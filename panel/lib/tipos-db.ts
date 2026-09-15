@@ -1,6 +1,8 @@
 // Tipos de la base (schema public), generados con `supabase gen types typescript` contra el
-// proyecto real después de aplicar las migraciones de paneles 0011–0019, 0030, 0031 y 0032. No se editan a
-// mano: si cambia el esquema, se regeneran (CLAUDE.md § 7: no hay vistas tipadas a mano).
+// proyecto real: la base es una sola y la comparten los cuatro roles, así que esto refleja
+// también migraciones de otros roles ya aplicadas (p. ej. mostrador_enviar, 0028 de logica).
+// No se editan a mano: si cambia el esquema, se regeneran (CLAUDE.md § 7: no hay vistas
+// tipadas a mano).
 
 export type Json =
   | string
@@ -1143,6 +1145,10 @@ export type Database = {
       es_admin: { Args: never; Returns: boolean }
       es_usuario_aprobado: { Args: never; Returns: boolean }
       immutable_unaccent: { Args: { "": string }; Returns: string }
+      mostrador_enviar: {
+        Args: { p_conversacion: string; p_texto: string }
+        Returns: Json
+      }
       registrar_mensaje_entrante: {
         Args: {
           p_contenido: string

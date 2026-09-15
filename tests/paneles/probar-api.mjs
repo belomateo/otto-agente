@@ -243,7 +243,6 @@ async function restaurarReales() {
 // de prueba (más abajo, por cliente_id); su historial, antes, porque la fila desaparece.
 const turnosExtra = [];
 async function limpiar() {
-  await borrarDobleMostrador();
   if (turnosExtra.length) {
     await q("delete from historial_ediciones where tabla = 'turnos' and fila_id = any($1::uuid[])", [turnosExtra]);
   }
@@ -349,59 +348,6 @@ const nuevaCharlaSuelta = async (estadoConv, motivos = []) => {
   return idConv;
 };
 
-// Reintenta mientras la ruta diga que falta mostrador_enviar: recién creada por SQL directo,
-// PostgREST puede tardar un instante en recargar su caché de funciones antes de verla.
-async function conReintentos(fn, intentos = 10, esperaMs = 300) {
-  let ultimo;
-  for (let i = 0; i < intentos; i++) {
-    ultimo = await fn();
-    if (!(ultimo.status === 503 && /mostrador_enviar/.test(ultimo.datos?.error ?? ""))) return ultimo;
-    await new Promise((r) => setTimeout(r, esperaMs));
-  }
-  return ultimo;
-}
-
-// Doble de mostrador_enviar(conversacion, texto) — lo crea logica en la base de verdad; acá
-// alcanza con imitar el contrato para probar el cableado del handler: inserta el mensaje
-// saliente marcado [mostrador] y actualiza ultimo_mensaje_at. Se borra al terminar (limpiar()):
-// no es una migración, es solo para esta corrida.
-async function crearDobleMostrador() {
-  // mensajes es tabla "de sistema" (0007): solo lectura para aprobados, la escribe el
-  // service_role. Para que un 'equipo' pueda escribir ahí desde el panel hace falta
-  // security definer (mismo caso legítimo que historial_antes_de_editar, 0017) — es de
-  // esperar que la función real de logica también lo necesite. El doble chequea
-  // es_usuario_aprobado() a mano, ya que definer se salta la RLS de mensajes.
-  await db.query(`
-    create or replace function mostrador_enviar(p_conversacion uuid, p_texto text)
-    returns jsonb
-    language plpgsql
-    security definer
-    set search_path = public
-    as $f$
-    declare
-      v_id uuid;
-    begin
-      if not es_usuario_aprobado() then
-        raise exception 'No tenés permiso para esto' using errcode = '42501';
-      end if;
-      if not exists (select 1 from conversaciones where id = p_conversacion) then
-        raise exception 'La charla no existe' using errcode = 'P0002';
-      end if;
-      insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at)
-      values (p_conversacion, 'saliente', 'texto', '[mostrador] ' || p_texto, now())
-      returning id into v_id;
-      update conversaciones set ultimo_mensaje_at = now() where id = p_conversacion;
-      return jsonb_build_object('mensaje_id', v_id);
-    end;
-    $f$;
-    revoke execute on function mostrador_enviar(uuid, text) from public, anon;
-    grant execute on function mostrador_enviar(uuid, text) to authenticated;
-  `);
-}
-async function borrarDobleMostrador() {
-  await db.query("drop function if exists mostrador_enviar(uuid, text)");
-}
-
 let panel;
 try {
   await db.connect();
@@ -414,8 +360,7 @@ try {
   // La solicitud del admin de prueba queda pendiente a propósito: prueba que nadie resuelve la suya.
   await q("update perfiles set rol = 'admin', estado = 'aprobado' where id = $1", [A.id]);
   await sembrar();
-  await crearDobleMostrador();
-  ok(true, "3 usuarios temporales, datos de prueba sembrados, filas reales fotografiadas y el doble de mostrador_enviar creado");
+  ok(true, "3 usuarios temporales, datos de prueba sembrados y filas reales fotografiadas");
 
   // Sin generador a propósito: con las ramas juntas, scripts/armar-prompt.mjs existe y el panel
   // lo encontraría solo. Apuntarlo a un archivo que no existe prueba el 503 igual en la rama de
@@ -570,16 +515,37 @@ try {
     const t2 = await api(sa, "POST", `/api/bandeja/${conv}/tomar`);
     ok(t2.status === 200 && t2.datos.ya_estaba === true, `tomarla de nuevo no cambia nada (ya_estaba, ${t2.status})`);
 
-    const m1 = await conReintentos(() => api(sn, "POST", `/api/bandeja/${conv}/mensajes`, { texto: "Ya te confirmo el traje" }));
-    const msj = (await q("select direccion, tipo, contenido from mensajes where conversacion_id = $1 order by enviado_at desc limit 1", [conv]))[0];
-    ok(
-      m1.status === 201 && msj?.direccion === "saliente" && msj?.contenido === "[mostrador] Ya te confirmo el traje",
-      `responder por mostrador con la charla tomada → 201 y el mensaje queda marcado [mostrador] (${m1.status}, "${msj?.contenido}")`
-    );
+    // El caso que sí escribe (texto válido + charla tomada + mensaje del cliente reciente) NO
+    // se prueba por HTTP: mostrador_enviar encola en cola_trabajos, y el trigger de 0020
+    // (disparar_worker) o, si no llega a tiempo, el cron de contención de cada 1 minuto,
+    // llaman al worker desplegado — que de verdad intentaría mandar un WhatsApp. Se verifica
+    // el mismo contrato en SQL, con otto.sin_disparo (el interruptor que usa logica en
+    // tests/sql/run.mjs para lo mismo) y neutralizando el trabajo enseguida, por si el cron
+    // pasa antes que la limpieza: nada de esto llega al worker real.
+    let mensajeId;
+    {
+      await db.query("begin");
+      await db.query("set local otto.sin_disparo = 'on'");
+      await db.query("set local role authenticated");
+      await db.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: N.id, role: "authenticated", email: N.email })]);
+      const r = (await db.query("select mostrador_enviar($1, $2) r", [conv, "Ya te confirmo el traje"])).rows[0].r;
+      await db.query("commit");
+      mensajeId = r.mensaje_id;
+      const msj = (await q("select direccion, tipo, contenido from mensajes where id = $1", [mensajeId]))[0];
+      const trabajo = (await q("select estado, payload from cola_trabajos where payload->>'mensaje_id' = $1", [mensajeId]))[0];
+      ok(
+        r.estado === "encolado" && msj?.direccion === "saliente" && msj?.contenido === "[mostrador] Ya te confirmo el traje" && trabajo?.payload.tipo === "mostrador" && trabajo?.payload.autor === N.email,
+        `mostrador_enviar con la charla tomada: encola, el mensaje queda marcado [mostrador] y el trabajo trae quién escribió (${r.estado}, "${msj?.contenido}", ${trabajo?.payload.autor})`
+      );
+      await q("update cola_trabajos set estado = 'hecho', procesado_at = now() where payload->>'mensaje_id' = $1", [mensajeId]);
+    }
     const m2 = await api(sn, "POST", `/api/bandeja/${conv}/mensajes`, { texto: "   " });
-    ok(m2.status === 400, `mostrador con texto vacío → 400 (${m2.status})`);
+    ok(m2.status === 400 && m2.datos.error.includes("4000"), `mostrador con texto vacío → 400 (${m2.status}: ${m2.datos.error})`);
     const m3 = await api(sn, "POST", "/api/bandeja/11111111-1111-1111-1111-111111111111/mensajes", { texto: "hola" });
     ok(m3.status === 404, `mostrador a una charla que no existe → 404 (${m3.status})`);
+    const charlaVieja = await nuevaCharlaSuelta("derivada");
+    const viejo = await api(sn, "POST", `/api/bandeja/${charlaVieja}/mensajes`, { texto: "hola de nuevo" });
+    ok(viejo.status === 409 && /24 hs/.test(viejo.datos.error), `tomada pero sin mensaje del cliente en las últimas 24 hs → 409 (${viejo.status}: ${viejo.datos.error})`);
 
     const dv1 = await api(sa, "POST", `/api/bandeja/${conv}/devolver`);
     ok(dv1.status === 200 && dv1.datos.ya_estaba === false && dv1.datos.conversacion.estado === "activa", `devolver a Lucía: 'derivada' → 'activa' (${dv1.status})`);
