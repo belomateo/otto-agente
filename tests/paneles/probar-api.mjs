@@ -489,6 +489,10 @@ try {
       x.status === 200 && x.datos.mensajes.length === 3 && x.datos.eventos.length === 2 && x.datos.cliente.resumen.includes("Casamiento 20/1") && x.datos.cliente.resumen.includes("Talle 48"),
       `Charla (${x.status}): ${x.datos.cliente?.resumen}`
     );
+    ok(
+      x.datos.mensajes.map((m) => m.autor).join(",") === "cliente,lucia,cliente",
+      `Charla › autor por mensaje, sin mostrador todavía (corrección de logica): ${x.datos.mensajes.map((m) => m.autor).join(",")}`
+    );
   }
   let derivId;
   {
@@ -538,6 +542,14 @@ try {
         `mostrador_enviar con la charla tomada: encola, el mensaje queda marcado [mostrador] y el trabajo trae quién escribió (${r.estado}, "${msj?.contenido}", ${trabajo?.payload.autor})`
       );
       await q("update cola_trabajos set estado = 'hecho', procesado_at = now() where payload->>'mensaje_id' = $1", [mensajeId]);
+    }
+    {
+      const x = await api(sa, "GET", `/api/bandeja/${conv}`);
+      const m = x.datos.mensajes?.find((v) => v.id === mensajeId);
+      ok(
+        x.status === 200 && m?.autor === "mostrador" && m.texto === "Ya te confirmo el traje" && !m.texto.includes("[mostrador]"),
+        `Charla › el mensaje de mostrador se ve como 'mostrador', no como Lucía, y sin el prefijo (${m?.autor}, "${m?.texto}")`
+      );
     }
     const m2 = await api(sn, "POST", `/api/bandeja/${conv}/mensajes`, { texto: "   " });
     ok(m2.status === 400 && m2.datos.error.includes("4000"), `mostrador con texto vacío → 400 (${m2.status}: ${m2.datos.error})`);

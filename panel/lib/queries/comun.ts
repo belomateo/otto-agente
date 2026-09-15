@@ -64,9 +64,27 @@ export async function proximoTurno(db: ClienteDb, clienteId: string): Promise<st
   return data?.[0]?.inicio ?? null;
 }
 
-/** Texto de un mensaje para listas: el contenido, o el tipo si es un adjunto sin texto. */
+// El equipo responde con el botón de mostrador (mostrador_enviar, 0028); la base marca ese
+// mensaje saliente con este prefijo para que Lucía lo distinga en el historial que lee. Acá
+// sirve para lo mismo: distinguirlo de un mensaje de Lucía sin mostrárselo al dueño.
+const PREFIJO_MOSTRADOR = '[mostrador] ';
+
+/** Texto de un mensaje para listas: el contenido (sin el prefijo [mostrador], ver
+ *  autorDeMensaje), o el tipo si es un adjunto sin texto. */
 export function textoDeMensaje(m: { contenido: string | null; tipo: string } | null | undefined): string {
   if (!m) return '';
-  if (m.contenido?.trim()) return m.contenido.trim();
+  const contenido = m.contenido?.trim();
+  if (contenido) return contenido.startsWith(PREFIJO_MOSTRADOR) ? contenido.slice(PREFIJO_MOSTRADOR.length) : contenido;
   return m.tipo && m.tipo !== 'texto' ? `(${m.tipo})` : '';
+}
+
+/**
+ * Quién escribió un mensaje (corrección pedida por Mateo tras la auditoría de logica: antes
+ * todo saliente se veía como de Lucía). 'cliente' si es entrante; si es saliente, 'mostrador'
+ * cuando lo escribió el equipo (el prefijo que pone mostrador_enviar) y 'lucia' en cualquier
+ * otro saliente.
+ */
+export function autorDeMensaje(m: { direccion: string; contenido: string | null } | null | undefined): 'cliente' | 'lucia' | 'mostrador' {
+  if (m?.direccion === 'entrante') return 'cliente';
+  return m?.contenido?.startsWith(PREFIJO_MOSTRADOR) ? 'mostrador' : 'lucia';
 }
