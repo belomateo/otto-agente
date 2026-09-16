@@ -6,18 +6,24 @@
 //
 // `derivaciones` todavía no tiene la columna de resumen que pide PROCESOS.md § 4: mientras no
 // exista, la tarjeta muestra el último mensaje del cliente tal cual, no un resumen armado.
-// Marcar OK, Responder y Devolver a Lucía no tienen ruta en paneles todavía.
+//
+// El detalle de escritorio reusa <ChatThread>: es la misma charla que Bandeja (tomar, devolver,
+// cerrar y responder son acciones de la conversación, no de la derivación — PROCESOS.md § 4
+// pasos 6 y 7) y así el hilo completo con la burbuja de mostrador sale gratis, sin repetir la
+// lógica. La lista de acá se queda con lo que le sirve solo a ella: motivo, hace y el resumen.
+// En mobile, sin detalle abierto todavía, la tarjeta linkea a /bandeja/charla?id=... (mismo
+// hilo, mismas acciones) en vez de duplicar un lector/respondedor chico adentro de la tarjeta.
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { Chip } from '@/components/ui-otto/Chip';
-import { BurbujaCliente, BurbujaLucia } from '@/components/ui-otto/Burbuja';
 import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
 import { useDatos } from '@/components/api/useDatos';
+import { ChatThread } from '../bandeja/ChatThread';
 import type { EstadoDerivacion, FilaDerivacion } from '@/lib/queries/atencion';
 
-const SIN_CONECTAR = 'Todavía no conectado';
 const VACIOS: Record<EstadoDerivacion, { titulo: string; texto: string }> = {
   pendiente: { titulo: 'Todavía no hay derivaciones', texto: 'Lucía está atendiendo sola.' },
   atendida: { titulo: 'Todavía no hay consultas resueltas', texto: 'Cuando marques una derivación como OK, aparece acá.' },
@@ -41,13 +47,13 @@ function TarjetaDerivacion({ d, activa, onClick, compacta = false }: { d: FilaDe
       </div>
       <div className={`text-[14px] leading-[1.5] text-grafito md:text-[13.5px] ${compacta ? '' : 'line-clamp-2'}`}>{d.resumen}</div>
       {compacta && (
-        <div className="mt-3 flex gap-2">
-          <button type="button" disabled title={SIN_CONECTAR} className="flex-1 rounded-otto bg-cobre/50 py-2.5 text-sm font-medium text-lino">
-            Responder
-          </button>
-          <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto border border-salvia bg-lino px-4 py-2.5 text-sm font-medium text-salvia/50">
-            ✓ OK
-          </button>
+        <div className="mt-3">
+          <Link
+            href={`/bandeja/charla?id=${d.conversacion_id}`}
+            className="block rounded-otto bg-cobre py-2.5 text-center text-sm font-medium text-lino"
+          >
+            Ver y responder
+          </Link>
         </div>
       )}
     </>
@@ -124,51 +130,18 @@ export default function AtencionPage() {
         </div>
         {principal ? (
           <div className="flex flex-1 flex-col">
-            <div className="flex items-center gap-3 border-b border-borde bg-lino px-6 py-4">
-              <div className="flex-1">
-                <span className="font-serif text-lg font-semibold">{principal.n}</span>
-                <Chip bg={principal.cb} fg={principal.cf} className="ml-2.5 px-2.5 py-[3px]">
+            <div className="border-b border-borde bg-lino px-6 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <Chip bg={principal.cb} fg={principal.cf} className="px-2.5 py-[3px]">
                   {principal.motivo}
                 </Chip>
+                <span className="text-[14px] text-grafito md:text-[12.5px]">{principal.hace}</span>
               </div>
-              <span className="text-[14px] text-grafito md:text-[12.5px]">{principal.hace}</span>
-            </div>
-            <div className="flex flex-1 flex-col gap-3.5 overflow-y-auto px-6 py-5">
-              <div className="rounded-otto border border-borde border-l-[3px] border-l-ladrillo bg-lino px-4 py-3 text-sm leading-[1.55]">
+              <div className="mt-1.5 text-sm leading-[1.5]">
                 <span className="font-semibold text-ladrillo">Último mensaje del cliente:</span> {principal.resumen}
               </div>
-              {principal.ultimos_mensajes.length === 0 ? (
-                <div className="text-[14px] text-grafito md:text-sm">Sin mensajes en esta charla todavía.</div>
-              ) : (
-                principal.ultimos_mensajes.map((m, i) =>
-                  m.direccion === 'entrante' ? <BurbujaCliente key={i} texto={m.texto} hora={m.hora} /> : <BurbujaLucia key={i} texto={m.texto} hora={m.hora} />,
-                )
-              )}
-              <div className="flex-1" />
-              <textarea
-                placeholder={`Escribile a ${principal.n.split(' ')[0]} — tu mensaje sale con la etiqueta «mostrador»`}
-                aria-label="Respuesta del equipo"
-                disabled
-                title={SIN_CONECTAR}
-                className="min-h-[96px] w-full resize-none rounded-otto border border-borde px-3.5 py-3 text-[14.5px] leading-[1.5] outline-none focus:border-cobre disabled:bg-hueso disabled:text-[#8A8578]"
-              />
-              <div className="flex items-center justify-between">
-                <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto border border-salvia bg-lino px-4.5 py-2.5 text-sm font-medium text-salvia/50">
-                  ✓ Marcar OK
-                </button>
-                <div className="flex gap-2.5">
-                  <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto border border-cobre bg-lino px-4.5 py-2.5 text-sm font-medium text-cobre/50">
-                    Devolver a Lucía
-                  </button>
-                  <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto bg-cobre/50 px-5 py-2.5 text-sm font-medium text-lino">
-                    Responder
-                  </button>
-                </div>
-              </div>
-              <div className="text-[14px] text-grafito md:text-xs">
-                {SIN_CONECTAR}: paneles todavía no tiene la ruta para marcar OK, responder o devolver una derivación a Lucía.
-              </div>
             </div>
+            <ChatThread variante="desktop" conversacionId={principal.conversacion_id} />
           </div>
         ) : (
           <div className="flex-1 bg-hueso" />

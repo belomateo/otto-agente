@@ -3,18 +3,21 @@
 // Hilo de una charla — conectado a GET /api/bandeja/<id> (H1.8, paneles). Compartido por la
 // vista de escritorio (al lado de la lista) y la de mobile (/bandeja/charla). La bitácora va
 // plegada y se abre desde la «i» (Burbuja.tsx); el mini resumen se ve al costado sin abrir
-// nada. «Tomar la charla» y responder desde acá no tienen ruta en paneles todavía.
+// nada. Tomar / Devolver a Lucía / Cerrar / Responder van contra /api/bandeja/<id>/... (H1.8,
+// paneles, PROCESOS.md § 4 pasos 6 y 7): tomar y devolver solo valen si la charla no está
+// cerrada; responder (mostrador_enviar) solo si está 'derivada' y hubo un mensaje del cliente
+// en las últimas 24 hs — el 409 de la base explica el motivo exacto si no se puede.
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { BurbujaCliente, BurbujaLucia } from '@/components/ui-otto/Burbuja';
+import { BurbujaCliente, BurbujaLucia, BurbujaMostrador } from '@/components/ui-otto/Burbuja';
 import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
 import { IconAudio, IconFoto } from '@/components/nav/icons';
 import { useDatos } from '@/components/api/useDatos';
+import { useAccionesCharla } from '@/components/api/useAccionesCharla';
 import type { Charla } from '@/lib/queries/bandeja';
-
-const SIN_CONECTAR = 'Todavía no conectado';
 
 function separador(fecha: string) {
   const hoy = new Date().toISOString().slice(0, 10);
@@ -49,6 +52,12 @@ function resumenDe(charla: Charla) {
 export function ChatThread({ variante, conversacionId }: { variante: 'desktop' | 'mobile'; conversacionId: string | null }) {
   const compacto = variante === 'mobile';
   const { datos: charla, cargando, error, recargar } = useDatos<Charla>(conversacionId ? `/api/bandeja/${conversacionId}` : null);
+  const { enviando, error: errorAccion, tomar, devolver, cerrar, responder } = useAccionesCharla(conversacionId);
+  const [texto, setTexto] = useState('');
+
+  useEffect(() => {
+    setTexto('');
+  }, [conversacionId]);
 
   if (!conversacionId) return <div className="flex-1 bg-hueso" />;
   if (cargando && !charla) return <Cargando />;
@@ -57,7 +66,25 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
 
   const bitacora = bitacoraDe(charla);
   const resumen = resumenDe(charla);
-  const ultimoSalienteId = [...charla.mensajes].reverse().find((m) => m.direccion === 'saliente')?.id;
+  const ultimoLuciaId = [...charla.mensajes].reverse().find((m) => m.autor === 'lucia')?.id;
+
+  async function onTomar() {
+    if (await tomar()) recargar();
+  }
+  async function onDevolver() {
+    if (await devolver()) recargar();
+  }
+  async function onCerrar() {
+    if (await cerrar()) recargar();
+  }
+  async function onResponder() {
+    const t = texto.trim();
+    if (!t) return;
+    if (await responder(t)) {
+      setTexto('');
+      recargar();
+    }
+  }
 
   let fechaAnterior = '';
 
@@ -82,7 +109,7 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
               <span className="inline-block h-[7px] w-[7px] rounded-pill bg-noche" />
               La charla la tiene {charla.quien}
               {charla.cliente.etiqueta && <span className="ml-2 rounded-pill border border-borde px-2 py-0.5 text-[14px] md:text-[11px]">{charla.cliente.etiqueta}</span>}
-              <span title={SIN_CONECTAR} className="cursor-not-allowed rounded-pill border border-dashed border-[#C9C4B9] px-2 py-0.5 text-[14px] text-[#8A8578] md:text-[11px]">
+              <span title="Todavía no conectado" className="cursor-not-allowed rounded-pill border border-dashed border-[#C9C4B9] px-2 py-0.5 text-[14px] text-[#8A8578] md:text-[11px]">
                 + Etiqueta
               </span>
             </div>
@@ -93,12 +120,41 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
             <Link href={`/clientes?id=${charla.cliente.id}`} className="flex-none rounded-otto border border-borde bg-lino px-3.5 py-2 text-[14px] font-medium md:text-[13.5px]">
               Ver ficha
             </Link>
-            <button type="button" disabled title={SIN_CONECTAR} className="flex-none rounded-otto bg-cobre/50 px-4 py-2 text-[14px] font-medium text-lino md:text-[13.5px]">
-              Tomar la charla
-            </button>
+            {charla.estado !== 'cerrada' && (
+              <button
+                type="button"
+                onClick={onCerrar}
+                disabled={enviando}
+                className="flex-none rounded-otto border border-borde bg-lino px-3.5 py-2 text-[14px] font-medium text-grafito disabled:opacity-50 md:text-[13.5px]"
+              >
+                Cerrar
+              </button>
+            )}
+            {charla.estado === 'activa' && (
+              <button type="button" onClick={onTomar} disabled={enviando} className="flex-none rounded-otto bg-cobre px-4 py-2 text-[14px] font-medium text-lino disabled:opacity-60 md:text-[13.5px]">
+                Tomar la charla
+              </button>
+            )}
+            {charla.estado === 'derivada' && (
+              <button
+                type="button"
+                onClick={onDevolver}
+                disabled={enviando}
+                className="flex-none rounded-otto border border-cobre bg-lino px-3.5 py-2 text-[14px] font-medium text-cobre disabled:opacity-50 md:text-[13.5px]"
+              >
+                Devolver a Lucía
+              </button>
+            )}
           </>
         ) : (
-          <span className="flex-none rounded-pill bg-noche-suave px-2.5 py-[3px] text-[14px] font-medium text-noche md:text-[11.5px]">{charla.quien}</span>
+          <div className="flex flex-none items-center gap-2.5">
+            <span className="rounded-pill bg-noche-suave px-2.5 py-[3px] text-[14px] font-medium text-noche md:text-[11.5px]">{charla.quien}</span>
+            {charla.estado !== 'cerrada' && (
+              <button type="button" onClick={onCerrar} disabled={enviando} className="text-[13px] font-medium text-ladrillo disabled:opacity-50">
+                Cerrar
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -107,9 +163,21 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
           <Link href={`/clientes?id=${charla.cliente.id}`} className="flex-1 rounded-otto border border-borde bg-lino py-2 text-center text-[14px] font-medium md:text-[13px]">
             Ver ficha
           </Link>
-          <button type="button" disabled title={SIN_CONECTAR} className="flex-1 rounded-otto bg-cobre/50 py-2 text-[14px] font-medium text-lino md:text-[13px]">
-            Tomar la charla
-          </button>
+          {charla.estado === 'activa' && (
+            <button type="button" onClick={onTomar} disabled={enviando} className="flex-1 rounded-otto bg-cobre py-2 text-[14px] font-medium text-lino disabled:opacity-60 md:text-[13px]">
+              Tomar la charla
+            </button>
+          )}
+          {charla.estado === 'derivada' && (
+            <button
+              type="button"
+              onClick={onDevolver}
+              disabled={enviando}
+              className="flex-1 rounded-otto border border-cobre bg-lino py-2 text-[14px] font-medium text-cobre disabled:opacity-50 md:text-[13px]"
+            >
+              Devolver a Lucía
+            </button>
+          )}
         </div>
       )}
 
@@ -120,20 +188,24 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
           charla.mensajes.map((m) => {
             const nuevoDia = m.fecha !== fechaAnterior;
             fechaAnterior = m.fecha;
-            const esUltimoSaliente = m.id === ultimoSalienteId;
+            const esUltimoLucia = m.id === ultimoLuciaId;
             return (
               <div key={m.id} className="contents">
                 {!compacto && nuevoDia && <span className="self-center rounded-pill bg-[#EFEBE3] px-3 py-[3px] text-[14px] text-grafito md:text-xs">{separador(m.fecha)}</span>}
-                {m.direccion === 'entrante' ? (
+                {m.autor === 'cliente' ? (
                   <BurbujaCliente texto={m.texto} hora={m.hora} />
+                ) : m.autor === 'mostrador' ? (
+                  <BurbujaMostrador texto={m.texto} hora={m.hora} autor="Equipo" inicial="E" />
                 ) : (
-                  <BurbujaLucia texto={m.texto} hora={m.hora} resumen={esUltimoSaliente ? resumen : undefined} bitacora={esUltimoSaliente ? bitacora : undefined} />
+                  <BurbujaLucia texto={m.texto} hora={m.hora} resumen={esUltimoLucia ? resumen : undefined} bitacora={esUltimoLucia ? bitacora : undefined} />
                 )}
               </div>
             );
           })
         )}
       </div>
+
+      {errorAccion && <div className={`text-[13px] text-ladrillo ${compacto ? 'px-3.5 pt-2' : 'px-6 pt-2'}`}>{errorAccion}</div>}
 
       <div className={`flex items-center gap-2.5 border-t border-borde bg-lino ${compacto ? 'px-3.5 pb-[22px] pt-2.5' : 'px-6 py-3.5'}`}>
         {!compacto ? (
@@ -155,17 +227,47 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
             </span>
           </>
         )}
-        <div
-          className={`min-w-0 flex-1 truncate text-[#8A8D94] ${compacto ? 'rounded-pill px-3.5 py-2.5 text-[14px] md:text-[13.5px]' : 'rounded-otto px-3.5 py-2.5 text-sm'}`}
-          style={{ background: '#F3F0EA', border: '1px solid #E6E1D8' }}
-        >
-          {SIN_CONECTAR}: paneles todavía no tiene la ruta para responder desde el panel.
-        </div>
-        {compacto ? (
-          <span className="flex h-[42px] w-[42px] flex-none items-center justify-center rounded-pill bg-[#EFEBE3] text-base text-[#8A8D94]">↑</span>
+        {charla.estado === 'derivada' ? (
+          <input
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onResponder();
+              }
+            }}
+            disabled={enviando}
+            placeholder="Escribí tu respuesta — sale marcada «mostrador»"
+            aria-label="Respuesta del equipo"
+            className={`min-w-0 flex-1 border border-borde bg-lino outline-none focus:border-cobre disabled:bg-hueso disabled:text-[#8A8578] ${compacto ? 'rounded-pill px-3.5 py-2.5 text-[14px] md:text-[13.5px]' : 'rounded-otto px-3.5 py-2.5 text-sm'}`}
+          />
         ) : (
-          <button type="button" disabled title={SIN_CONECTAR} className="flex-none rounded-otto border border-borde bg-lino px-4 py-2.5 text-[14px] font-medium text-cobre/50 md:text-[13.5px]">
-            Tomar la charla
+          <div
+            className={`min-w-0 flex-1 truncate text-[#8A8D94] ${compacto ? 'rounded-pill px-3.5 py-2.5 text-[14px] md:text-[13.5px]' : 'rounded-otto px-3.5 py-2.5 text-sm'}`}
+            style={{ background: '#F3F0EA', border: '1px solid #E6E1D8' }}
+          >
+            {charla.estado === 'cerrada' ? 'Esta charla está cerrada.' : 'Tomá la charla para responder.'}
+          </div>
+        )}
+        {compacto ? (
+          <button
+            type="button"
+            onClick={onResponder}
+            disabled={charla.estado !== 'derivada' || !texto.trim() || enviando}
+            aria-label="Enviar"
+            className="flex h-[42px] w-[42px] flex-none items-center justify-center rounded-pill bg-cobre text-base text-lino disabled:bg-[#EFEBE3] disabled:text-[#8A8D94]"
+          >
+            ↑
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onResponder}
+            disabled={charla.estado !== 'derivada' || !texto.trim() || enviando}
+            className="flex-none rounded-otto bg-cobre px-4 py-2.5 text-[14px] font-medium text-lino disabled:bg-cobre/50 md:text-[13.5px]"
+          >
+            Enviar
           </button>
         )}
       </div>
