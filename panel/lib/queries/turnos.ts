@@ -9,6 +9,9 @@ import { ESTADOS_LIBERAN, nombreDe, type ClienteDb } from './comun';
 
 export type FilaTurno = TurnoDelDia & {
   id: string;
+  /** La que hay que mandar en el PATCH de estado (lib/edicion, entidad `turnos`): sin esto,
+   *  el panel no tiene qué mandar y el PATCH da 400 siempre (falta version). */
+  version: number;
   cliente_id: string;
   tipo: string;
   estado: string;
@@ -54,7 +57,7 @@ export async function turnosDelDia(
   let q = db
     .from('turnos')
     .select(
-      'id, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado, aviso, confirmado_por, aviso_ok_at, aviso_ok_por, clientes(nombre, telefono)'
+      'id, version, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado, aviso, confirmado_por, aviso_ok_at, aviso_ok_por, clientes(nombre, telefono)'
     )
     .gte('inicio', desde)
     .lt('inicio', hasta)
@@ -107,6 +110,7 @@ export async function turnosDelDia(
       const estilo = ESTILO_ESTADO_TURNO[t.estado] ?? ESTILO_ESTADO_TURNO['sin-confirmar'];
       return {
         id: t.id,
+        version: t.version,
         cliente_id: t.cliente_id,
         tipo: t.tipo,
         estado: t.estado,

@@ -607,6 +607,8 @@ try {
       x.status === 200 && tiene(t, ["h", "n", "t", "p", "e", "eb", "ef", "borde"]) && t.h === "10:00" && t.t === "Invitado · 45’" && t.p === "Probador 3" && t.e === "Sin confirmar",
       `Turnos (${x.status}): ${t && [t.h, t.t, t.p, t.e].join(" | ")}`
     );
+    const versionEnBase = (await q("select version from turnos where id = $1", [turnoId]))[0].version;
+    ok(t?.version === versionEnBase, `GET /api/turnos trae version (sin esto, el PATCH de estado no tiene qué mandar): ${t?.version} vs. ${versionEnBase} en la base`);
     ok(x.datos.horario?.apertura === "10:00" && x.datos.horario?.corte_desde === "14:00" && x.datos.probadores === 3, `el día trae horario y probadores de las tablas (${JSON.stringify(x.datos.horario)}, ${x.datos.probadores})`);
     ok(JSON.stringify(x.datos.franjas) === JSON.stringify([{ desde: "13:00", hasta: "19:00", probadores: 3 }]), `un miércoles trae su franja de turnos (0030): ${JSON.stringify(x.datos.franjas)}`);
     const sab = await api(sa, "GET", "/api/turnos?fecha=2031-01-18");
