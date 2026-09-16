@@ -275,10 +275,14 @@ async function enviarDelMostrador(db: Db, d: Dependencias, t: Trabajo, telefono:
   }
   if (m.wa_message_id) return;
   if (!puedeTextoLibre(await ultimoMensajeDelCliente(db, t.conversacion_id), d.ahora())) {
+    // Lo escribió una persona: no se borra como las burbujas de Lucía, se marca (0042). Si no,
+    // queda en la charla igual que uno que sí salió y quien lo escribió cree que llegó.
+    await db.consulta("update mensajes set no_enviado_motivo = 'ventana_cerrada' where id = $1::uuid", [mensajeId]);
     await evento(db, t.conversacion_id, "error", {
       etapa: "mostrador",
       mensaje_id: mensajeId,
       error: "fuera de la ventana de 24 hs: solo se puede mandar una plantilla",
+      no_enviado_motivo: "ventana_cerrada",
     });
     return;
   }

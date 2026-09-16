@@ -9,6 +9,7 @@ import { calendarioPropio } from "../_shared/agenda/calendario_propio.ts";
 import { type ClienteSql, dbDesde } from "../_shared/db.ts";
 import { correrTurno } from "../_shared/turno/turno.ts";
 import { atenderCola, type Dependencias, leerListaTelefonos } from "./atender.ts";
+import { igualesEnTiempoConstante } from "../_shared/whatsapp/firma.ts";
 
 const SECRETO = Deno.env.get("WORKER_SECRET") ?? "";
 
@@ -28,7 +29,7 @@ const dependencias: Dependencias = {
 };
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST" || SECRETO === "" || req.headers.get("x-worker-secret") !== SECRETO) {
+  if (req.method !== "POST" || SECRETO === "" || !igualesEnTiempoConstante(req.headers.get("x-worker-secret") ?? "", SECRETO)) {
     return new Response("forbidden", { status: 403 });
   }
 

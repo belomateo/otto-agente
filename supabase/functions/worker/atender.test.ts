@@ -328,6 +328,29 @@ prueba("el mostrador: el mensaje del equipo sale por Meta sin la marca, con su w
   assertEquals(ev?.tipo, "ok");
 });
 
+prueba("el mostrador fuera de las 24 hs: no sale, y el mensaje queda marcado (0042), no como enviado", async (c) => {
+  await mensajeDelCliente(c, TEL_AFUERA, "hola");
+  const conv = (await c.sql.query(
+    "select c.id from conversaciones c join clientes cl on cl.id = c.cliente_id where cl.telefono = $1",
+    [TEL_AFUERA],
+  )).rows[0].id;
+  await c.sql.query("update conversaciones set estado = 'derivada' where id = $1", [conv]);
+  const { mensaje_id } = (await c.sql.query("select mostrador_enviar($1, $2) as r", [conv, "Te espero el martes."])).rows[0].r;
+  // mostrador_enviar ya rechaza fuera de las 24 hs; lo que se prueba acá es la ventana que se
+  // cierra ENTRE que la persona aprieta enviar y el worker toma el trabajo: 25 hs después.
+  const { d, meta } = armar(c, { desdeSeg: 25 * 3600 });
+
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals(meta.envios.length, 0);
+  const m = (await c.sql.query(
+    "select wa_message_id, no_enviado_motivo from mensajes where id = $1",
+    [mensaje_id],
+  )).rows[0];
+  assertEquals([m.wa_message_id, m.no_enviado_motivo], [null, "ventana_cerrada"]);
+  const ev = (await eventos(c, TEL_AFUERA)).find((e) => e.detalle.etapa === "mostrador");
+  assertEquals([ev?.tipo, ev?.detalle.no_enviado_motivo], ["error", "ventana_cerrada"]);
+});
+
 prueba("una caída de Meta se salva con el reintento: salen las dos burbujas", async (c) => {
   await mensajeDelCliente(c, TEL, "hola");
   const { d, meta, reloj: r } = armar(c, { falla: (i) => i === 0 });
