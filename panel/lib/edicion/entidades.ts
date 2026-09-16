@@ -319,9 +319,13 @@ export const ENTIDADES = {
     'clientes',
     {
       nombre: textoOpcional(120),
+      // Se guarda en minúscula y sin espacios (2.4, decisión #17): la base lo exige igual
+      // (0029, clientes_email_formato) pero acá se normaliza antes de mandarlo, no se rechaza
+      // solo por mayúsculas. Vacío lo borra (lo decide una persona, no Lucía).
       email: z
         .string()
         .trim()
+        .toLowerCase()
         .max(200)
         .regex(/^([^\s@]+@[^\s@]+\.[^\s@]+)?$/, 'Email inválido')
         .nullable()
