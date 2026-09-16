@@ -193,21 +193,47 @@ Deno.test("precio_sin_herramienta reconoce 150 mil y 150000 sin signo", async ()
   await salta(precioSinHerramienta, entrada("Sale 150 mil."));
 });
 
-Deno.test("precio_sin_herramienta reconoce un monto corto pegado a una palabra de precio (hallazgo de Mateo, 16/9)", async () => {
-  assertEquals(montos("te sale como 150"), [150]);
-  assertEquals(montos("180 nomás"), [180]);
-  assertEquals(montos("cuesta 220"), [220]);
-  assertEquals(montos("anda en 90"), [90]);
+Deno.test("precio_sin_herramienta reconoce CUALQUIER monto corto suelto, no solo una lista fija de palabras (hallazgo de Mateo, 16/9)", async () => {
+  // La primera versión (16/9, a la mañana) solo miraba sale/cuesta/son/anda en, y se escapaba con
+  // cualquier otra forma de decir un precio. Dado vuelta: cualquier número de 2 o 3 cifras es
+  // sospechoso, salvo que el contexto lo explique (ver el test de abajo).
+  for (
+    const frase of [
+      "te sale como 150",
+      "180 nomás",
+      "cuesta 220",
+      "anda en 90",
+      "te queda en unos 150",
+      "te lo dejo en 150",
+      "por 150 te llevás el combo",
+      "arranca en 150",
+      "y bueno, 150 y sale con todo",
+    ]
+  ) {
+    assert(montos(frase).length > 0, `"${frase}" tendría que reconocer un monto`);
+  }
   // "sale 150 mil" es un solo monto ($150.000), no dos (150 y 150000).
   assertEquals(montos("sale 150 mil"), [150000]);
   await salta(precioSinHerramienta, entrada("Un traje te sale como 150 😊"));
-  await salta(precioSinHerramienta, entrada("180 nomás, con todo incluido."));
+  await salta(precioSinHerramienta, entrada("Por 150 te llevás el combo completo."));
   await noSalta(precioSinHerramienta, entrada("Un traje te sale como 150.", { traza: traza({ precios: [150] }) }));
 });
 
-Deno.test("precio_sin_herramienta no confunde un bare corto sin palabra de precio (caso parecido)", async () => {
+Deno.test("precio_sin_herramienta no confunde un número con contexto que lo explica (caso parecido)", async () => {
+  assertEquals(montos("talle 48"), []);
+  assertEquals(montos("Estamos en España 764, Rosario."), []);
+  assertEquals(montos("nos vemos a las 15"), []);
+  assertEquals(montos("se puede pagar en 3 cuotas"), []);
   assertEquals(montos("somos 44 invitados"), []);
   assertEquals(montos("uso el talle 44"), []);
+  assertEquals(montos("tenemos del 44 al 68"), []);
+  assertEquals(montos("mide 170"), []);
+  assertEquals(montos("tengo 44 años"), []);
+  assertEquals(montos("es el cumpleaños de 15 de mi hija"), []);
+  await noSalta(precioSinHerramienta, entrada("El talle 48 te queda bien."));
+  await noSalta(precioSinHerramienta, entrada("Estamos en España 764, Rosario."));
+  await noSalta(precioSinHerramienta, entrada("Nos vemos a las 15."));
+  await noSalta(precioSinHerramienta, entrada("Se puede pagar en 3 cuotas."));
   await noSalta(precioSinHerramienta, entrada("Somos 44 invitados en el casamiento."));
 });
 
