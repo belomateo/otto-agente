@@ -4,15 +4,19 @@
 //  1. la fecha_hora es futura;
 //  2. la fecha del evento no pasó, y si es hoy o mañana no se agenda: se deriva en código con
 //     motivo evento_inminente (decisión #8), aunque buscar_horarios haya dado huecos antes;
-//  3. el cliente no tiene otro turno activo (para eso está reprogramar_turno);
-//  4. hay nombre y fecha del evento (en los argumentos o ya en la ficha);
-//  5. el turno no cae después del evento;
-//  6. el hueco salió de buscar_horarios EN ESTE TURNO, para el mismo tipo (traza);
-//  7. entra en una franja de turnos vigente, en un probador que toma turnos en esa franja;
-//  8. dura lo que dice duraciones_turno para ese tipo.
+//  3. hay nombre y fecha del evento (en los argumentos o ya en la ficha);
+//  4. el turno no cae después del evento;
+//  5. el hueco salió de buscar_horarios EN ESTE TURNO, para el mismo tipo (traza);
+//  6. entra en una franja de turnos vigente, en un probador que toma turnos en esa franja;
+//  7. dura lo que dice duraciones_turno para ese tipo.
 // Efecto: fila en turnos en el primer probador libre de los ofrecidos para esa hora, ficha del
 // cliente, evento en Calendar (si falla, el turno queda con aviso) y la confirmación armada en
 // código, que sale en un mensaje aparte.
+//
+// Decisión de Mateo, 16/9 (pedido 2): dos turnos para la misma persona se permiten. Antes esto
+// rechazaba con turno_activo si el cliente ya tenía uno; ahora agenda igual y solo lo avisa en
+// datos.aviso, para que Lucía lo pueda mencionar si hace falta (o para la bitácora), sin frenar
+// la reserva. reprogramar_turno sigue intacto (opera sobre un turno_id puntual, no chequeaba esto).
 
 import { EVENTOS, type Evento, TIPOS_TURNO, type TipoTurno } from "../enums.ts";
 import { fechaLarga, fechaLocal, horaLocal } from "../tiempo.ts";
@@ -78,13 +82,6 @@ export const agendarTurno: Herramienta<Args> = {
     }
 
     const activo = await turnoActivoDelCliente(ctx.db, ctx.cliente.id, ctx.ahora);
-    if (activo) {
-      return rechazo(
-        "turno_activo",
-        `Ya tiene un turno el ${fechaLarga(activo.inicio, ctx.tz)} a las ${horaLocal(activo.inicio, ctx.tz)} ` +
-          `(turno_id ${activo.id}). No se agenda otro encima: si quiere cambiarlo, usá reprogramar_turno.`,
-      );
-    }
 
     const nombre = limpio(args.nombre) ?? limpio(ficha.nombre);
     if (!nombre) {
@@ -153,6 +150,11 @@ export const agendarTurno: Herramienta<Args> = {
       nota: "Turno agendado. La confirmación con dirección, mapa y condiciones sale sola en un mensaje aparte: no la repitas.",
     };
     if (confirmacion.faltan.length) datos.faltan_en_la_confirmacion = confirmacion.faltan;
+    if (activo) {
+      datos.aviso = `El cliente ya tenía otro turno el ${fechaLarga(activo.inicio, ctx.tz)} a las ` +
+        `${horaLocal(activo.inicio, ctx.tz)} (turno_id ${activo.id}); quedan los dos. No se lo menciones si no ` +
+        "preguntó por el otro.";
+    }
     return { ok: true, datos, efectos: { mensajesAlCliente: [confirmacion.texto] } };
   },
 };

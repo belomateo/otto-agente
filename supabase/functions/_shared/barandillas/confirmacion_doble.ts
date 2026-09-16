@@ -16,9 +16,17 @@
 // oración, unidas con "y", "; ", " pero " o " aparte " (que es como se escribe normalmente, sin
 // poner un punto en el medio), la oración entera se seguía descartando. "Te confirmo el turno
 // del martes a las 13 y te cuento que también alquilamos chalecos y moños" perdía el aviso de
-// los chalecos. Ahora se corta más fino: cada oración se parte en cláusulas por esos separadores,
-// se prueba cada cláusula por separado, y se reconstruye la oración con las que sobreviven (con
+// los chalecos. Se corta más fino: cada oración se parte en cláusulas por esos separadores, se
+// prueba cada cláusula por separado, y se reconstruye la oración con las que sobreviven (con
 // mayúscula si la que arranca ahora no era la que arrancaba antes).
+//
+// Hallazgo de logica en vivo, 16/9 (probando contra el worker desplegado): exigir la palabra
+// "turno" dejaba pasar la confirmación más natural — "Te agendé el miércoles 23 a las 13:00" no
+// la nombra, y es justo lo que dijo el modelo real. Ahora una raíz de reserva alcanza sola si
+// viene con una fecha o una hora (día de la semana, "N de <mes>", una hora con o sin dos
+// puntos): no hace falta que además diga "turno". "anot" queda afuera de este camino (`anotar`
+// también se usa para guardar una preferencia del cliente sin que sea una confirmación, "anoté
+// que preferís el miércoles"); con "turno" al lado sigue contando como antes.
 
 import { llamoA } from "../traza.ts";
 import { contieneFrase, normalizar, oraciones, rearmar, type Oracion } from "./texto.ts";
@@ -26,12 +34,25 @@ import { type Barandilla, NO_SALTA } from "./tipos.ts";
 
 const HERRAMIENTAS_CON_CONFIRMACION_PROPIA = ["agendar_turno", "reprogramar_turno", "confirmar_turno"];
 
+const MESES = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre";
+const DIAS_DE_LA_SEMANA = "lunes|martes|miercoles|jueves|viernes|sabado|domingo";
+
+function tieneFechaUHora(n: string): boolean {
+  return new RegExp(`\\b(${DIAS_DE_LA_SEMANA})\\b`).test(n) ||
+    /\d{1,2}[:.]\d{2}\b/.test(n) ||
+    /\ba\s+las?\s+\d{1,2}\b/.test(n) ||
+    new RegExp(`\\b\\d{1,2}\\s+de\\s+(${MESES})\\b`).test(n);
+}
+
 // "Te reservé/agendé/reprogramé/confirmé el turno...", "Tu turno quedó agendado...": mismo
 // vocabulario que usa la confirmación de código (AGENTE.md § 4), así que si el modelo escribe
 // algo parecido justo en el turno en que ya se armó una, es la misma frase, no información nueva.
+// Alcanza con la raíz sola si además trae una fecha o una hora (no hace falta la palabra "turno"
+// — "Te agendé el miércoles a las 13" confirma igual que "Te agendé el turno").
 function esConfirmacionDeReserva(clausula: string): boolean {
   const n = normalizar(clausula);
-  return contieneFrase(n, "turno") && /\b(agend|reserv|confirm|anot|qued|reprogram)/.test(n);
+  if (contieneFrase(n, "turno") && /\b(agend|reserv|confirm|anot|qued|reprogram)/.test(n)) return true;
+  return /\b(agend|reserv|confirm|qued|reprogram)/.test(n) && tieneFechaUHora(n);
 }
 
 // Un saludo corto pegado justo antes de la confirmación ("¡Listo, Lucas!", "¡Perfecto!") es

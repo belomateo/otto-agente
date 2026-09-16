@@ -1,6 +1,7 @@
-// Los 17 guiones de AGENTE.md § 13 (los 14 originales, evento-manana-deriva —decisión #8 del
-// 14/9— y cliente-enojado-deriva —pedido de Mateo, 16/9—): un solo lugar con las conversaciones
-// y los chequeos contra la base,
+// Los 19 guiones de AGENTE.md § 13 (los 14 originales; evento-manana-deriva —decisión #8 del
+// 14/9—; cliente-enojado-deriva y mail-no-bloquea-la-reserva —pedido/hallazgo del 16/9—;
+// catalogo-modelo-puntual y dos-turnos-permitidos —pedidos de Mateo, 16/9—): un solo lugar con
+// las conversaciones y los chequeos contra la base,
 // para que el emulador (scripts/probar-turno.js) y el worker desplegado
 // (tests/sql/guiones-desplegado.mjs) prueben EXACTAMENTE lo mismo — la misma razón por la que
 // _shared/turno/turno.ts es un solo archivo para los dos: si cada runner tuviera su propia copia
@@ -55,13 +56,14 @@ async function conversacionDe(sql, telefono) {
 async function sembrarCatalogo(sql) {
   await sql.query("update catalogo_alquiler set activo = false where activo");
   const ids = [];
+  let orden = 0;
   for (const [modelo, precio, colores, talles] of [
     ["Clásico azul marino", 165000, ["Azul marino", "Negro"], ["44", "46", "48", "50", "52", "54", "56", "58", "60", "62", "64", "66", "68"]],
     ["Slim gris oxford", 195000, ["Gris"], ["44", "46", "48", "50", "52"]],
   ]) {
     const r = await sql.query(
-      "insert into catalogo_alquiler (modelo, precio_base, colores, talles, fotos) values ($1, $2, $3::jsonb, $4, $5) returning id",
-      [modelo, precio, JSON.stringify(colores.map((nombre) => ({ nombre, hex: "#000000" }))), talles, ["foto-de-prueba.jpg"]],
+      "insert into catalogo_alquiler (modelo, precio_base, colores, talles, fotos, orden) values ($1, $2, $3::jsonb, $4, $5, $6) returning id",
+      [modelo, precio, JSON.stringify(colores.map((nombre) => ({ nombre, hex: "#000000" }))), talles, ["foto-de-prueba.jpg"], ++orden],
     );
     ids.push(r.rows[0].id);
   }
@@ -335,6 +337,48 @@ function crearGuiones() {
         return [
           [turnos.length === 1, `quedó un turno agendado a pesar de no haber dado el mail (hay ${turnos.length})`],
           [turnos[0]?.estado === "sin-confirmar", `el turno quedó sin-confirmar, como cualquier reserva nueva (fue: ${turnos[0]?.estado})`],
+        ];
+      },
+    },
+
+    // Decisión de Mateo, 16/9 (pedido 1b): consultar_catalogo ya no trae el catálogo entero
+    // cuando el cliente pregunta por un modelo puntual: filtra a esa prenda sola.
+    "catalogo-modelo-puntual": {
+      necesitaCatalogo: true,
+      mensajes: ["hola, cuanto sale el clasico azul marino"],
+      async verificar(sql, telefono, respuestas) {
+        const todo = respuestas.flat().join(" ").toLowerCase();
+        const convId = await conversacionDe(sql, telefono);
+        const llamadas = await fila(
+          sql,
+          "select detalle->'argumentos' as a from eventos_agente where conversacion_id=$1 and tipo='herramienta' and detalle->>'herramienta'='consultar_catalogo' and (detalle->>'ok')::boolean",
+          [convId],
+        );
+        const mandoModelo = llamadas.some((f) => typeof f.a?.modelo === "string" && f.a.modelo.trim() !== "");
+        return [
+          [mandoModelo, "consultar_catalogo se llamó con un modelo puntual, no sin filtro"],
+          [!/slim|oxford/.test(todo), "no menciona el otro modelo del catálogo (se filtró a uno solo)"],
+        ];
+      },
+    },
+
+    // Decisión de Mateo, 16/9 (pedido 2): dos turnos activos para la misma persona se permiten.
+    // Antes agendar_turno rechazaba con turno_activo si ya tenía uno; ahora agenda el segundo y
+    // solo lo avisa (no frena la reserva).
+    "dos-turnos-permitidos": {
+      necesitaCatalogo: true,
+      mensajes: [
+        `hola soy lucas gomez, necesito un turno de invitado para un cumpleaños de 15 el ${EN_2_MESES}, de tarde`,
+        "dale, la primera que tengas me sirve",
+        `en realidad quiero sacar otro turno más para volver a probarme antes del evento, ¿tenes algo para el ${diaHabilFuturo(40)}?`,
+        "dale, la mas temprano de esas dos",
+      ],
+      async verificar(sql, telefono) {
+        const cli = (await fila(sql, "select id from clientes where telefono=$1", [telefono]))[0];
+        const turnos = await fila(sql, "select estado from turnos where cliente_id=$1 order by creado_at", [cli.id]);
+        return [
+          [turnos.length === 2, `quedan dos turnos, ninguno pisó al otro (hay ${turnos.length})`],
+          [turnos.every((t) => t.estado === "sin-confirmar"), "los dos quedan sin-confirmar, como cualquier reserva nueva"],
         ];
       },
     },
