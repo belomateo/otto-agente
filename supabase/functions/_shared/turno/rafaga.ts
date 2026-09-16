@@ -22,9 +22,11 @@ export const TIPOS_QUE_SON_TEXTO = ["texto", "button"];
 // Hallazgo de Mateo, 16/9: sin tope, una ráfaga larga (un cliente que pega un texto gigante, o
 // que no para de escribir) se mandaba entera al clasificador y al principal — costo y riesgo de
 // pasarse del contexto del modelo sin ningún límite. 2500 caracteres alcanza de sobra para
-// cualquier mensaje real (el propio prompt, con todo lo que dice Lucía, entra en 300 líneas) y
-// dado que Meta ya corta un mensaje de WhatsApp en 4096 caracteres, esto nunca recorta un solo
-// mensaje del cliente, solo una ráfaga de varios juntos.
+// cualquier mensaje real (el propio prompt, con todo lo que dice Lucía, entra en 300 líneas).
+// Decisión (hallazgo de logica, 16/9): 2500 es MENOS que los 4096 que permite un mensaje de
+// WhatsApp, así que esto SÍ puede recortar un único mensaje legítimo si es lo bastante largo, no
+// solo una ráfaga de varios — el costo de mandarlo entero al clasificador y al principal es el
+// mismo, venga de uno o de varios mensajes, y es justo lo que este tope existe para evitar.
 export const MAXIMO_CARACTERES_RAFAGA = 2500;
 
 export type Rafaga = {
@@ -74,7 +76,21 @@ export async function agruparRafaga(db: Db, conversacionId: string, ahora: Date)
   // .length no se parte a la mitad.
   const puntos = [...unido];
   const recortada = puntos.length > MAXIMO_CARACTERES_RAFAGA;
-  const texto = recortada ? puntos.slice(0, MAXIMO_CARACTERES_RAFAGA).join("") : unido;
+  let texto = unido;
+  if (recortada) {
+    const corte = puntos.slice(0, MAXIMO_CARACTERES_RAFAGA);
+    // Corta en el último espacio del tramo, no a la mitad de una palabra (hallazgo de logica,
+    // 16/9). Si no hay ningún espacio (una sola palabra gigantesca, caso de laboratorio), no hay
+    // mejor lugar: se mantiene el corte seco.
+    let ultimoEspacio = -1;
+    for (let i = corte.length - 1; i >= 0; i--) {
+      if (/\s/.test(corte[i])) {
+        ultimoEspacio = i;
+        break;
+      }
+    }
+    texto = (ultimoEspacio > 0 ? corte.slice(0, ultimoEspacio) : corte).join("").trimEnd();
+  }
   return {
     texto,
     mensajeIds: filas.map((f) => String(f.id)),

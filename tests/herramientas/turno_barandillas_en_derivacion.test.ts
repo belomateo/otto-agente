@@ -274,3 +274,43 @@ prueba("cliente_enojado: el clasificador lo detecta por tono, sin decir 'reclamo
   const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
   assertEquals([der?.motivo, der?.estado], ["cliente_enojado", "pendiente"]);
 });
+
+// Verificación pedida por logica, 16/9: cuando una barandilla de "rehacer" (acá,
+// precio_sin_herramienta) vuelve a saltar después del reintento, ¿el turno manda un texto vacío
+// sin avisarle a nadie, o deriva de verdad? Fuerza al principal a decir SIEMPRE un precio sin
+// haber llamado a consultar_catalogo, así precio_sin_herramienta salta en el primer intento y
+// otra vez en el reintento — el camino de aplicarBarandillas hacia barandilla_doble.
+prueba("dos saltos del mismo turno derivan barandilla_doble de verdad: fila en derivaciones y charla pausada, no un texto vacío sin más", async ({ ctx, sql, conversacionId }) => {
+  await insertarEntrante(sql, conversacionId, "cuanto sale el traje");
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    const esClasificador = body.response_format?.json_schema?.name === "clasificacion";
+    const esExtractor = body.response_format?.json_schema?.name === "ficha";
+    if (esClasificador) {
+      return Promise.resolve(respuestaChat({ contenido: JSON.stringify({ intencion: "alquiler", urgencia: "baja", derivar_duro: false, motivo_derivacion: null }) }));
+    }
+    if (esExtractor) {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({
+          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+        }),
+      }));
+    }
+    // El principal: siempre un precio sin consultar_catalogo, en el primer intento y en el
+    // reintento — nunca corrige lo que la barandilla le pide.
+    return Promise.resolve(respuestaChat({ contenido: "Un traje cuesta 230, con todo incluido." }));
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assertEquals(resultado.derivo, true);
+  assertEquals(resultado.motivoDerivacion, "barandilla_doble");
+  assertEquals(resultado.mensajesAlCliente, []);
+  const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
+  assertEquals([der?.motivo, der?.estado], ["barandilla_doble", "pendiente"]);
+  assertEquals((await fila(sql, "select estado from conversaciones where id = $1", [conversacionId])).estado, "derivada");
+});

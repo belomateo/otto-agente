@@ -87,6 +87,10 @@ una función separada en `_shared/`, testeable sola.
      └ si lo único que llegó no es texto NI un botón de plantilla (foto, audio, sticker —
        supuesto #33; un botón SÍ cuenta como texto: es una frase que el cliente tocó, no una foto)
        → texto fijo en código, sin pasar por ningún LLM, y FIN
+     └ tope de 2500 caracteres antes de clasificar/principal (`MAXIMO_CARACTERES_RAFAGA`,
+       hallazgo de Mateo, 16/9): corta en el último espacio del tramo, no a la mitad de una
+       palabra (logica, 16/9). Puede recortar un único mensaje muy largo, no solo una ráfaga de
+       varios — el costo para el LLM es el mismo
 4. clasificar            LLM_CLASIFICADOR → { intencion, urgencia, derivar_duro: bool }   [JSON estricto]
      └ si derivar_duro (reclamo / prenda dañada / corporativo / turno urgente sin hueco)
        → derivar_a_persona en código, con texto fijo, y FIN
@@ -185,7 +189,7 @@ en el caso parecido. Orden: formato → contenido → reglas.
 
 | Barandilla | Qué detecta | Qué hace |
 | --- | --- | --- |
-| `confirmacion_doble` | `agendar_turno`, `reprogramar_turno` o `confirmar_turno` salió bien en este turno: la confirmación ya la arma el código aparte (hallazgo de Mateo probando el worker real, H2.1, 15/9: el cliente recibía dos «¡Listo!») | Recorta solo la frase que repite la confirmación (16/9, igual que `presentacion_repetida`), no el texto entero: si el cliente preguntó otra cosa en el mismo mensaje, esa respuesta se mantiene |
+| `confirmacion_doble` | `agendar_turno`, `reprogramar_turno` o `confirmar_turno` salió bien en este turno: la confirmación ya la arma el código aparte (hallazgo de Mateo probando el worker real, H2.1, 15/9: el cliente recibía dos «¡Listo!») | Recorta solo la cláusula que repite la confirmación (16/9, igual que `presentacion_repetida`), no la oración ni el texto entero — corta por oración y, adentro de cada una, por "y"/"; "/" pero "/" aparte " (hallazgo de logica, 16/9: la confirmación y algo agregado en la misma oración, sin punto en el medio, se perdían juntas): si el cliente preguntó otra cosa en el mismo mensaje, esa respuesta se mantiene |
 | `sin_markdown` | `**`, `__`, `*negrita*`, `#` o `- ` al inicio, ```, links en markdown | Limpia en código |
 | `sin_relleno` | Las fórmulas prohibidas al final (la lista incluye todas las del prompt) | Corta la frase, y las anteriores si también son relleno |
 | `presentacion_repetida` | De las primeras 3 oraciones, alguna trae «soy Lucía» + «Otto» juntos (cualquiera de las dos formas del nombre), y no es el primer mensaje de la charla (hallazgo M2 del tester, 15/9: se presenta dos veces si una pregunta la pone a la defensiva, a veces parafraseando la apertura) | Corta hasta ahí (incluido un «¡Hola!» suelto antes, si lo hay) |
@@ -330,10 +334,19 @@ por su cuenta con un texto propio en vez del flujo garantizado). `MOTIVOS_SOLO_C
 `sin_respuesta`, `timeout`; ninguno está en el enum que ve la herramienta.
 
 Al derivar: `derivaciones` recibe la fila con motivo y resumen (lo arma el
-extractor); se avisa por WhatsApp al número del canal de alquiler; la conversación
-se pausa para Lucía hasta que una persona la retome desde el panel y la marque
-"devolver a Lucía". Fuera de horario humano, el mensaje al cliente es fijo:
-«Le paso tu consulta al equipo y te escriben apenas abran mañana.»
+extractor); la conversación se pausa para Lucía hasta que una persona la retome desde
+el panel y la marque "devolver a Lucía". Fuera de horario humano, el mensaje al
+cliente es fijo: «Le paso tu consulta al equipo y te escriben apenas abran mañana.»
+
+**Pendiente (hallazgo de logica, 16/9):** el aviso por WhatsApp al número del canal
+de alquiler que dice este párrafo todavía no está implementado en ningún lado —
+`derivaciones.destino_tel` se escribe (`registrarDerivacion`,
+`_shared/herramientas/derivacion.ts`) pero nada lo lee para mandar nada. El turno ya
+devuelve todo lo necesario (`ResultadoTurno.avisoEquipo: { motivo, derivacionId }`,
+y `derivacionTel` ya es un parámetro de `correrTurno`); falta el paso de enviar, que
+va en `worker/atender.ts` (logica) después de que `correrTurno` devuelve. Hasta que
+eso exista, una derivación se ve en el panel (Atención humana) pero no empuja ningún
+aviso: quien esté del otro lado tiene que estar mirando la pestaña.
 
 ---
 

@@ -67,6 +67,33 @@ Deno.test("confirmacion_doble recorta solo la frase repetida y deja lo demás (h
   assertEquals(r2.texto, "Sí, alquilamos corbata y cinturón para completar el look.");
 });
 
+// Hallazgo de logica, 16/9 (más tarde): la confirmación y lo agregado compartiendo UNA sola
+// oración (unidas con "y", "; " o " pero ", que es como se escribe normalmente, sin punto en el
+// medio) hacía que se perdiera todo. Se corta por cláusula, no por oración entera.
+Deno.test("confirmacion_doble corta la cláusula de confirmación aunque comparta oración con otra cosa (hallazgo de logica, 16/9)", async () => {
+  const conTraza = (h: string) => traza({ herramientas: [h] });
+  const r1 = await salta(
+    confirmacionDoble,
+    entrada("Te confirmo el turno del martes a las 13 y te cuento que también alquilamos chalecos y moños", { traza: conTraza("agendar_turno") }),
+  );
+  assertEquals(r1.texto, "Te cuento que también alquilamos chalecos y moños");
+
+  const r2 = await salta(
+    confirmacionDoble,
+    entrada("Quedó agendado el turno para el jueves y sí, también tenemos zapatos para alquilar", { traza: conTraza("agendar_turno") }),
+  );
+  assertEquals(r2.texto, "Sí, también tenemos zapatos para alquilar");
+
+  const r3 = await salta(
+    confirmacionDoble,
+    entrada("Listo, te agendé el turno; traé el saco que querés combinar", { traza: conTraza("reprogramar_turno") }),
+  );
+  assertEquals(r3.texto, "Traé el saco que querés combinar");
+
+  // Caso parecido: sigue funcionando el recorte por oración completa de antes (sin cláusulas).
+  await noSalta(confirmacionDoble, entrada("Alquilamos zapatos y cinturón para completar el look.", { traza: conTraza("agendar_turno") }));
+});
+
 Deno.test("confirmacion_doble no salta sin agendar_turno/reprogramar_turno en la traza, ni si ya no queda texto (caso parecido)", async () => {
   await noSalta(
     confirmacionDoble,
@@ -246,6 +273,46 @@ Deno.test("precio_sin_herramienta no confunde un número con contexto que lo exp
   await noSalta(precioSinHerramienta, entrada("Nos vemos a las 15."));
   await noSalta(precioSinHerramienta, entrada("Se puede pagar en 3 cuotas."));
   await noSalta(precioSinHerramienta, entrada("Somos 44 invitados en el casamiento."));
+});
+
+// URGENTE, hallazgo de Mateo/logica en vivo contra el worker desplegado, 16/9: "te agendo el
+// martes 23 a las 13" leía el día del mes (23) como precio. Rompía agendar_turno de punta a
+// punta — la barandilla no dejaba salir ninguna confirmación, y el cliente se quedaba sin
+// turno y sin respuesta.
+Deno.test("precio_sin_herramienta no confunde una fecha ni una hora de turno con un precio (hallazgo URGENTE, 16/9)", async () => {
+  for (
+    const frase of [
+      "te agendo el martes 23 a las 13",
+      "el 23 de septiembre",
+      "tenés turno el 23",
+      "queda para el lunes 22 a las 15",
+      "el sábado 30 a las 11",
+      "te espero el 23/9",
+    ]
+  ) {
+    assertEquals(montos(frase), [], `"${frase}" no tendría que reconocer ningún monto`);
+  }
+  await noSalta(precioSinHerramienta, entrada("Te agendo el martes 23 a las 13."));
+  await noSalta(precioSinHerramienta, entrada("Tenés turno el 23."));
+  await noSalta(precioSinHerramienta, entrada("El sábado 30 a las 11 te esperamos."));
+  // Caso parecido: un precio real sigue reconociéndose aunque la frase se parezca a una fecha.
+  for (
+    const frase of [
+      "te sale como 150",
+      "180 nomás",
+      "cuesta 220",
+      "anda en 90",
+      "te queda en unos 150",
+      "te lo dejo en 150",
+      "por 150 te llevás el combo",
+      "arranca en 150",
+      "son 150, más el accesorio",
+      "son 150. Te sirve?",
+      "el traje sale 150.",
+    ]
+  ) {
+    assert(montos(frase).length > 0, `"${frase}" tendría que seguir reconociendo un monto`);
+  }
 });
 
 Deno.test("horario_sin_herramienta salta con una hora ofrecida sin buscar_horarios", async () => {
