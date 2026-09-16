@@ -6,14 +6,14 @@
 // entrar acá directo desde una compu muestra el mismo split, con esta charla ya elegida.
 
 import { useSearchParams } from 'next/navigation';
-import { useDatos } from '@/components/api/useDatos';
+import { SONDEO_LISTAS_MS, useDatos } from '@/components/api/useDatos';
 import type { FilaBandeja } from '@/lib/queries/bandeja';
 import { BandejaSplit } from '../BandejaSplit';
 import { ChatThread } from '../ChatThread';
 
 export default function CharlaMobilePage() {
   const id = useSearchParams().get('id');
-  const { datos, cargando, error, recargar } = useDatos<{ conversaciones: FilaBandeja[] }>('/api/bandeja');
+  const { datos, cargando, error, recargar } = useDatos<{ conversaciones: FilaBandeja[] }>('/api/bandeja', { sondeoMs: SONDEO_LISTAS_MS });
 
   return (
     <>

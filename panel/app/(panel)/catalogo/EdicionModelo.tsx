@@ -5,13 +5,30 @@
 // (arrastrar/subir) y colores (agregar/sacar) todavía no tienen una interfaz acá: se ven tal
 // como están cargados, sin editor — son ediciones más grandes que el resto de esta tanda.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Switch } from '@/components/ui-otto/Switch';
 import { PanelHistorial } from '@/components/api/PanelHistorial';
 import { ToastFlotante, useToast } from '@/components/ui-otto/ToastFlotante';
 import { useEdicion } from '@/components/api/useEdicion';
+import { FotoPlaceholder } from './page';
 import type { Fila } from '@/lib/queries/comun';
 import type { FilaModelo } from '@/lib/queries/catalogo';
+
+// Un link roto (foto borrada del storage, URL vieja) muestra el ícono roto del navegador si no
+// se hace nada: onError pasa al mismo placeholder que usa la grilla.
+function Miniatura({ url }: { url: string }) {
+  const [rota, setRota] = useState(false);
+  useEffect(() => setRota(false), [url]);
+  if (rota) {
+    return (
+      <div className="h-[74px] w-14 flex-none overflow-hidden rounded-[6px] border border-borde">
+        <FotoPlaceholder texto="" chico />
+      </div>
+    );
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={url} alt="" className="h-[74px] w-14 flex-none rounded-[6px] border border-borde object-cover" onError={() => setRota(true)} />;
+}
 
 // La fila cruda que devuelve PATCH /api/catalogo/modelos/<id> es la tabla tal cual
 // (catalogo_alquiler: columna `talles`), no la forma ya transformada de FilaModelo
@@ -70,8 +87,7 @@ function Interior({ modelo, onGuardado, onCerrar }: { modelo: FilaModelo; onGuar
         {modelo.fotos.length > 0 ? (
           <div className="flex gap-2">
             {modelo.fotos.map((f) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={f} src={f} alt="" className="h-[74px] w-14 rounded-[6px] border border-borde object-cover" />
+              <Miniatura key={f} url={f} />
             ))}
           </div>
         ) : (

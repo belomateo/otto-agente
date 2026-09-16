@@ -15,9 +15,17 @@ import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
 import { IconAudio, IconFoto } from '@/components/nav/icons';
-import { useDatos } from '@/components/api/useDatos';
+import { SONDEO_LISTAS_MS, useDatos } from '@/components/api/useDatos';
 import { useAccionesCharla } from '@/components/api/useAccionesCharla';
 import type { Charla } from '@/lib/queries/bandeja';
+
+// mostrador_enviar (paneles) da 409 tanto si la charla no está tomada como si pasaron más de
+// 24 hs desde el último mensaje del cliente (WhatsApp ya no deja mandar texto libre, solo una
+// plantilla) — mismo código, mensaje distinto. Paneles todavía no expone un número alternativo
+// para estos casos: mientras tanto, la recomendación es genérica.
+function esVentana24hs(mensaje: string) {
+  return mensaje.includes('24 hs');
+}
 
 function separador(fecha: string) {
   const hoy = new Date().toISOString().slice(0, 10);
@@ -51,7 +59,7 @@ function resumenDe(charla: Charla) {
 
 export function ChatThread({ variante, conversacionId }: { variante: 'desktop' | 'mobile'; conversacionId: string | null }) {
   const compacto = variante === 'mobile';
-  const { datos: charla, cargando, error, recargar } = useDatos<Charla>(conversacionId ? `/api/bandeja/${conversacionId}` : null);
+  const { datos: charla, cargando, error, recargar } = useDatos<Charla>(conversacionId ? `/api/bandeja/${conversacionId}` : null, { sondeoMs: SONDEO_LISTAS_MS });
   const { enviando, error: errorAccion, tomar, devolver, cerrar, responder } = useAccionesCharla(conversacionId);
   const [texto, setTexto] = useState('');
 
@@ -209,7 +217,12 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
         )}
       </div>
 
-      {errorAccion && <div className={`text-[13px] text-ladrillo ${compacto ? 'px-3.5 pt-2' : 'px-6 pt-2'}`}>{errorAccion}</div>}
+      {errorAccion && (
+        <div className={`text-[13px] text-ladrillo ${compacto ? 'px-3.5 pt-2' : 'px-6 pt-2'}`}>
+          <div>{errorAccion}</div>
+          {esVentana24hs(errorAccion) && <div className="mt-0.5 font-medium">Probá escribirle al cliente desde otro número.</div>}
+        </div>
+      )}
 
       <div className={`flex items-center gap-2.5 border-t border-borde bg-lino ${compacto ? 'px-3.5 pb-[22px] pt-2.5' : 'px-6 py-3.5'}`}>
         {!compacto ? (
