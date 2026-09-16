@@ -94,6 +94,21 @@ Deno.test("confirmacion_doble corta la cláusula de confirmación aunque compart
   await noSalta(confirmacionDoble, entrada("Alquilamos zapatos y cinturón para completar el look.", { traza: conTraza("agendar_turno") }));
 });
 
+// Hallazgo de logica en vivo, 16/9: exigir la palabra "turno" dejaba pasar la confirmación más
+// natural del modelo real ("Te agendé el miércoles 23 a las 13:00"), que no la nombra — el
+// cliente recibía la confirmación dos veces igual.
+Deno.test("confirmacion_doble recorta la confirmación aunque no diga la palabra 'turno', si trae fecha u hora (hallazgo de logica en vivo, 16/9)", async () => {
+  const conTraza = (h: string) => traza({ herramientas: [h] });
+  await salta(
+    confirmacionDoble,
+    entrada("Listo, Lucas. Te agendé el miércoles 23 de septiembre a las 13:00 en España 764 😊", { traza: conTraza("agendar_turno") }),
+  );
+  await salta(confirmacionDoble, entrada("Listo, Lucas. Te reservé el miércoles 23 a las 13:00.", { traza: conTraza("agendar_turno") }));
+  // Caso parecido: "anotar" no cuenta como confirmación repetida sin la palabra "turno" — también
+  // se usa para guardar una preferencia del cliente, no siempre está confirmando una reserva.
+  await noSalta(confirmacionDoble, entrada("Anoté que preferís el miércoles para la prueba final.", { traza: conTraza("agendar_turno") }));
+});
+
 Deno.test("confirmacion_doble no salta sin agendar_turno/reprogramar_turno en la traza, ni si ya no queda texto (caso parecido)", async () => {
   await noSalta(
     confirmacionDoble,
