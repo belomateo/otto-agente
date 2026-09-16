@@ -35,6 +35,15 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   /\b\d{1,3}\s+anos\b/g, // edad: "tengo 44 años"
   /\bcumpleanos\s+de\s+\d{1,3}\b/g, // "cumpleaños de 15" (quinceañero: el número es el evento, no un precio)
   /\bespana\s+\d{2,4}\b/g, // la dirección del local (España 764)
+  // Fechas y horarios de turno (hallazgo de Mateo, 16/9, URGENTE: rompía agendar_turno — "te
+  // agendo el martes 23" leía 23 como precio, la barandilla no dejaba salir la confirmación).
+  /\b(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+\d{1,2}\b/g, // "el martes 23"
+  /\b\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/g, // "23 de septiembre"
+  /\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, // "23/9", "23/09/2026"
+  // "el 23" a secas (sin día de la semana ni mes al lado, o con "de" seguido de algo que no es
+  // un mes — "el 23 de la tarde"): en español nadie dice un precio así ("te sale el 90" no es
+  // una frase real); acotado a 1-31 para no comerse un "el 150" si alguna vez apareciera.
+  /\bel\s+(?:[12]?\d|3[01])\b/g,
 ];
 
 function enmascararContexto(normalizado: string): string {

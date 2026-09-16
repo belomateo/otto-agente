@@ -70,8 +70,11 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
 2. 🔧 Se crea la fila en `derivaciones` con motivo (enum), resumen del extractor y
    últimos 5 mensajes.
 3. 🔧 Se pausa la conversación para Lucía.
-4. 🔧 Se avisa por WhatsApp al número del canal de alquiler: «Nueva derivación:
-   <motivo> — <nombre> — <resumen>. Panel: <link>».
+4. 🔧 **Pendiente** (hallazgo de logica, 16/9): se avisa por WhatsApp al número del
+   canal de alquiler: «Nueva derivación: <motivo> — <nombre> — <resumen>. Panel:
+   <link>». `derivaciones.destino_tel` ya se guarda; falta el paso que manda el
+   mensaje (`worker/atender.ts`, con `ResultadoTurno.avisoEquipo` que el turno ya
+   devuelve). Hasta entonces, la derivación solo se ve en el panel.
 5. 🔧 Al cliente se le manda el `mensaje_al_cliente` (o nada si es reclamo,
    cliente enojado o descuento, para que siga una persona).
 6. 👤 Alguien la toma desde Atención humana: responde desde el panel (esos

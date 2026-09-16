@@ -71,16 +71,34 @@ prueba("agrupar_rafaga: un texto corto no se toca (caso parecido)", async ({ ctx
   assertEquals(r.texto, "hola, necesito un turno");
 });
 
-prueba("agrupar_rafaga: una ráfaga que pasa el tope se recorta antes del clasificador y el principal (hallazgo de Mateo, 16/9)", async ({ ctx, sql, conversacionId }) => {
+prueba("agrupar_rafaga: una ráfaga que pasa el tope se recorta antes del clasificador y el principal, en el espacio, no a la mitad de una palabra (hallazgo de Mateo y de logica, 16/9)", async ({ ctx, sql, conversacionId }) => {
   await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: "a".repeat(2000), enviadoAt: AHORA });
   await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: "b".repeat(2000), enviadoAt: new Date(AHORA.getTime() + 1000) });
   const r = await agruparRafaga(ctx.db, conversacionId, new Date(AHORA.getTime() + 2000));
   assertEquals(r.recortada, true);
+  // El salto de línea entre los dos mensajes cae en el tramo (2000 "a" + "\n" + 499 "b" = 2500):
+  // ese es el único espacio del tramo, así que el corte cae ahí y se pierde el segundo mensaje
+  // entero en vez de partirlo a la mitad.
+  assertEquals(r.texto, "a".repeat(2000));
+});
+
+prueba("agrupar_rafaga: un mensaje único y largo también se recorta, en el espacio anterior a la palabra que cruza el tope (hallazgo de logica, 16/9)", async ({ ctx, sql, conversacionId }) => {
+  // Una palabra de 20 caracteres cruzando la posición 2500 (2490 caracteres + espacio + palabra):
+  // sin el corte en el espacio, "yyyyyyyyyy" quedaría partida a la mitad.
+  const texto = "x".repeat(2490) + " " + "y".repeat(20);
+  await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: texto, enviadoAt: AHORA });
+  const r = await agruparRafaga(ctx.db, conversacionId, AHORA);
+  assertEquals(r.recortada, true);
+  assertEquals(r.texto, "x".repeat(2490));
+  assert(!r.texto.includes("y"), "no dejó ni un pedazo de la palabra cortada a la mitad");
+});
+
+prueba("agrupar_rafaga: sin ningún espacio en el tramo, se mantiene el corte seco (caso parecido, de laboratorio)", async ({ ctx, sql, conversacionId }) => {
+  const texto = "x".repeat(3000); // una sola "palabra" gigantesca, sin espacios
+  await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: texto, enviadoAt: AHORA });
+  const r = await agruparRafaga(ctx.db, conversacionId, AHORA);
+  assertEquals(r.recortada, true);
   assertEquals([...r.texto].length, MAXIMO_CARACTERES_RAFAGA);
-  // El corte cae adentro del segundo mensaje (2000 "a" + un salto de línea + 499 "b"): no se
-  // pierde el principio de la ráfaga, se corta lo de más.
-  assert(r.texto.endsWith("b"), "el corte cae en el segundo mensaje, no antes");
-  assert(!r.texto.includes("b".repeat(2000)), "no entró el segundo mensaje completo");
 });
 
 prueba("agrupar_rafaga: un emoji justo en el borde del tope no se parte a la mitad", async ({ ctx, sql, conversacionId }) => {
