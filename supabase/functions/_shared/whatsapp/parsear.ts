@@ -1,6 +1,7 @@
 // Saca del payload del webhook de Meta los mensajes entrantes, uno por cada elemento de
 // `messages`. Los avisos de estado (sent / delivered / read) vienen en `statuses` y no
-// generan trabajo: acá se ignoran.
+// generan trabajo: acá se ignoran. Tampoco entran las reacciones ni los avisos del sistema
+// (TIPOS_SIN_TRABAJO).
 export type MensajeEntrante = {
   waMessageId: string;
   // Formato de Meta: E.164 sin "+", ej. 5493417519525.
@@ -25,6 +26,11 @@ const texto = (v: unknown): string | null => (typeof v === "string" && v.length 
 // panel. Solo se traduce el texto: 'button' lo reconoce registrar_mensaje_entrante para el
 // "Confirmo" (1.14), y los demás no los contesta Lucía todavía.
 const TIPO_EN_LA_BASE: Record<string, string> = { text: "texto" };
+
+// Lo que llega por `messages` pero no es un mensaje para contestar: una reacción (el 👍 a un
+// mensaje de Lucía) o un aviso del sistema (el cliente cambió de número). Si entraran, el turno
+// los tomaría como "algo que no es texto" y Lucía contestaría que no puede leer fotos ni audios.
+const TIPOS_SIN_TRABAJO = new Set(["reaction", "system"]);
 
 // El texto legible de cada tipo. Lo que no trae texto (una foto sin epígrafe, un audio) queda
 // en null: con el tipo alcanza para que el worker decida qué hacer.
@@ -74,7 +80,7 @@ export function mensajesEntrantes(cuerpo: unknown): MensajeEntrante[] {
         const id = texto(m.id);
         const de = texto(m.from);
         const tipo = texto(m.type);
-        if (!id || !de || !tipo) continue;
+        if (!id || !de || !tipo || TIPOS_SIN_TRABAJO.has(tipo)) continue;
         const segundos = Number(m.timestamp);
         salida.push({
           waMessageId: id,

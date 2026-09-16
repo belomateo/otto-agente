@@ -375,6 +375,69 @@ async function testColaPorCharla() {
   }
 }
 
+// Hito 2.1: responder desde el panel (0028). mostrador_enviar guarda el mensaje con la marca y lo
+// encola para el worker; solo con la charla tomada, dentro de las 24 hs y para un usuario
+// aprobado. Transacción con ROLLBACK.
+async function testMostrador() {
+  console.log("\n[2.1] Responder desde el panel: mostrador_enviar");
+  const client = new Client({ connectionString: CONN });
+  await client.connect();
+  const q = async (s, p = []) => (await client.query(s, p)).rows;
+  const codigoDe = async (fn) => {
+    await client.query("savepoint intento");
+    try {
+      await fn();
+      return null;
+    } catch (err) {
+      return err.code;
+    } finally {
+      await client.query("rollback to savepoint intento");
+    }
+  };
+  try {
+    await client.query("begin");
+    await client.query("set local otto.sin_disparo = 'on'");
+    const TEL = "5490000000215";
+    await q("select registrar_mensaje_entrante('wamid.T21-M1', $1, null, 'texto', 'hola, quiero hablar con alguien', now(), '{}'::jsonb)", [TEL]);
+    const [{ id: conv }] = await q("select c.id from conversaciones c join clientes cl on cl.id = c.cliente_id where cl.telefono = $1", [TEL]);
+    const enviar = (texto, c = conv) => q("select mostrador_enviar($1, $2) as r", [c, texto]);
+
+    assert((await codigoDe(() => enviar("hola"))) === "55000", "con Lucía atendiendo (charla activa) no se puede: primero hay que tomarla");
+    await q("update conversaciones set estado = 'derivada' where id = $1", [conv]);
+    assert((await codigoDe(() => enviar("hola", "00000000-0000-0000-0000-000000000000"))) === "P0002", "una charla que no existe: P0002");
+    assert((await codigoDe(() => enviar("   "))) === "22023", "un texto vacío no se manda");
+    const [{ r }] = await enviar("Hola, soy Ana del local");
+    const [m] = await q("select contenido, direccion, wa_message_id from mensajes where id = $1", [r.mensaje_id]);
+    const [t] = await q("select payload from cola_trabajos where payload->>'mensaje_id' = $1", [r.mensaje_id]);
+    assert(
+      m?.contenido === "[mostrador] Hola, soy Ana del local" && m.direccion === "saliente" && m.wa_message_id === null && t?.payload.tipo === "mostrador",
+      "con la charla tomada: queda en la charla con la marca [mostrador] y encolado para el worker"
+    );
+
+    await q("update mensajes set enviado_at = now() - interval '25 hours' where conversacion_id = $1 and direccion = 'entrante'", [conv]);
+    assert((await codigoDe(() => enviar("seguís ahí?"))) === "55000", "pasadas 24 hs del último mensaje del cliente, no: WhatsApp solo deja mandar una plantilla");
+    await q("update mensajes set enviado_at = now() where conversacion_id = $1 and direccion = 'entrante'", [conv]);
+
+    // Por la API, con la sesión de alguien que se registró pero no está aprobado.
+    const sinAprobar = await codigoDe(async () => {
+      await client.query("set local role authenticated");
+      await client.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: "00000000-0000-0000-0000-00000000abcd", role: "authenticated" }),
+      ]);
+      await enviar("hola");
+    });
+    assert(sinAprobar === "42501", `un usuario sin aprobar no puede responder (${sinAprobar})`);
+    const anon = await codigoDe(async () => {
+      await client.query("set local role anon");
+      await enviar("hola");
+    });
+    assert(anon === "42501", "anon ni siquiera puede llamarla");
+  } finally {
+    await client.query("rollback");
+    await client.end();
+  }
+}
+
 // Hito 1.11: lo que el webhook hace en la base (registrar_mensaje_entrante) y el ciclo de un
 // trabajo en la cola (reintentos, tope de 3, rescate de trabados). Transacción con ROLLBACK.
 async function testRegistroYCola() {
@@ -613,6 +676,7 @@ async function testEnviosProgramados() {
     await testIdempotenciaWebhook();
     await testColaSkipLocked();
     await testColaPorCharla();
+    await testMostrador();
     await testRlsCeroFilas();
     await testEsquemaDelAgente();
     await testRegistroYCola();

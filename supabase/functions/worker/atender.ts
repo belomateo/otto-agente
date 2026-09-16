@@ -11,6 +11,7 @@ import type { Calendario } from "../_shared/herramientas/tipos.ts";
 import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts";
 import { botonDeTurno } from "../_shared/whatsapp/botones.ts";
 import { type ConfigWhatsapp, enviarImagen, enviarTexto } from "../_shared/whatsapp/enviar.ts";
+import { prepararParaEnviar } from "../_shared/whatsapp/preparar.ts";
 import { puedeTextoLibre } from "../_shared/whatsapp/ventana.ts";
 
 // AGENTE.md § 3 paso 3: se espera a que el cliente deje de escribir 4 s, así una ráfaga se
@@ -23,9 +24,12 @@ export const MAX_POR_LLAMADA = 10;
 export const PRESUPUESTO_LLAMADA_MS = 60_000;
 // Si Meta falla, un reintento; si vuelve a fallar, lo que no salió queda en la bitácora.
 export const PAUSA_REINTENTO_MS = 1_000;
-// Los teléfonos ficticios de las pruebas (5490000000…, no existen): Lucía les contesta y la
-// respuesta queda en la base, pero no sale nada por Meta.
+// Los teléfonos ficticios de las pruebas (5490000000…, no existen): Lucía les contesta, estén o no
+// en LUCIA_TELEFONOS, y la respuesta queda en la base, pero no sale nada por Meta.
 export const PREFIJO_TELEFONO_FICTICIO = "5490000000";
+// La marca con que mostrador_enviar (0028) guarda en la charla lo que escribe el equipo desde el
+// panel: Lucía la lee en el historial; al cliente le llega sin ella.
+export const MARCA_MOSTRADOR = "[mostrador] ";
 
 export type Trabajo = { id: string; conversacion_id: string; payload: Record<string, unknown> | null };
 
@@ -38,9 +42,12 @@ export function leerListaTelefonos(valor: string | null | undefined): ListaTelef
   return { todos: partes.includes("*"), numeros: new Set(partes.filter((t) => t !== "*")) };
 }
 
-export const contestaLucia = (lista: ListaTelefonos, telefono: string) => lista.todos || lista.numeros.has(telefono);
-
 export const esTelefonoFicticio = (telefono: string) => telefono.startsWith(PREFIJO_TELEFONO_FICTICIO);
+
+// Los ficticios no hace falta ponerlos en la lista: así los guiones de agente corren contra el
+// worker sin tocar LUCIA_TELEFONOS.
+export const contestaLucia = (lista: ListaTelefonos, telefono: string) =>
+  lista.todos || lista.numeros.has(telefono) || esTelefonoFicticio(telefono);
 
 // catalogo_alquiler.fotos guarda la ruta adentro del bucket público `catalogo` (la sube el
 // panel); Meta necesita el link entero.
@@ -111,12 +118,17 @@ async function responder(db: Db, d: Dependencias, conversacionId: string, telefo
     return;
   }
   const simulado = esTelefonoFicticio(telefono);
-  const waMessageId = simulado ? null : await conReintento(d, () => enviarTexto(d.wa, telefono, texto, d.fetcher));
-  await db.consulta(
-    "insert into mensajes (conversacion_id, wa_message_id, direccion, tipo, contenido) values ($1::uuid, $2, 'saliente', 'texto', $3)",
-    [conversacionId, waMessageId, texto],
-  );
-  await evento(db, conversacionId, "ok", { etapa, respuesta: texto, wa_message_id: waMessageId, ...(simulado ? { simulado: true } : {}) });
+  const partes = prepararParaEnviar([texto]);
+  const wamids: (string | null)[] = [];
+  for (const parte of partes) {
+    const waMessageId = simulado ? null : await conReintento(d, () => enviarTexto(d.wa, telefono, parte, d.fetcher));
+    await db.consulta(
+      "insert into mensajes (conversacion_id, wa_message_id, direccion, tipo, contenido) values ($1::uuid, $2, 'saliente', 'texto', $3)",
+      [conversacionId, waMessageId, parte],
+    );
+    wamids.push(waMessageId);
+  }
+  await evento(db, conversacionId, "ok", { etapa, respuesta: partes.join("\n\n"), wa_message_ids: wamids, ...(simulado ? { simulado: true } : {}) });
 }
 
 // Las burbujas que el turno guardó (paso 9, sin wamid) y el cliente nunca recibió: afuera de la
@@ -137,8 +149,26 @@ async function borrarSinEnviar(db: Db, conversacionId: string, burbujas: string[
 // Lo que devolvió el turno sale por Meta en orden: primero las burbujas, cada una completa su fila
 // con el wamid; después las fotos. Si una burbuja no sale ni con el reintento se cortan las que
 // siguen (el orden importa). El turno no se repite: ya corrió, ya agendó si tenía que agendar.
+// Si el turno guardó sus burbujas tal como las escribió (el turno de antes de 2.3), se cambian en
+// la charla por las preparadas: la charla guarda lo que de verdad le llega al cliente.
+async function reemplazarBurbujas(db: Db, conversacionId: string, viejas: string[], nuevas: string[]) {
+  await borrarSinEnviar(db, conversacionId, viejas);
+  for (const texto of nuevas) {
+    await db.consulta(
+      `insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at)
+       select $1::uuid, 'saliente', 'texto', $2, greatest(clock_timestamp(), max(enviado_at) + interval '10 milliseconds')
+         from mensajes where conversacion_id = $1::uuid`,
+      [conversacionId, texto],
+    );
+  }
+}
+
 async function entregar(db: Db, d: Dependencias, conversacionId: string, telefono: string, r: ResultadoTurno) {
-  const burbujas = r.mensajesAlCliente;
+  // Lo que sale lo prepara el envío (2.2, decisión #17): sin «¡» ni «¿» y en 1, 2 o 3 mensajes
+  // según el largo. Si el turno ya lo preparó, esto no cambia nada.
+  const burbujas = prepararParaEnviar(r.mensajesAlCliente);
+  const yaPreparadas = burbujas.length === r.mensajesAlCliente.length && burbujas.every((b, i) => b === r.mensajesAlCliente[i]);
+  if (!yaPreparadas) await reemplazarBurbujas(db, conversacionId, r.mensajesAlCliente, burbujas);
   const resumen = {
     burbujas: burbujas.length,
     fotos: r.imagenes.length,
@@ -229,6 +259,42 @@ async function confirmarPorBoton(db: Db, d: Dependencias, t: Trabajo, turnoId: s
   if (texto) await responder(db, d, t.conversacion_id, telefono, texto, "boton-confirmo");
 }
 
+// Un mensaje del equipo (Responder desde el panel, 0028): sale tal cual lo escribieron, sin la
+// marca, aunque la charla ya no esté tomada. No pasa por Lucía ni por LUCIA_TELEFONOS: lo escribe
+// una persona. Si Meta falla también en el reintento, el trabajo vuelve a la cola (hasta 3 veces,
+// y queda en la bitácora); lo único que hace es mandar, y si ya salió no lo repite.
+async function enviarDelMostrador(db: Db, d: Dependencias, t: Trabajo, telefono: string) {
+  const mensajeId = String(t.payload?.mensaje_id ?? "");
+  const [m] = await db.consulta<{ contenido: string | null; wa_message_id: string | null }>(
+    "select contenido, wa_message_id from mensajes where id = $1::uuid and conversacion_id = $2::uuid and direccion = 'saliente'",
+    [mensajeId, t.conversacion_id],
+  );
+  if (!m?.contenido) {
+    await evento(db, t.conversacion_id, "error", { etapa: "mostrador", mensaje_id: mensajeId, error: "el mensaje no está en la charla" });
+    return;
+  }
+  if (m.wa_message_id) return;
+  if (!puedeTextoLibre(await ultimoMensajeDelCliente(db, t.conversacion_id), d.ahora())) {
+    await evento(db, t.conversacion_id, "error", {
+      etapa: "mostrador",
+      mensaje_id: mensajeId,
+      error: "fuera de la ventana de 24 hs: solo se puede mandar una plantilla",
+    });
+    return;
+  }
+  const texto = m.contenido.startsWith(MARCA_MOSTRADOR) ? m.contenido.slice(MARCA_MOSTRADOR.length) : m.contenido;
+  const simulado = esTelefonoFicticio(telefono);
+  const waMessageId = simulado ? null : await conReintento(d, () => enviarTexto(d.wa, telefono, texto, d.fetcher));
+  if (waMessageId) await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [mensajeId, waMessageId]);
+  await evento(db, t.conversacion_id, "ok", {
+    etapa: "mostrador",
+    mensaje_id: mensajeId,
+    autor: t.payload?.autor ?? null,
+    wa_message_id: waMessageId,
+    ...(simulado ? { simulado: true } : {}),
+  });
+}
+
 async function estadoDeLaCharla(db: Db, conversacionId: string) {
   const [f] = await db.consulta<{ estado: string; cliente_id: string; telefono: string }>(
     `select c.estado, c.cliente_id::text as cliente_id, cl.telefono
@@ -242,6 +308,8 @@ async function estadoDeLaCharla(db: Db, conversacionId: string) {
 export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Promise<void> {
   const conv = await estadoDeLaCharla(db, t.conversacion_id);
   if (!conv) throw new Error(`conversación ${t.conversacion_id}: no existe`);
+
+  if (t.payload?.tipo === "mostrador") return await enviarDelMostrador(db, d, t, conv.telefono);
 
   // El botón "Confirmo" lo resuelve el código, con la charla activa o derivada (1.14).
   const boton = botonDeTurno(t.payload?.mensaje);

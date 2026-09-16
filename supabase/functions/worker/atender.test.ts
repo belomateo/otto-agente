@@ -10,6 +10,7 @@ import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import { calendarioPropio } from "../_shared/agenda/calendario_propio.ts";
 import { type ClienteSql, type Db, dbDesde } from "../_shared/db.ts";
 import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts";
+import { HASTA_UN_MENSAJE } from "../_shared/whatsapp/preparar.ts";
 import {
   atenderCola,
   type Dependencias,
@@ -26,7 +27,12 @@ const TEL = "5490000019101"; // en la lista de Lucía
 const TEL_AFUERA = "5490000019102"; // fuera de la lista
 const TEL_FICTICIO = "5490000000103"; // ficticio: no sale nada por Meta
 const BASE_FOTOS = "https://ejemplo.supabase.co/storage/v1/object/public/catalogo/";
-const RESPUESTAS = ["¡Hola! Soy Lucía, de Mr Otto.", "¿Para qué evento es el traje?"];
+// Dos párrafos ya preparados (sin ¡ ni ¿) que juntos pasan los 300 caracteres: salen como dos
+// mensajes, uno por párrafo (2.2).
+const RESPUESTAS = [
+  "Hola, soy Lucía, de Mr Otto. Te cuento cómo es: venís con turno al local, te probás los modelos que más te gusten y en sastrería lo ajustan a tu medida para el día del evento.",
+  "Para qué evento es el traje? Si ya tenés la fecha, pasámela y te busco un horario para que vengas a probártelo con tiempo, sin apuro y con asesoramiento.",
+];
 
 function urlDeLaBase(): string {
   const u = Deno.env.get("SUPABASE_DB_URL");
@@ -216,6 +222,17 @@ prueba("Lucía contesta: corre el turno una vez, manda cada burbuja por Meta y g
   assertEquals([ev?.tipo, ev?.detalle.enviadas], ["ok", 2]);
 });
 
+prueba("lo que sale va preparado (2.2): sin ¡ ni ¿, lo corto en un solo mensaje, y la charla guarda eso mismo", async (c) => {
+  assert(RESPUESTAS.join("\n\n").length > HASTA_UN_MENSAJE); // las de siempre siguen siendo dos mensajes
+  await mensajeDelCliente(c, TEL, "hola");
+  const { d, meta } = armar(c, { respuestas: ["¡Hola! Soy Lucía, de Mr Otto.", "¿Para qué evento es el traje?"] });
+
+  await atenderCola(c.db, d, "worker-prueba");
+  const esperado = "Hola! Soy Lucía, de Mr Otto.\n\nPara qué evento es el traje?";
+  assertEquals(meta.envios.map(textoDe), [esperado]);
+  assertEquals((await salientes(c, TEL)).map((s) => [s.contenido, s.wa_message_id]), [[esperado, "wamid.SALIDA-0"]]);
+});
+
 prueba("ráfaga: tres mensajes seguidos → un solo turno, y los otros dos trabajos quedan absorbidos", async (c) => {
   await mensajeDelCliente(c, TEL, "hola");
   await mensajeDelCliente(c, TEL, "quiero alquilar un traje", 1);
@@ -280,6 +297,35 @@ prueba("teléfono ficticio: corre el turno y guarda la respuesta, pero no sale n
   assertEquals((await salientes(c, TEL_FICTICIO)).map((s) => [s.contenido, s.wa_message_id]), RESPUESTAS.map((r) => [r, null]));
   const ev = (await eventos(c, TEL_FICTICIO)).find((e) => e.detalle.etapa === "worker-lucia");
   assertEquals(ev?.detalle.simulado, true);
+});
+
+prueba("un teléfono ficticio no necesita estar en LUCIA_TELEFONOS: Lucía le contesta igual, sin Meta", async (c) => {
+  const OTRO_FICTICIO = "5490000000104";
+  await mensajeDelCliente(c, OTRO_FICTICIO, "hola");
+  const { d, turno, meta } = armar(c);
+
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals([turno.llamadas.length, meta.envios.length], [1, 0]);
+});
+
+prueba("el mostrador: el mensaje del equipo sale por Meta sin la marca, con su wamid, y no pasa por Lucía", async (c) => {
+  await mensajeDelCliente(c, TEL_AFUERA, "hola, necesito hablar con alguien"); // fuera de la lista: igual sale
+  const conv = (await c.sql.query(
+    "select c.id from conversaciones c join clientes cl on cl.id = c.cliente_id where cl.telefono = $1",
+    [TEL_AFUERA],
+  )).rows[0].id;
+  await c.sql.query("update conversaciones set estado = 'derivada' where id = $1", [conv]);
+  const texto = "Hola, soy Ana del local. ¿Te llamo?";
+  const { mensaje_id } = (await c.sql.query("select mostrador_enviar($1, $2) as r", [conv, texto])).rows[0].r;
+  const { d, turno, meta } = armar(c);
+
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals(turno.llamadas.length, 0);
+  assertEquals(meta.envios.map(textoDe), [texto]);
+  const m = (await c.sql.query("select contenido, wa_message_id from mensajes where id = $1", [mensaje_id])).rows[0];
+  assertEquals([m.contenido, m.wa_message_id], [`[mostrador] ${texto}`, "wamid.SALIDA-0"]);
+  const ev = (await eventos(c, TEL_AFUERA)).find((e) => e.detalle.etapa === "mostrador");
+  assertEquals(ev?.tipo, "ok");
 });
 
 prueba("una caída de Meta se salva con el reintento: salen las dos burbujas", async (c) => {
