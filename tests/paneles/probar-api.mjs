@@ -509,7 +509,10 @@ try {
   seccion("Atención humana — tomar, devolver a Lucía y cerrar (PROCESOS.md § 4, pasos 6 y 7)");
   {
     const m0 = await api(sn, "POST", `/api/bandeja/${conv}/mensajes`, { texto: "todavía no la tomé" });
-    ok(m0.status === 409, `responder por mostrador antes de tomar la charla → 409 (${m0.status}: ${m0.datos.error})`);
+    ok(
+      m0.status === 409 && m0.datos.detalle?.motivo === "no_tomada",
+      `responder por mostrador antes de tomar la charla → 409 con detalle.motivo estable, no el texto (${m0.status}: ${m0.datos.detalle?.motivo})`
+    );
 
     const t1 = await api(sn, "POST", `/api/bandeja/${conv}/tomar`);
     const dTras = (await q("select estado, atendida_por, atendida_at from derivaciones where id = $1", [derivId]))[0];
@@ -558,7 +561,10 @@ try {
     ok(m3.status === 404, `mostrador a una charla que no existe → 404 (${m3.status})`);
     const charlaVieja = await nuevaCharlaSuelta("derivada");
     const viejo = await api(sn, "POST", `/api/bandeja/${charlaVieja}/mensajes`, { texto: "hola de nuevo" });
-    ok(viejo.status === 409 && /24 hs/.test(viejo.datos.error), `tomada pero sin mensaje del cliente en las últimas 24 hs → 409 (${viejo.status}: ${viejo.datos.error})`);
+    ok(
+      viejo.status === 409 && /24 hs/.test(viejo.datos.error) && viejo.datos.detalle?.motivo === "ventana_cerrada",
+      `tomada pero sin mensaje del cliente en las últimas 24 hs → 409 con detalle.motivo: 'ventana_cerrada' (${viejo.status}: ${viejo.datos.detalle?.motivo})`
+    );
 
     const dv1 = await api(sa, "POST", `/api/bandeja/${conv}/devolver`);
     ok(dv1.status === 200 && dv1.datos.ya_estaba === false && dv1.datos.conversacion.estado === "activa", `devolver a Lucía: 'derivada' → 'activa' (${dv1.status})`);
