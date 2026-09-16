@@ -19,6 +19,14 @@ export type MensajeEntrante = { id: string; contenido: string; enviadoAt: Date }
 // que si la hubiera tipeado.
 export const TIPOS_QUE_SON_TEXTO = ["texto", "button"];
 
+// Hallazgo de Mateo, 16/9: sin tope, una ráfaga larga (un cliente que pega un texto gigante, o
+// que no para de escribir) se mandaba entera al clasificador y al principal — costo y riesgo de
+// pasarse del contexto del modelo sin ningún límite. 2500 caracteres alcanza de sobra para
+// cualquier mensaje real (el propio prompt, con todo lo que dice Lucía, entra en 300 líneas) y
+// dado que Meta ya corta un mensaje de WhatsApp en 4096 caracteres, esto nunca recorta un solo
+// mensaje del cliente, solo una ráfaga de varios juntos.
+export const MAXIMO_CARACTERES_RAFAGA = 2500;
+
 export type Rafaga = {
   texto: string;
   mensajeIds: string[];
@@ -31,6 +39,9 @@ export type Rafaga = {
   // sticker, ubicación...), no es lo mismo que "no pasó nada" — turno.ts contesta con el texto
   // fijo de contexto_agente en vez de quedarse en silencio.
   soloNoTexto: boolean;
+  // Se pasó de MAXIMO_CARACTERES_RAFAGA: turno.ts lo deja en la bitácora, para que quede rastro
+  // de que se cortó algo (principio 9: la verdad es lo que queda en la base).
+  recortada: boolean;
 };
 
 export async function agruparRafaga(db: Db, conversacionId: string, ahora: Date): Promise<Rafaga> {
@@ -58,11 +69,18 @@ export async function agruparRafaga(db: Db, conversacionId: string, ahora: Date)
     soloNoTexto = (otros?.n ?? 0) > 0;
     if (otros?.ultimo) ultimoEnviadoAt = new Date(otros.ultimo);
   }
+  const unido = filas.map((f) => String(f.contenido)).join("\n");
+  // [...t] recorre por code point (no por unidad UTF-16): un emoji de dos "caracteres" para
+  // .length no se parte a la mitad.
+  const puntos = [...unido];
+  const recortada = puntos.length > MAXIMO_CARACTERES_RAFAGA;
+  const texto = recortada ? puntos.slice(0, MAXIMO_CARACTERES_RAFAGA).join("") : unido;
   return {
-    texto: filas.map((f) => String(f.contenido)).join("\n"),
+    texto,
     mensajeIds: filas.map((f) => String(f.id)),
     desde: new Date(desdeIso),
     ultimoEnviadoAt,
     soloNoTexto,
+    recortada,
   };
 }

@@ -3,6 +3,14 @@
 // 150000, 150 mil) y cada uno tiene que ser uno que haya devuelto una herramienta: un precio
 // sin herramienta o un total armado sumando se rehace. Una dirección (España 764) o un talle
 // no son montos.
+//
+// Hallazgo de Mateo, 16/9: "te sale como 150" pasaba sin control — un monto corto y pelado (sin
+// $, sin "mil", sin separador de miles) es la forma más común de decir un precio en pesos
+// argentinos hablando ($150.000 dicho "ciento cincuenta" se escribe informalmente "150"). Se
+// suma acá, pero solo pegado a una palabra de precio (sale, cuesta, son, anda en, o "nomás"
+// después del número): un bare "150" suelto en cualquier otro lado sigue sin ser un monto. "son"
+// es ambiguo ("son 44 invitados" también pega) — un falso positivo acá cuesta un rehacer, no
+// rompe el turno; se prefiere eso a dejar pasar un precio inventado.
 
 import { type Barandilla, NO_SALTA } from "./tipos.ts";
 
@@ -17,6 +25,13 @@ export function montos(t: string): number[] {
   for (const m of texto.matchAll(/(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(?:mil|lucas|k)\b/gi)) {
     res.add(Math.round(Number(m[1].replace(",", ".")) * 1000));
   }
+  // Un monto corto (2 o 3 cifras) pegado a una palabra de precio, sin "mil"/"lucas"/"k" después
+  // (eso ya lo atrapó la regla de arriba, y es OTRO monto: "sale 150 mil" es $150.000, no
+  // $150 Y $150.000).
+  for (const m of texto.matchAll(/\b(?:sale|cuesta|cuestan|son|anda(?:n)?\s+en)\s+(?:como\s+)?\$?\s*(\d{2,3})\b(?!\s*(?:mil|lucas|k)\b)/gi)) {
+    res.add(Number(m[1]));
+  }
+  for (const m of texto.matchAll(/(?<![\d.,])(\d{2,3})\s+nom[aá]s\b/gi)) res.add(Number(m[1]));
   return [...res].filter((n) => Number.isFinite(n) && n > 0);
 }
 

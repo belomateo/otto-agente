@@ -27,6 +27,7 @@ export type Seccion = typeof SECCIONES[number];
 // evento es hoy o mañana y lo resuelve una persona (decisión #8 de Mateo, 14/9).
 export const MOTIVOS_DERIVACION = [
   "reclamo",
+  "cliente_enojado",
   "prenda_danada",
   "corporativo",
   "turno_urgente_sin_hueco",
@@ -45,7 +46,9 @@ export type MotivoDerivacion = typeof MOTIVOS_DERIVACION[number];
 // derivar_a_persona.ts). No confundir con MOTIVOS_DERIVAN_EN_SILENCIO de _shared/turno/turno.ts:
 // esa otra es sobre si el turno manda incluso el texto fijo genérico al derivar por código (una
 // lista distinta, con motivos distintos, para una pregunta parecida).
-export const MOTIVOS_SIN_MENSAJE: readonly MotivoDerivacion[] = ["reclamo", "descuento"];
+// cliente_enojado suma acá el 16/9: igual que un reclamo, no se discute ni se manda una
+// despedida armada que capaz suena impostada contra alguien caliente — sigue una persona.
+export const MOTIVOS_SIN_MENSAJE: readonly MotivoDerivacion[] = ["reclamo", "cliente_enojado", "descuento"];
 
 // Motivos que SOLO decide el código, nunca el modelo llamando a derivar_a_persona (AGENTE.md
 // § 2 y § 10: "es derivación dura, la decide código, nunca el LLM"). Hallazgo C2 del tester

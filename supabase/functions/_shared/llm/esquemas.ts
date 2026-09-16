@@ -15,7 +15,7 @@ export const ESQUEMA_CLASIFICACION = {
     intencion: { type: "string", enum: ["alquiler", "venta", "corporativo", "reclamo", "urgente", "otro"] },
     urgencia: { type: "string", enum: ["baja", "media", "alta"] },
     derivar_duro: { type: "boolean" },
-    motivo_derivacion: { type: ["string", "null"], enum: ["reclamo", "prenda_danada", "corporativo", null] },
+    motivo_derivacion: { type: ["string", "null"], enum: ["reclamo", "cliente_enojado", "prenda_danada", "corporativo", null] },
   },
   required: ["intencion", "urgencia", "derivar_duro", "motivo_derivacion"],
   additionalProperties: false,
@@ -25,7 +25,7 @@ export type Clasificacion = {
   intencion: "alquiler" | "venta" | "corporativo" | "reclamo" | "urgente" | "otro";
   urgencia: "baja" | "media" | "alta";
   derivar_duro: boolean;
-  motivo_derivacion: "reclamo" | "prenda_danada" | "corporativo" | null;
+  motivo_derivacion: "reclamo" | "cliente_enojado" | "prenda_danada" | "corporativo" | null;
 };
 
 // AGENTE.md § 7: la ficha del cliente, todos los campos opcionales (el extractor solo escribe

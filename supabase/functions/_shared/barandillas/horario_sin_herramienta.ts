@@ -3,13 +3,23 @@
 // (buscar_horarios, el horario de buscar_informacion o los turnos del cliente, que el turno
 // siembra en la traza). Y ofrecer un día ("tengo lugar el jueves") sin buscar_horarios también
 // salta. La pregunta de siempre, «¿te queda mejor a la mañana o a la tarde?», no es un horario.
+//
+// Hallazgo de Mateo, 16/9: una hora en palabras ("a las tres de la tarde") pasaba sin control —
+// solo se leían dígitos. PALABRA_A_NUMERO cubre la una a las doce; "de la tarde"/"de la noche"
+// suma 12 (de la mañana no cambia nada), igual que se leería con el reloj de 24 hs.
 
 import { llamoA } from "../traza.ts";
 import { normalizar } from "./texto.ts";
 import { type Barandilla, NO_SALTA } from "./tipos.ts";
 
 const dos = (n: number) => String(n).padStart(2, "0");
-const hora = (h: string, m = "00") => `${dos(Number(h))}:${m}`;
+const hora = (h: string | number, m = "00") => `${dos(Number(h))}:${m}`;
+
+const PALABRA_A_NUMERO: Record<string, number> = {
+  una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7,
+  ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12,
+};
+const HORAS_EN_PALABRAS = Object.keys(PALABRA_A_NUMERO).join("|");
 
 export function horas(t: string): string[] {
   const n = normalizar(t);
@@ -17,6 +27,11 @@ export function horas(t: string): string[] {
   for (const x of n.matchAll(/(?<![\d.,])([01]?\d|2[0-3])[:.]([0-5]\d)(?![\d.,]*\d)/g)) res.add(hora(x[1], x[2]));
   for (const x of n.matchAll(/(?<![\d:.])([01]?\d|2[0-3])\s*(?:hs|h|horas)\b/g)) res.add(hora(x[1]));
   for (const x of n.matchAll(/\ba\s+las?\s+([01]?\d|2[0-3])\b(?!\s*[:.]\d)/g)) res.add(hora(x[1]));
+  for (const x of n.matchAll(new RegExp(`\\ba\\s+las?\\s+(${HORAS_EN_PALABRAS})\\b(?:\\s+de\\s+la\\s+(manana|tarde|noche))?`, "g"))) {
+    let h = PALABRA_A_NUMERO[x[1]];
+    if ((x[2] === "tarde" || x[2] === "noche") && h < 12) h += 12;
+    res.add(hora(h));
+  }
   // "de 10 a 19": solo con horas de un día de trabajo, así "de 2 a 3 personas" no cuenta.
   for (const x of n.matchAll(/\bde\s+(0?[7-9]|1\d|2[0-3])\s+a\s+(0?[7-9]|1\d|2[0-3])\b(?!\s*[:.]\d)/g)) {
     res.add(hora(x[1]));

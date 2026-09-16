@@ -234,3 +234,43 @@ prueba("supuesto #33, caso parecido: nada nuevo en la ráfaga sigue sin contesta
   assertEquals(resultado.mensajesAlCliente, []);
   assertEquals(resultado.derivo, false);
 });
+
+// Pedido de Mateo, 16/9: antes solo derivaba garantizado un cliente enojado si además calificaba
+// como "reclamo" (una queja puntual). Ahora el clasificador (paso 4b) lo detecta por el TONO,
+// sin depender de esa palabra — acá se fuerza esa clasificación de forma determinística (no se
+// puede pedir con confianza que el modelo real se ponga agresivo) y se confirma en la base que
+// derivó sin ningún mensaje, ni siquiera el texto fijo genérico (MOTIVOS_DERIVAN_EN_SILENCIO,
+// igual que un reclamo: no se discute).
+prueba("cliente_enojado: el clasificador lo detecta por tono, sin decir 'reclamo', y deriva sin ningún mensaje", async ({ ctx, sql, conversacionId }) => {
+  await insertarEntrante(sql, conversacionId, "ESTO ES UNA VERGUENZA, son todos unos inutiles, denme la plata YA o hago un escandalo");
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    const esClasificador = body.response_format?.json_schema?.name === "clasificacion";
+    const esExtractor = body.response_format?.json_schema?.name === "ficha";
+    if (esClasificador) {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({ intencion: "reclamo", urgencia: "alta", derivar_duro: true, motivo_derivacion: "cliente_enojado" }),
+      }));
+    }
+    if (esExtractor) {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({
+          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+        }),
+      }));
+    }
+    throw new Error("el clasificador ya derivó duro: el turno no debería llegar al principal");
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assertEquals(resultado.derivo, true);
+  assertEquals(resultado.motivoDerivacion, "cliente_enojado");
+  assertEquals(resultado.mensajesAlCliente, [], "ni una despedida propia ni el texto fijo genérico: sigue una persona, sin discutir");
+  const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
+  assertEquals([der?.motivo, der?.estado], ["cliente_enojado", "pendiente"]);
+});

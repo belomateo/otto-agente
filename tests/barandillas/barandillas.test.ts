@@ -48,6 +48,25 @@ Deno.test("confirmacion_doble salta si agendar_turno o reprogramar_turno salió 
   assertEquals(r2.texto, "");
 });
 
+Deno.test("confirmacion_doble recorta solo la frase repetida y deja lo demás (hallazgo de Mateo, 16/9)", async () => {
+  const r = await salta(
+    confirmacionDoble,
+    entrada("¡Listo, Lucas! Te reservé el turno para el martes. Y sí, también alquilamos corbata.", {
+      traza: traza({ herramientas: ["agendar_turno"] }),
+    }),
+  );
+  assertEquals(r.texto, "Y sí, también alquilamos corbata.");
+
+  // La confirmación al final del mensaje, no al principio: también se saca, sin tocar lo de antes.
+  const r2 = await salta(
+    confirmacionDoble,
+    entrada("Sí, alquilamos corbata y cinturón para completar el look. ¡Listo! Tu turno quedó agendado para el martes.", {
+      traza: traza({ herramientas: ["agendar_turno"] }),
+    }),
+  );
+  assertEquals(r2.texto, "Sí, alquilamos corbata y cinturón para completar el look.");
+});
+
 Deno.test("confirmacion_doble no salta sin agendar_turno/reprogramar_turno en la traza, ni si ya no queda texto (caso parecido)", async () => {
   await noSalta(
     confirmacionDoble,
@@ -174,9 +193,38 @@ Deno.test("precio_sin_herramienta reconoce 150 mil y 150000 sin signo", async ()
   await salta(precioSinHerramienta, entrada("Sale 150 mil."));
 });
 
+Deno.test("precio_sin_herramienta reconoce un monto corto pegado a una palabra de precio (hallazgo de Mateo, 16/9)", async () => {
+  assertEquals(montos("te sale como 150"), [150]);
+  assertEquals(montos("180 nomás"), [180]);
+  assertEquals(montos("cuesta 220"), [220]);
+  assertEquals(montos("anda en 90"), [90]);
+  // "sale 150 mil" es un solo monto ($150.000), no dos (150 y 150000).
+  assertEquals(montos("sale 150 mil"), [150000]);
+  await salta(precioSinHerramienta, entrada("Un traje te sale como 150 😊"));
+  await salta(precioSinHerramienta, entrada("180 nomás, con todo incluido."));
+  await noSalta(precioSinHerramienta, entrada("Un traje te sale como 150.", { traza: traza({ precios: [150] }) }));
+});
+
+Deno.test("precio_sin_herramienta no confunde un bare corto sin palabra de precio (caso parecido)", async () => {
+  assertEquals(montos("somos 44 invitados"), []);
+  assertEquals(montos("uso el talle 44"), []);
+  await noSalta(precioSinHerramienta, entrada("Somos 44 invitados en el casamiento."));
+});
+
 Deno.test("horario_sin_herramienta salta con una hora ofrecida sin buscar_horarios", async () => {
   await salta(horarioSinHerramienta, entrada("Tengo lugar el jueves a las 16:15."));
   await salta(horarioSinHerramienta, entrada("Te espero a las 16 hs."));
+});
+
+Deno.test("horario_sin_herramienta lee una hora en palabras (hallazgo de Mateo, 16/9)", async () => {
+  assertEquals(horas("nos vemos a las tres de la tarde"), ["15:00"]);
+  assertEquals(horas("a las diez de la manana"), ["10:00"]);
+  assertEquals(horas("a la una de la tarde"), ["13:00"]);
+  await salta(horarioSinHerramienta, entrada("Te espero a las tres de la tarde."));
+  await noSalta(
+    horarioSinHerramienta,
+    entrada("Te espero a las tres de la tarde.", { traza: traza({ herramientas: ["buscar_horarios"], horas: ["15:00"] }) }),
+  );
 });
 
 Deno.test("horario_sin_herramienta no salta con la hora que devolvió buscar_horarios, ni con «¿a la mañana o a la tarde?» (caso parecido)", async () => {

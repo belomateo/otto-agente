@@ -133,9 +133,10 @@ el índice del prompt.
 
 | Herramienta | Precondiciones que el código verifica | Efecto |
 | --- | --- | --- |
-| `agendar_turno(fecha_hora, tipo, nombre, evento, fecha_evento)` | Fecha futura · cliente sin turno activo · nombre y fecha del evento presentes (en los argumentos o en la ficha), el evento no pasó y el turno no cae después · hueco salió de `buscar_horarios` en este turno para ese tipo · dentro de una franja de turnos vigente · dura lo que dice `duraciones_turno` | Fila en `turnos` en el primer probador libre + ficha + evento en Google Calendar (si falla, el turno queda con `aviso`) + confirmación armada en código (fecha y hora, el fragmento de `como-funciona` sobre el turno en el local, el mapa de `enlaces`) que sale en un mensaje aparte. No recibe teléfono: el turno es siempre del cliente de la charla. El texto propio del modelo en este turno se descarta (barandilla `confirmacion_doble`): la confirmación es solo la de código |
-| `reprogramar_turno(turno_id, fecha_hora)` | Turno existe, es del cliente y está activo · hueco válido (mismas reglas que agendar) | Actualiza la misma fila y el evento, vuelve a sin confirmar y el recordatorio sale de nuevo. Nunca crea uno nuevo encima. Mismo descarte del texto propio que agendar_turno (`confirmacion_doble`) |
+| `agendar_turno(fecha_hora, tipo, nombre, evento, fecha_evento)` | Fecha futura · cliente sin turno activo · nombre y fecha del evento presentes (en los argumentos o en la ficha), el evento no pasó y el turno no cae después · hueco salió de `buscar_horarios` en este turno para ese tipo · dentro de una franja de turnos vigente · dura lo que dice `duraciones_turno` | Fila en `turnos` en el primer probador libre + ficha + evento en Google Calendar (si falla, el turno queda con `aviso`) + confirmación armada en código (fecha y hora, el fragmento de `como-funciona` sobre el turno en el local, el mapa de `enlaces`) que sale en un mensaje aparte. No recibe teléfono: el turno es siempre del cliente de la charla. Si el modelo repite esa confirmación en su propio texto, se recorta (barandilla `confirmacion_doble`): la confirmación es solo la de código, el resto del mensaje del modelo se mantiene |
+| `reprogramar_turno(turno_id, fecha_hora)` | Turno existe, es del cliente y está activo · hueco válido (mismas reglas que agendar) | Actualiza la misma fila y el evento, vuelve a sin confirmar y el recordatorio sale de nuevo. Nunca crea uno nuevo encima. Mismo recorte del texto propio que agendar_turno (`confirmacion_doble`) |
 | `cancelar_turno(turno_id, motivo)` | Turno del cliente y activo | Marca `cancelado` con `motivo_cancelacion` (no borra), libera el hueco y saca el evento de Calendar |
+| `confirmar_turno(turno_id)` | Turno del cliente, no vencido, sin-confirmar o ya confirmado (decisión de Mateo, 16/9: sin botón — Lucía la llama cuando entiende que el cliente confirma, venga como venga) | Marca `confirmado` (`confirmado_por = 'cliente'`, misma función que usaba el botón) + confirmación armada en código (`texto_turno_confirmado`, supuesto #30) aparte del texto del modelo. Mismo recorte que agendar_turno si el modelo repite la confirmación (`confirmacion_doble`) |
 | `guardar_datos_cliente({...})` | Campos de la ficha (§ 7) salvo los de código y las notas libres · enums de la base · fecha del evento no pasada · mail con forma de mail (hito 2.3), si no se rechaza con `email_invalido` | Update en `clientes`, con historial. El mail se guarda en minúscula (igual que el check de la base, 0029); uno nuevo y válido reemplaza al anterior |
 | `anotar(texto)` | — | Nota libre en la libreta (`notas`, autor `lucia`) |
 | `enviar_fotos(modelo_ids[])` | Máximo 3 · ids existen en catálogo, activos y con fotos | Manda la primera foto cargada en la ficha de cada modelo |
@@ -184,7 +185,7 @@ en el caso parecido. Orden: formato → contenido → reglas.
 
 | Barandilla | Qué detecta | Qué hace |
 | --- | --- | --- |
-| `confirmacion_doble` | `agendar_turno` o `reprogramar_turno` salió bien en este turno: la confirmación ya la arma el código aparte (hallazgo de Mateo probando el worker real, H2.1, 15/9: el cliente recibía dos «¡Listo!») | Descarta entero el texto del modelo |
+| `confirmacion_doble` | `agendar_turno`, `reprogramar_turno` o `confirmar_turno` salió bien en este turno: la confirmación ya la arma el código aparte (hallazgo de Mateo probando el worker real, H2.1, 15/9: el cliente recibía dos «¡Listo!») | Recorta solo la frase que repite la confirmación (16/9, igual que `presentacion_repetida`), no el texto entero: si el cliente preguntó otra cosa en el mismo mensaje, esa respuesta se mantiene |
 | `sin_markdown` | `**`, `__`, `*negrita*`, `#` o `- ` al inicio, ```, links en markdown | Limpia en código |
 | `sin_relleno` | Las fórmulas prohibidas al final (la lista incluye todas las del prompt) | Corta la frase, y las anteriores si también son relleno |
 | `presentacion_repetida` | De las primeras 3 oraciones, alguna trae «soy Lucía» + «Otto» juntos (cualquiera de las dos formas del nombre), y no es el primer mensaje de la charla (hallazgo M2 del tester, 15/9: se presenta dos veces si una pregunta la pone a la defensiva, a veces parafraseando la apertura) | Corta hasta ahí (incluido un «¡Hola!» suelto antes, si lo hay) |
@@ -294,6 +295,14 @@ horario + «¿qué día te gustaría venir?».
 Derivación **dura** (la decide código en el paso 4, antes del LLM): reclamo,
 prenda dañada, pedido corporativo/uniforme, turno urgente sin hueco disponible.
 
+**Cliente enojado** (Mateo, 16/9): motivo `cliente_enojado`, garantizado aunque el
+mensaje no diga "reclamo" ni nombre nada roto — es el TONO, no el contenido: insulta,
+grita en mayúsculas, usa groserías o amenaza. Lo detecta el clasificador (paso 4b,
+`LLM_CLASIFICADOR`), que no depende de una palabra clave para esto (una queja puntual
+sobre algo sigue siendo `reclamo`). Sin despedida armada (`MOTIVOS_SIN_MENSAJE`, igual
+que reclamo): no se discute, sigue una persona. Lucía también puede llamarlo directo
+con `derivar_a_persona` si lo nota a mitad de la charla.
+
 **Evento hoy o mañana** (decisión #8 de Mateo, 14/9): un alquiler con el evento hoy o
 mañana lo resuelve una persona, siempre. Se cuenta con la fecha del evento en hora de
 Argentina (`NEGOCIO_TZ`, supuesto #23); desde pasado mañana sigue el camino normal, con
@@ -366,15 +375,17 @@ verificar contra la base) viven en `scripts/guiones-agente.cjs`, escritos como e
 cliente desde el celular; son transporte-agnósticos, así que un solo lugar sirve para las dos
 corridas que existen: `scripts/probar-turno.js` contra el emulador (teléfonos
 `+5493410001NNN`) y `tests/sql/guiones-desplegado.mjs` contra el worker real (teléfonos
-`5490000000NNN`, sin «+» — cierre de Fase 2, control 5 de H2.1: los 15 tienen que pasar contra
+`5490000000NNN`, sin «+» — cierre de Fase 2, control 5 de H2.1: los 16 tienen que pasar contra
 lo desplegado, no solo contra el emulador). Mínimos para la V1:
 
 `novio-noche` · `invitado-casamiento` · `graduado-desde-otra-ciudad` ·
 `solo-precio` · `urgente-misma-semana` · `pregunta-horarios` · `accesorios` ·
-`es-caro` · `lo-voy-a-pensar` · `reclamo-deriva` · `corporativo-deriva` ·
+`es-caro` · `lo-voy-a-pensar` · `reclamo-deriva` · `cliente-enojado-deriva`
+(pedido de Mateo, 16/9: un mensaje agresivo, sin decir "reclamo", tiene que derivar igual —
+lo detecta el clasificador por tono, § 10) · `corporativo-deriva` ·
 `fuera-de-horario-agenda-igual` · `reprograma` · `talle-grande` ·
 `evento-manana-deriva` (decisión #8 del 14/9: el evento es mañana y el código deriva con
-`evento_inminente` y el texto fijo; ya escrito en `scripts/probar-turno.js`)
+`evento_inminente` y el texto fijo; ya escrito en `scripts/guiones-agente.cjs`)
 
 El tester (modo agente) los corre todos cada vez que se toca prompt, fragmentos,
 herramientas o barandillas, y verifica contra la base: si dijo que agendó, hay

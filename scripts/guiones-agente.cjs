@@ -1,5 +1,6 @@
-// Los 15 guiones de AGENTE.md § 13 (los 14 originales más evento-manana-deriva, sumado por la
-// decisión #8 del 14/9): un solo lugar con las conversaciones y los chequeos contra la base,
+// Los 16 guiones de AGENTE.md § 13 (los 14 originales, evento-manana-deriva —decisión #8 del
+// 14/9— y cliente-enojado-deriva —pedido de Mateo, 16/9—): un solo lugar con las conversaciones
+// y los chequeos contra la base,
 // para que el emulador (scripts/probar-turno.js) y el worker desplegado
 // (tests/sql/guiones-desplegado.mjs) prueben EXACTAMENTE lo mismo — la misma razón por la que
 // _shared/turno/turno.ts es un solo archivo para los dos: si cada runner tuviera su propia copia
@@ -226,6 +227,23 @@ function crearGuiones() {
           [der?.motivo === "reclamo" || der?.motivo === "prenda_danada", `motivo es reclamo o prenda_danada (fue: ${der?.motivo})`],
           [conv?.estado === "derivada", "la conversación quedó derivada"],
           [respuestas.flat().length === 0, "no le mandó ningún mensaje propio (reclamo va sin despedida armada)"],
+        ];
+      },
+    },
+
+    // Pedido de Mateo, 16/9: un cliente agresivo tiene que derivar aunque no diga "reclamo" ni
+    // nombre nada roto — lo detecta el clasificador por el TONO, no por una palabra clave.
+    "cliente-enojado-deriva": {
+      mensajes: ["ESTO ES UNA VERGUENZA, son todos unos inutiles, quiero que me devuelvan la plata YA o hago un escandalo en las redes"],
+      async verificar(sql, telefono, respuestas) {
+        const convId = await conversacionDe(sql, telefono);
+        const der = (await fila(sql, "select motivo, estado from derivaciones where conversacion_id=$1", [convId]))[0];
+        const conv = (await fila(sql, "select estado from conversaciones where id=$1", [convId]))[0];
+        return [
+          [!!der, "hay una fila en derivaciones"],
+          [der?.motivo === "cliente_enojado", `motivo es cliente_enojado (fue: ${der?.motivo})`],
+          [conv?.estado === "derivada", "la conversación quedó derivada"],
+          [respuestas.flat().length === 0, "no le mandó ningún mensaje propio (cliente_enojado va sin despedida armada)"],
         ];
       },
     },
