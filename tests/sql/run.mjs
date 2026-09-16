@@ -269,12 +269,21 @@ async function testEsquemaDelAgente() {
     );
     assert(hist.rows[0].v === versionAntes, "editar la ficha deja su fila de historial con la versión anterior");
 
+    // 0025 sumó el UPDATE en los dos buckets (reemplazar una foto por la misma ruta).
+    // 0041 pasó el bucket `catalogo` a solo-admin, porque lo lee todo internet; `adjuntos` es
+    // privado y del trabajo diario, así que sigue en cualquier aprobado.
     const pol = await client.query(
-      `select count(*)::int as n from pg_policies
+      `select policyname, coalesce(qual, '') as usando from pg_policies
        where schemaname = 'storage' and tablename = 'objects' and cmd = 'UPDATE'
-         and policyname in ('catalogo_update_aprobados', 'adjuntos_update_aprobados')`
+         and policyname in ('catalogo_update_admin', 'adjuntos_update_aprobados')`
     );
-    assert(pol.rows[0].n === 2, "Storage tiene policies de UPDATE en catalogo y adjuntos");
+    assert(pol.rows.length === 2, `Storage tiene policies de UPDATE en catalogo y adjuntos (${pol.rows.map((r) => r.policyname).join(", ")})`);
+    const cat = pol.rows.find((r) => r.policyname === "catalogo_update_admin");
+    const adj = pol.rows.find((r) => r.policyname === "adjuntos_update_aprobados");
+    assert(
+      cat?.usando.includes("es_admin") && adj?.usando.includes("es_usuario_aprobado"),
+      "0041: el catálogo lo reemplaza solo un admin, adjuntos sigue siendo del equipo"
+    );
   } finally {
     await client.query("rollback");
     await client.end();
