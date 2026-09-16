@@ -8,7 +8,7 @@ Meta.** Después, cambiar una coma es volver a pedir aprobación.
 Lo que va entre llaves lo completa el sistema en cada envío: `{{1}}` el nombre, y lo que
 dice cada plantilla. Idioma: español (Argentina).
 
-## 1. `recordatorio_turno_24h` — 24 horas antes del turno
+## 1. `recordatorio_turno_18h` — 18 horas antes del turno
 
 - **Cuándo sale:** un día antes de cada turno, una sola vez.
 - **Categoría en Meta:** utilidad (recordatorio de algo que el cliente ya reservó).

@@ -130,7 +130,7 @@ tocar herramientas ni prompt.
 - Webhook ya construido con Claude Code ✅. Falta: número nuevo verificado en Meta,
   plantillas aprobadas, token permanente en env.
 - Plantillas a registrar (código puro las envía):
-  - `recordatorio_turno_24h` — con botones "Confirmo" / "Necesito reprogramar".
+  - `recordatorio_turno_18h` — con botones "Confirmo" / "Necesito reprogramar".
   - `agradecimiento_resena` — post-devolución, con link a reseña de Google.
   - `recontacto_turno_pendiente` — consultó, no agendó (día siguiente y 72 hs).
 - Ventana de 24 hs: fuera de ella solo se mandan plantillas. El código lo verifica
