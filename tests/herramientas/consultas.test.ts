@@ -81,6 +81,22 @@ prueba("consultar_catalogo filtra por color y talle, suma qué incluye y deja lo
   assertEquals([...new Set(ctx.traza.preciosDevueltos)].sort((a, b) => a - b), [111, 222]);
 });
 
+prueba("consultar_catalogo filtra a un modelo puntual cuando el cliente pregunta por uno solo (decisión de Mateo, 16/9)", async ({ ctx, sql }) => {
+  await soloEstosModelos(sql);
+  await soloEstosFragmentos(sql, [{ tema: "que-incluye", titulo: "Qué incluye el precio", texto: "El precio incluye sastrería y tintorería." }]);
+  await crearModelo(sql, { modelo: "Clásico azul marino", precio: 111, colores: ["Azul marino"], talles: ["48"] });
+  await crearModelo(sql, { modelo: "Slim gris oxford", precio: 222, colores: ["Gris"], talles: ["50"] });
+
+  const puntual = await ejecutarHerramienta("consultar_catalogo", { modelo: "clasico", color: null, talle: null }, ctx);
+  esOk(puntual);
+  assertEquals((puntual.datos.modelos as { modelo: string }[]).map((m) => m.modelo), ["Clásico azul marino"]);
+
+  const sinCoincidencia = await ejecutarHerramienta("consultar_catalogo", { modelo: "esmoquin", color: null, talle: null }, ctx);
+  esOk(sinCoincidencia);
+  assertEquals(sinCoincidencia.datos.modelos, []);
+  assertMatch(String(sinCoincidencia.datos.nota), /modelo, color o talle/);
+});
+
 prueba("consultar_catalogo sin qué incluye cargado no da precios", async ({ ctx, sql }) => {
   await soloEstosFragmentos(sql, []);
   esRechazo(await ejecutarHerramienta("consultar_catalogo", { color: null, talle: null }, ctx), "falta_que_incluye");

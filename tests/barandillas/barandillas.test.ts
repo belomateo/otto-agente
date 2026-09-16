@@ -118,8 +118,8 @@ Deno.test("confirmacion_doble no salta sin agendar_turno/reprogramar_turno en la
   // Un rechazo de agendar_turno no cuenta (ok: false): el modelo sigue pudiendo escribir su
   // propio mensaje explicando el rechazo, no hay ninguna confirmación de código que lo tape.
   const trazaConRechazo = traza();
-  trazaConRechazo.llamadas.push({ herramienta: "agendar_turno", argumentos: {}, ok: false, rechazo: "turno_activo" });
-  await noSalta(confirmacionDoble, entrada("Ya tenés un turno activo, ¿lo reprogramamos?", { traza: trazaConRechazo }));
+  trazaConRechazo.llamadas.push({ herramienta: "agendar_turno", argumentos: {}, ok: false, rechazo: "hueco_ocupado" });
+  await noSalta(confirmacionDoble, entrada("Ese horario se acaba de ocupar, ¿buscamos otro?", { traza: trazaConRechazo }));
 });
 
 Deno.test("sin_markdown salta con negritas, viñetas y títulos, y lo limpia en código", async () => {

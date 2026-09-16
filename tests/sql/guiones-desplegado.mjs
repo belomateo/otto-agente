@@ -1,4 +1,4 @@
-// Cierre de Fase 2: los 17 guiones de scripts/guiones-agente.cjs (AGENTE.md § 13) corridos de
+// Cierre de Fase 2: los 19 guiones de scripts/guiones-agente.cjs (AGENTE.md § 13) corridos de
 // punta a punta contra el WORKER DESPLEGADO, no contra el emulador. Mismas conversaciones y
 // mismos chequeos que scripts/probar-turno.js: es el mismo módulo de guiones, para que las dos
 // corridas prueben exactamente lo mismo (ver el comentario de guiones-agente.cjs).
@@ -11,11 +11,11 @@
 //
 // OJO: esto prueba lo que está DESPLEGADO en la función `worker`, no el código de este worktree.
 // Si el worker no se redesplegó con los últimos commits de agente, esto lo va a mostrar.
-// OJO 2: gasta OpenAI real (hasta 4 turnos por guion, ~3 llamadas al LLM por turno: son 17
+// OJO 2: gasta OpenAI real (hasta 4 turnos por guion, ~3 llamadas al LLM por turno: son 19
 // guiones, así que puede ser una corrida de varios minutos y unos cuantos centavos.
 //
 // Uso:
-//   node tests/sql/guiones-desplegado.mjs                 corre los 17, de a uno
+//   node tests/sql/guiones-desplegado.mjs                 corre los 19, de a uno
 //   node tests/sql/guiones-desplegado.mjs <guion>          corre uno o más, por nombre
 //   node tests/sql/guiones-desplegado.mjs --listar         lista los guiones
 import "dotenv/config";

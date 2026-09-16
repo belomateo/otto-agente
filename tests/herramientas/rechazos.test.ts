@@ -86,15 +86,15 @@ prueba("agendar_turno acepta el último hueco que termina justo al cierre (caso 
   esOk(await agendar(ctx, MIERCOLES, "18:15", "invitado"));
 });
 
-prueba("agendar_turno rechaza si el cliente ya tiene un turno activo", async ({ ctx, sql, clienteId, agenda }) => {
+prueba("agendar_turno agenda igual si el cliente ya tiene un turno activo, y lo avisa sin frenar (decisión de Mateo, 16/9)", async ({ ctx, sql, clienteId, agenda }) => {
   await fichaCompleta(sql, clienteId);
   await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00"), probador: 2 });
   agenda.lista = [hueco(JUEVES, "11:00", 45)];
   esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
   const r = await agendar(ctx, JUEVES, "11:00", "invitado");
-  esRechazo(r, "turno_activo");
-  assertMatch(r.mensaje, /reprogramar_turno/);
-  assertEquals(await contar(sql, turnosDe, [clienteId]), 1);
+  esOk(r);
+  assertMatch(String(r.datos.aviso), /ya tenía otro turno/);
+  assertEquals(await contar(sql, turnosDe, [clienteId]), 2);
 });
 
 prueba("agendar_turno agenda si el turno anterior está cancelado (caso parecido)", async ({ ctx, sql, clienteId, agenda }) => {

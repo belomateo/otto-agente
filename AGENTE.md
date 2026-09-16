@@ -128,7 +128,7 @@ el índice del prompt.
 | Herramienta | Qué devuelve | Regla |
 | --- | --- | --- |
 | `buscar_informacion(seccion, consulta)` | Hasta tres fragmentos de la base de conocimiento (búsqueda en código: raíces, sin tildes, tolera errores de tipeo) | Obligatoria antes de afirmar cualquier política, horario, condición o "qué incluye". Secciones en § 8; si ninguna pega, `seccion` = null y busca en todas. Si la sección es `ubicacion-horarios`, suma el horario leído de la tabla `horarios`, no de un fragmento. |
-| `consultar_catalogo(color?, talle?)` | Modelos de alquiler: nombre, descripción, colores, talles, precio base, si tiene fotos | Obligatoria antes de decir un precio o describir un modelo. Devuelve además qué incluye el precio (sección `que-incluye`), que va siempre con el precio; sin esa sección cargada no da precios. El catálogo no tiene evento (paneles 0016): no se filtra por evento. |
+| `consultar_catalogo(modelo?, color?, talle?)` | Modelos de alquiler: nombre, descripción, colores, talles, precio base, si tiene fotos | Obligatoria antes de decir un precio o describir un modelo. Devuelve además qué incluye el precio (sección `que-incluye`), que va siempre con el precio; sin esa sección cargada no da precios. El catálogo no tiene evento (paneles 0016): no se filtra por evento. Decisión de Mateo, 16/9: si el cliente pregunta por un modelo puntual, `modelo` filtra a esa prenda sola, no al catálogo entero; sin `modelo` (recomendando sin que pidan algo puntual) trae varios, ordenados por la columna `orden` de `catalogo_alquiler` (paneles: 1 pesa más que 2, y así) — el orden se rompe justo cuando hay `modelo`, ahí importa la coincidencia |
 | `consultar_accesorios()` | Camisa, corbata, cinturón, zapatos: precio de alquiler y de compra (`accesorios_alquiler`) y las condiciones (sección `accesorios`) | Obligatoria antes de confirmar qué accesorios se alquilan o compran, aunque no llegue a decir un precio (hallazgo del 14/9 al correr los 14 guiones: sin esto, contestaba "sí, alquilamos zapatos" de memoria). Se usa cuando el cliente pregunta o al ofrecer el look completo |
 | `buscar_horarios(desde, hasta, tipo_turno)` | Huecos reales por probador, ya filtrados por horario laboral; hasta dos por franja y por día | Obligatoria antes de ofrecer un horario, y otra vez antes de agendar o reprogramar, en el mismo turno. Ofrece **dos**, nunca más de tres. Lo que muestra queda en la traza del turno. Si la ficha no tiene mail y hay huecos para ofrecer, devuelve `pedir_mail: true` (decisión #17, hito 2.3, supuesto #35): Lucía lo pide en el mismo mensaje en que ofrece los horarios, una sola vez por charla — si no lo quiere dar, agenda igual y no insiste. |
 | `ver_turnos_cliente()` | Turnos del cliente que vienen, con su `turno_id` | Ya vienen en el contexto; se llama solo si acaba de crear/mover/cancelar uno en este turno |
@@ -137,7 +137,7 @@ el índice del prompt.
 
 | Herramienta | Precondiciones que el código verifica | Efecto |
 | --- | --- | --- |
-| `agendar_turno(fecha_hora, tipo, nombre, evento, fecha_evento)` | Fecha futura · cliente sin turno activo · nombre y fecha del evento presentes (en los argumentos o en la ficha), el evento no pasó y el turno no cae después · hueco salió de `buscar_horarios` en este turno para ese tipo · dentro de una franja de turnos vigente · dura lo que dice `duraciones_turno` | Fila en `turnos` en el primer probador libre + ficha + evento en Google Calendar (si falla, el turno queda con `aviso`) + confirmación armada en código (fecha y hora, el fragmento de `como-funciona` sobre el turno en el local, el mapa de `enlaces`) que sale en un mensaje aparte. No recibe teléfono: el turno es siempre del cliente de la charla. Si el modelo repite esa confirmación en su propio texto, se recorta (barandilla `confirmacion_doble`): la confirmación es solo la de código, el resto del mensaje del modelo se mantiene |
+| `agendar_turno(fecha_hora, tipo, nombre, evento, fecha_evento)` | Fecha futura · nombre y fecha del evento presentes (en los argumentos o en la ficha), el evento no pasó y el turno no cae después · hueco salió de `buscar_horarios` en este turno para ese tipo · dentro de una franja de turnos vigente · dura lo que dice `duraciones_turno` | Fila en `turnos` en el primer probador libre + ficha + evento en Google Calendar (si falla, el turno queda con `aviso`) + confirmación armada en código (fecha y hora, el fragmento de `como-funciona` sobre el turno en el local, el mapa de `enlaces`) que sale en un mensaje aparte. No recibe teléfono: el turno es siempre del cliente de la charla. Si el modelo repite esa confirmación en su propio texto, se recorta (barandilla `confirmacion_doble`): la confirmación es solo la de código, el resto del mensaje del modelo se mantiene. Decisión de Mateo, 16/9: dos turnos para la misma persona se permiten — si el cliente ya tenía otro activo, ya no se rechaza, agenda igual y queda un `datos.aviso` (no se lo menciona al cliente salvo que pregunte) |
 | `reprogramar_turno(turno_id, fecha_hora)` | Turno existe, es del cliente y está activo · hueco válido (mismas reglas que agendar) | Actualiza la misma fila y el evento, vuelve a sin confirmar y el recordatorio sale de nuevo. Nunca crea uno nuevo encima. Mismo recorte del texto propio que agendar_turno (`confirmacion_doble`) |
 | `cancelar_turno(turno_id, motivo)` | Turno del cliente y activo | Marca `cancelado` con `motivo_cancelacion` (no borra), libera el hueco y saca el evento de Calendar |
 | `confirmar_turno(turno_id)` | Turno del cliente, no vencido, sin-confirmar o ya confirmado (decisión de Mateo, 16/9: sin botón — Lucía la llama cuando entiende que el cliente confirma, venga como venga) | Marca `confirmado` (`confirmado_por = 'cliente'`, misma función que usaba el botón) + confirmación armada en código (`texto_turno_confirmado`, supuesto #30) aparte del texto del modelo. Mismo recorte que agendar_turno si el modelo repite la confirmación (`confirmacion_doble`) |
@@ -388,7 +388,7 @@ verificar contra la base) viven en `scripts/guiones-agente.cjs`, escritos como e
 cliente desde el celular; son transporte-agnósticos, así que un solo lugar sirve para las dos
 corridas que existen: `scripts/probar-turno.js` contra el emulador (teléfonos
 `+5493410001NNN`) y `tests/sql/guiones-desplegado.mjs` contra el worker real (teléfonos
-`5490000000NNN`, sin «+» — cierre de Fase 2, control 5 de H2.1: los 17 tienen que pasar contra
+`5490000000NNN`, sin «+» — cierre de Fase 2, control 5 de H2.1: los 19 tienen que pasar contra
 lo desplegado, no solo contra el emulador). Mínimos para la V1:
 
 `novio-noche` · `invitado-casamiento` · `graduado-desde-otra-ciudad` ·
@@ -400,7 +400,11 @@ lo detecta el clasificador por tono, § 10) · `corporativo-deriva` ·
 `mail-no-bloquea-la-reserva` (hallazgo de logica en vivo, 16/9: el cliente confirma sin dar el
 mail — tiene que agendar igual, no volver a pedirlo, supuesto #35) ·
 `evento-manana-deriva` (decisión #8 del 14/9: el evento es mañana y el código deriva con
-`evento_inminente` y el texto fijo; ya escrito en `scripts/guiones-agente.cjs`)
+`evento_inminente` y el texto fijo; ya escrito en `scripts/guiones-agente.cjs`) ·
+`catalogo-modelo-puntual` (pedido de Mateo, 16/9: pregunta por un modelo puntual y
+`consultar_catalogo` filtra a esa prenda sola, no menciona el resto del catálogo) ·
+`dos-turnos-permitidos` (pedido de Mateo, 16/9: pide un segundo turno además del que ya tiene y
+lo agenda igual, sin rechazarlo)
 
 El tester (modo agente) los corre todos cada vez que se toca prompt, fragmentos,
 herramientas o barandillas, y verifica contra la base: si dijo que agendó, hay

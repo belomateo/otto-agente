@@ -230,19 +230,25 @@ export async function crearTurno(
   )).rows[0].id as string;
 }
 
+// orden: prioridad de recomendación de paneles (1 pesa más que 2, etc. — decisión de Mateo,
+// 16/9, pedido 1c). Sin valor explícito, cada llamada toma el siguiente número: alcanza para los
+// tests que no le importa el orden, y los que sí lo prueban pasan el suyo.
+let contadorOrdenModelo = 0;
+
 export async function crearModelo(
   sql: pg.Client,
-  p: { modelo: string; precio?: number; colores?: string[]; talles?: string[]; fotos?: string[] },
+  p: { modelo: string; precio?: number; colores?: string[]; talles?: string[]; fotos?: string[]; orden?: number },
 ): Promise<string> {
   return (await sql.query(
-    `insert into catalogo_alquiler (modelo, precio_base, colores, talles, fotos)
-     values ($1, $2, $3::jsonb, $4, $5) returning id::text as id`,
+    `insert into catalogo_alquiler (modelo, precio_base, colores, talles, fotos, orden)
+     values ($1, $2, $3::jsonb, $4, $5, $6) returning id::text as id`,
     [
       p.modelo,
       p.precio ?? 100,
       JSON.stringify((p.colores ?? []).map((nombre) => ({ nombre, hex: "#000000" }))),
       p.talles ?? [],
       p.fotos ?? [],
+      p.orden ?? ++contadorOrdenModelo,
     ],
   )).rows[0].id as string;
 }
