@@ -30,7 +30,7 @@ export async function obtener<T>(ruta: string): Promise<T> {
   return cuerpo as T;
 }
 
-export async function enviar<T>(ruta: string, metodo: 'POST' | 'PATCH' | 'DELETE', cuerpo?: unknown): Promise<T> {
+export async function enviar<T>(ruta: string, metodo: 'POST' | 'PATCH' | 'PUT' | 'DELETE', cuerpo?: unknown): Promise<T> {
   const r = await fetch(ruta, {
     method: metodo,
     headers: cuerpo !== undefined ? { 'Content-Type': 'application/json' } : undefined,
