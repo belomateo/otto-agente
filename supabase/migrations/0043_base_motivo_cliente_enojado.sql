@@ -1,4 +1,7 @@
--- 0030_base_motivo_cliente_enojado.sql — pedido de Mateo (16/9), agente.
+-- 0043_base_motivo_cliente_enojado.sql — pedido de Mateo (16/9), agente. Renombrada de 0030 a
+-- 0043 (logica, 16/9): 0030 chocaba con 0030_negocio_franjas_turnos.sql de paneles, y el rango
+-- *base* de aquí en más lo administra logica. Ya estaba aplicada en la base real antes de
+-- renombrarse; el contenido no cambió.
 -- Sin motivo garantizado para un cliente enojado: hoy solo derivaba si el mensaje además
 -- calificaba como 'reclamo' (una queja puntual sobre algo, no un tono). El clasificador (paso 4b
 -- del turno) lo detecta por el TONO del mensaje, no por una palabra clave — insulta, grita en
