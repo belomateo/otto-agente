@@ -163,6 +163,84 @@ async function reemplazarBurbujas(db: Db, conversacionId: string, viejas: string
   }
 }
 
+// La fila de una burbuja que todavía no salió. Se busca por contenido porque el turno las
+// guardó él (paso 9) y el worker no tiene sus ids.
+async function filaDeBurbuja(db: Db, conversacionId: string, texto: string) {
+  const [f] = await db.consulta<{ id: string }>(
+    `select id::text as id from mensajes
+      where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null
+        and no_enviado_motivo is null and contenido = $2
+      order by enviado_at limit 1`,
+    [conversacionId, texto],
+  );
+  return f?.id ?? null;
+}
+
+// Manda las burbujas en orden, marcando cada fila ANTES de llamar a Meta (0044). Si Meta falla
+// (ya con el reintento adentro), limpia la marca —sabemos que no salió, porque la excepción la
+// manejamos nosotros— y RELANZA: el trabajo vuelve a la cola en vez de darse por hecho, que era
+// el agujero por el que se perdían respuestas. La marca sin limpiar queda solo si el proceso
+// muere en el medio: ese es el caso "en duda" que retomarEnvio no repite.
+async function mandarBurbujas(db: Db, d: Dependencias, conversacionId: string, telefono: string, burbujas: string[]) {
+  let enviadas = 0;
+  for (const texto of burbujas) {
+    const id = await filaDeBurbuja(db, conversacionId, texto);
+    if (id) await db.consulta("update mensajes set enviando_at = now() where id = $1::uuid", [id]);
+    try {
+      const waMessageId = await conReintento(d, () => enviarTexto(d.wa, telefono, texto, d.fetcher));
+      if (id) await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [id, waMessageId]);
+      enviadas++;
+    } catch (e) {
+      if (id) await db.consulta("update mensajes set enviando_at = null where id = $1::uuid", [id]);
+      await evento(db, conversacionId, "error", { etapa: "envio", error: mensajeDeError(e), sin_enviar: burbujas.slice(enviadas) });
+      throw e;
+    }
+  }
+  return enviadas;
+}
+
+// El trabajo ya pensó (cola_trabajos.respondido_at) y se está reintentando: NO se vuelve a correr
+// el turno —Lucía nunca piensa dos veces lo mismo y el cliente recibiría otra respuesta— sino que
+// se termina de mandar lo que quedó sin salir. Si alguna burbuja quedó "en duda" (marcada como
+// enviándose y sin wamid: el proceso murió en el medio), no se reintenta: se marca y la charla va
+// a una persona, que ve el hilo y decide. Mejor que falte un mensaje a que el cliente lo reciba
+// dos veces.
+async function retomarEnvio(db: Db, d: Dependencias, t: Trabajo, telefono: string) {
+  const pendientes = await db.consulta<{ id: string; contenido: string | null; tipo: string; enviando_at: Date | string | null }>(
+    `select id::text as id, contenido, tipo, enviando_at from mensajes
+      where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null and no_enviado_motivo is null
+      order by enviado_at`,
+    [t.conversacion_id],
+  );
+  const enDuda = pendientes.filter((m) => m.enviando_at);
+  if (enDuda.length) {
+    await db.consulta(
+      `update mensajes set no_enviado_motivo = 'error_al_enviar'
+        where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null and no_enviado_motivo is null`,
+      [t.conversacion_id],
+    );
+    await db.consulta("select cola_derivar_por_fallo($1::uuid, $2)", [
+      t.conversacion_id,
+      "un mensaje quedó en duda (se estaba mandando cuando se cortó): no se reintenta",
+    ]);
+    return { retomado: true, en_duda: enDuda.length, derivada: true };
+  }
+  const textos = pendientes.filter((m) => m.tipo === "texto" && m.contenido).map((m) => m.contenido as string);
+  if (!textos.length) return { retomado: true, nada_pendiente: true };
+  if (!puedeTextoLibre(await ultimoMensajeDelCliente(db, t.conversacion_id), d.ahora())) {
+    await borrarSinEnviar(db, t.conversacion_id, textos);
+    await evento(db, t.conversacion_id, "error", {
+      etapa: "envio",
+      error: "fuera de la ventana de 24 hs: solo se puede mandar una plantilla",
+      sin_enviar: textos,
+    });
+    return { retomado: true, enviadas: 0 };
+  }
+  const simulado = esTelefonoFicticio(telefono);
+  const enviadas = simulado ? 0 : await mandarBurbujas(db, d, t.conversacion_id, telefono, textos);
+  return { retomado: true, enviadas, ...(simulado ? { simulado: true } : {}) };
+}
+
 async function entregar(db: Db, d: Dependencias, conversacionId: string, telefono: string, r: ResultadoTurno) {
   // Lo que sale lo prepara el envío (2.2, decisión #17): sin «¡» ni «¿» y en 1, 2 o 3 mensajes
   // según el largo. Si el turno ya lo preparó, esto no cambia nada.
@@ -189,23 +267,7 @@ async function entregar(db: Db, d: Dependencias, conversacionId: string, telefon
   }
 
   const simulado = esTelefonoFicticio(telefono);
-  for (let i = 0; i < burbujas.length && !simulado; i++) {
-    try {
-      const waMessageId = await conReintento(d, () => enviarTexto(d.wa, telefono, burbujas[i], d.fetcher));
-      await db.consulta(
-        `update mensajes set wa_message_id = $3 where id = (
-           select id from mensajes
-            where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null and contenido = $2
-            order by enviado_at limit 1)`,
-        [conversacionId, burbujas[i], waMessageId],
-      );
-    } catch (e) {
-      const sinEnviar = burbujas.slice(i);
-      await borrarSinEnviar(db, conversacionId, sinEnviar);
-      await evento(db, conversacionId, "error", { etapa: "envio", error: mensajeDeError(e), sin_enviar: sinEnviar });
-      return { ...resumen, enviadas: i };
-    }
-  }
+  if (!simulado) await mandarBurbujas(db, d, conversacionId, telefono, burbujas);
 
   let fotosEnviadas = 0;
   for (const foto of r.imagenes) {
@@ -319,6 +381,20 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   const boton = botonDeTurno(t.payload?.mensaje);
   if (boton?.accion === "confirmar") return await confirmarPorBoton(db, d, t, boton.turnoId, conv.telefono);
 
+  // Ya pensó y se está reintentando (0044): se retoma el envío, no se vuelve a correr el turno.
+  // Va antes del chequeo de estado a propósito: una respuesta ya pensada se termina de mandar
+  // aunque alguien haya tomado la charla en el medio (decisión de Mateo, 16/9: lo que está en
+  // vuelo no se corta).
+  const [yaPenso] = await db.consulta<{ respondido_at: Date | string | null }>(
+    "select respondido_at from cola_trabajos where id = $1::uuid",
+    [t.id],
+  );
+  if (yaPenso?.respondido_at) {
+    const retomado = await retomarEnvio(db, d, t, conv.telefono);
+    await evento(db, t.conversacion_id, "ok", { etapa: "worker-retoma", ...retomado });
+    return;
+  }
+
   // La derivaron entre que se encoló y ahora: la tiene una persona, Lucía no contesta.
   if (conv.estado !== "activa") {
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${conv.estado}: Lucía no contesta` });
@@ -352,6 +428,10 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     calendario: d.calendario,
     derivacionTel: d.derivacionTel,
   });
+  // El turno ya guardó sus mensajes (paso 9). Se marca ANTES de mandarlos: si se corta en el
+  // medio del envío, el reintento retoma mandando en vez de pensar de nuevo (0044).
+  await db.consulta("update cola_trabajos set respondido_at = now() where id = $1::uuid", [t.id]);
+
   const entrega = await entregar(db, d, t.conversacion_id, conv.telefono, resultado);
 
   // Los trabajos de los mensajes que entraron en esta ráfaga ya tienen respuesta. Si esto falla,

@@ -11,7 +11,7 @@ import { calendarioPropio } from "../_shared/agenda/calendario_propio.ts";
 import { type ClienteSql, type Db, dbDesde } from "../_shared/db.ts";
 import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts";
 import { HASTA_UN_MENSAJE } from "../_shared/whatsapp/preparar.ts";
-import {
+import { procesarTrabajo,
   atenderCola,
   type Dependencias,
   esperaDeRafagaMs,
@@ -162,11 +162,11 @@ async function salientes(c: Contexto, telefono: string) {
 
 async function trabajos(c: Contexto, telefono: string) {
   return (await c.sql.query(
-    `select t.estado, t.payload from cola_trabajos t
+    `select t.id, t.conversacion_id, t.estado, t.intentos, t.respondido_at, t.payload from cola_trabajos t
        join conversaciones cv on cv.id = t.conversacion_id join clientes cl on cl.id = cv.cliente_id
       where cl.telefono = $1 order by t.creado_at, t.id`,
     [telefono],
-  )).rows as { estado: string; payload: Record<string, unknown> }[];
+  )).rows as { id: string; conversacion_id: string; estado: string; intentos: number; respondido_at: Date | null; payload: Record<string, unknown> }[];
 }
 
 async function eventos(c: Contexto, telefono: string) {
@@ -361,17 +361,72 @@ prueba("una caída de Meta se salva con el reintento: salen las dos burbujas", a
   assertEquals((await salientes(c, TEL)).every((s) => s.wa_message_id), true);
 });
 
-prueba("Meta falla dos veces en la segunda burbuja: sale la primera, la otra se borra de la charla y queda en la bitácora", async (c) => {
+prueba("Meta falla dos veces en la segunda burbuja: el trabajo NO se da por hecho, vuelve a la cola (0044)", async (c) => {
   await mensajeDelCliente(c, TEL, "hola");
   const { d, turno, meta } = armar(c, { falla: (i) => i >= 1 });
 
   await atenderCola(c.db, d, "worker-prueba");
   assertEquals(turno.llamadas.length, 1); // el turno no se repite
   assertEquals(meta.envios.map(textoDe), [RESPUESTAS[0]]);
-  assertEquals((await salientes(c, TEL)).map((s) => s.contenido), [RESPUESTAS[0]]);
   const error = (await eventos(c, TEL)).find((e) => e.tipo === "error" && e.detalle.etapa === "envio");
   assertEquals(error?.detalle.sin_enviar, [RESPUESTAS[1]]);
-  assertEquals((await trabajos(c, TEL)).map((t) => t.estado), ["hecho"]);
+  // Antes de 0044 esto quedaba en "hecho" y el cliente se quedaba sin la segunda burbuja para
+  // siempre. Ahora el trabajo vuelve a la cola con un intento gastado.
+  const [t] = await trabajos(c, TEL);
+  assertEquals([t.estado, t.intentos], ["pendiente", 1]);
+  // La burbuja que no salió NO se borra: la necesita el reintento para retomar el envío.
+  assertEquals((await salientes(c, TEL)).map((s) => s.contenido), RESPUESTAS);
+  // Y el trabajo quedó marcado como "ya pensó": el reintento no vuelve a correr el turno.
+  assert(t.respondido_at !== null);
+});
+
+prueba("el reintento retoma el envío: no vuelve a pensar y manda solo lo que faltaba (0044)", async (c) => {
+  await mensajeDelCliente(c, TEL, "hola");
+  // Primera pasada: Meta falla en la segunda burbuja, el trabajo vuelve a la cola y queda marcado
+  // como "ya pensó".
+  const primera = armar(c, { falla: (i) => i >= 1 });
+  await atenderCola(c.db, primera.d, "worker-prueba");
+  const [t] = await trabajos(c, TEL);
+  assertEquals([t.estado, t.intentos], ["pendiente", 1]);
+  assert(t.respondido_at !== null);
+  assertEquals(primera.meta.envios.map(textoDe), [RESPUESTAS[0]]);
+  // Quedó una sola burbuja sin mandar, sin marca de "en duda": es lo que el reintento tiene que
+  // retomar.
+  const pendientes = (await c.sql.query(
+    `select contenido, enviando_at from mensajes where conversacion_id = $1
+      and direccion = 'saliente' and wa_message_id is null order by enviado_at`,
+    [t.conversacion_id],
+  )).rows as { contenido: string; enviando_at: Date | null }[];
+  assertEquals(pendientes.map((m) => [m.contenido, m.enviando_at]), [[RESPUESTAS[1], null]]);
+});
+
+prueba("una burbuja en duda no se reenvía: se marca y la charla va a una persona (0044)", async (c) => {
+  await mensajeDelCliente(c, TEL, "hola");
+  const primera = armar(c, { falla: (i) => i >= 1 });
+  await atenderCola(c.db, primera.d, "worker-prueba");
+  // Simula que el proceso murió justo mientras mandaba: la marca quedó sin limpiar.
+  await c.sql.query(
+    `update mensajes set enviando_at = now()
+      where conversacion_id = (select id from conversaciones where cliente_id =
+        (select id from clientes where telefono = $1)) and wa_message_id is null`,
+    [TEL],
+  );
+
+  await c.sql.query("update cola_trabajos set reintentar_despues_de = null");
+
+  const segunda = armar(c, { desdeSeg: 30 });
+  await atenderCola(c.db, segunda.d, "worker-prueba");
+  assertEquals(segunda.turno.llamadas.length, 0);
+  assertEquals(segunda.meta.envios.length, 0); // no lo manda de nuevo
+  const [m] = (await c.sql.query(
+    `select no_enviado_motivo from mensajes where contenido = $1`, [RESPUESTAS[1]],
+  )).rows;
+  assertEquals(m.no_enviado_motivo, "error_al_enviar");
+  const [dv] = (await c.sql.query(
+    `select d.motivo, c.estado from derivaciones d join conversaciones c on c.id = d.conversacion_id
+      where c.cliente_id = (select id from clientes where telefono = $1)`, [TEL],
+  )).rows;
+  assertEquals([dv?.motivo, dv?.estado], ["fallo_tecnico", "derivada"]);
 });
 
 prueba("fotos del catálogo: después del texto sale cada foto con su link público y queda en la charla", async (c) => {
