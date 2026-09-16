@@ -31,12 +31,12 @@ const payloadMensaje = (wamid) =>
   JSON.stringify({
     object: "whatsapp_business_account",
     entry: [{
-      id: "1383999293336203",
+      id: "1380000000000000",
       changes: [{
         field: "messages",
         value: {
           messaging_product: "whatsapp",
-          metadata: { display_phone_number: "5493417519525", phone_number_id: process.env.WA_PHONE_NUMBER_ID },
+          metadata: { display_phone_number: "5490000000000", phone_number_id: process.env.WA_PHONE_NUMBER_ID },
           contacts: [{ profile: { name: "Prueba H1.11" }, wa_id: TEL }],
           messages: [{ from: TEL, id: wamid, timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body: "hola, prueba del webhook" } }],
         },
@@ -46,7 +46,7 @@ const payloadMensaje = (wamid) =>
 
 const payloadEstado = JSON.stringify({
   object: "whatsapp_business_account",
-  entry: [{ id: "1383999293336203", changes: [{ field: "messages", value: { messaging_product: "whatsapp", statuses: [{ id: "wamid.SALIENTE-PRUEBA", status: "delivered", timestamp: "1757700000", recipient_id: TEL }] } }] }],
+  entry: [{ id: "1380000000000000", changes: [{ field: "messages", value: { messaging_product: "whatsapp", statuses: [{ id: "wamid.SALIENTE-PRUEBA", status: "delivered", timestamp: "1757700000", recipient_id: TEL }] } }] }],
 });
 
 async function post(cuerpo, firma) {

@@ -3,10 +3,10 @@ import { mensajesEntrantes } from "./parsear.ts";
 
 const envolver = (value: Record<string, unknown>) => ({
   object: "whatsapp_business_account",
-  entry: [{ id: "1383999293336203", changes: [{ field: "messages", value }] }],
+  entry: [{ id: "1380000000000000", changes: [{ field: "messages", value }] }],
 });
 
-const metadata = { display_phone_number: "5493417519525", phone_number_id: "1292848483914840" };
+const metadata = { display_phone_number: "5490000000000", phone_number_id: "1290000000000000" };
 
 Deno.test("mensaje de texto: telefono, nombre del contacto, contenido y hora", () => {
   const payload = envolver({
