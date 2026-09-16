@@ -14,6 +14,7 @@ const NOMBRE_CAMPO: Record<string, string> = {
   nombre: "nombre", evento: "evento", fecha_evento: "fecha del evento", rol: "rol",
   dia_o_noche: "día o noche", talle_aprox: "talle aproximado", ciudad: "ciudad",
   color_preferido: "color preferido", presupuesto_mencionado: "lo que dijo del presupuesto",
+  email: "mail",
 };
 
 async function libretaTexto(db: Db, clienteId: string): Promise<string> {

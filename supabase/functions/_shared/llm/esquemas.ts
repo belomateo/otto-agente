@@ -42,6 +42,7 @@ export const ESQUEMA_FICHA = {
     ciudad: { type: ["string", "null"] },
     color_preferido: { type: ["string", "null"] },
     presupuesto_mencionado: { type: ["string", "null"] },
+    email: { type: ["string", "null"], description: "Mail que dio el cliente, como lo escribió; si no lo dio, null." },
   },
   required: [...CAMPOS_FICHA],
   additionalProperties: false,

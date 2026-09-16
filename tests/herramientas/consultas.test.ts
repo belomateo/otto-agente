@@ -135,6 +135,27 @@ prueba("buscar_horarios busca desde hoy si le piden un día que pasó, y rechaza
   esRechazo(await buscar(ctx, LUNES, JUEVES, "casamiento" as never), "argumentos_invalidos");
 });
 
+prueba("buscar_horarios pide el mail si hay huecos para ofrecer y la ficha no lo tiene (hito 2.3)", async ({ ctx, agenda }) => {
+  agenda.lista = [hueco(JUEVES, "11:00", 45)];
+  const r = await buscar(ctx, JUEVES, JUEVES, "invitado");
+  esOk(r);
+  assertEquals(r.datos.pedir_mail, true);
+});
+
+prueba("buscar_horarios no pide el mail si ya lo tenemos, ni si no hay huecos", async ({ ctx, sql, clienteId, agenda }) => {
+  await sql.query("update clientes set email = $2 where id = $1", [clienteId, "juan@gmail.com"]);
+  agenda.lista = [hueco(JUEVES, "11:00", 45)];
+  const conMail = await buscar(ctx, JUEVES, JUEVES, "invitado");
+  esOk(conMail);
+  assertEquals(conMail.datos.pedir_mail, undefined);
+
+  await sql.query("update clientes set email = null where id = $1", [clienteId]);
+  agenda.lista = [];
+  const sinHuecos = await buscar(ctx, JUEVES, JUEVES, "invitado");
+  esOk(sinHuecos);
+  assertEquals(sinHuecos.datos.pedir_mail, undefined);
+});
+
 prueba("ver_turnos_cliente devuelve los que vienen y no los cancelados ni los que pasaron", async ({ ctx, sql, clienteId }) => {
   await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00"), probador: 1 });
   await crearTurno(sql, { clienteId, inicio: local(JUEVES, "11:00"), probador: 2, estado: "cancelado" });

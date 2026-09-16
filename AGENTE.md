@@ -96,7 +96,8 @@ una función separada en `_shared/`, testeable sola.
      └ agendar_turno / reprogramar_turno / guardar_datos_cliente / anotar / derivar_a_persona
 7. validar_acciones      cada acción se valida en código ANTES de ejecutarse (§ 5)
 8. barandillas           formato y reglas (§ 6). Si una salta: se rehace 1 vez; si vuelve a saltar: deriva
-9. enviar                Meta API, partido en burbujas si el texto trae dobles saltos
+9. enviar                prepararParaEnviar (2.2/2.3): sin «¡»/«¿», en 1 a 3 mensajes según el
+     largo de todo lo que sale en el turno (texto de Lucía + confirmaciones de código); Meta API
 10. extraer              LLM_EXTRACTOR lee el turno completo y actualiza la ficha del cliente (§ 7)
 11. bitacora             eventos_agente: herramientas, resumen del razonamiento, tokens, errores, latencia
 ```
@@ -125,7 +126,7 @@ el índice del prompt.
 | `buscar_informacion(seccion, consulta)` | Hasta tres fragmentos de la base de conocimiento (búsqueda en código: raíces, sin tildes, tolera errores de tipeo) | Obligatoria antes de afirmar cualquier política, horario, condición o "qué incluye". Secciones en § 8; si ninguna pega, `seccion` = null y busca en todas. Si la sección es `ubicacion-horarios`, suma el horario leído de la tabla `horarios`, no de un fragmento. |
 | `consultar_catalogo(color?, talle?)` | Modelos de alquiler: nombre, descripción, colores, talles, precio base, si tiene fotos | Obligatoria antes de decir un precio o describir un modelo. Devuelve además qué incluye el precio (sección `que-incluye`), que va siempre con el precio; sin esa sección cargada no da precios. El catálogo no tiene evento (paneles 0016): no se filtra por evento. |
 | `consultar_accesorios()` | Camisa, corbata, cinturón, zapatos: precio de alquiler y de compra (`accesorios_alquiler`) y las condiciones (sección `accesorios`) | Obligatoria antes de confirmar qué accesorios se alquilan o compran, aunque no llegue a decir un precio (hallazgo del 14/9 al correr los 14 guiones: sin esto, contestaba "sí, alquilamos zapatos" de memoria). Se usa cuando el cliente pregunta o al ofrecer el look completo |
-| `buscar_horarios(desde, hasta, tipo_turno)` | Huecos reales por probador, ya filtrados por horario laboral; hasta dos por franja y por día | Obligatoria antes de ofrecer un horario, y otra vez antes de agendar o reprogramar, en el mismo turno. Ofrece **dos**, nunca más de tres. Lo que muestra queda en la traza del turno. |
+| `buscar_horarios(desde, hasta, tipo_turno)` | Huecos reales por probador, ya filtrados por horario laboral; hasta dos por franja y por día | Obligatoria antes de ofrecer un horario, y otra vez antes de agendar o reprogramar, en el mismo turno. Ofrece **dos**, nunca más de tres. Lo que muestra queda en la traza del turno. Si la ficha no tiene mail y hay huecos para ofrecer, devuelve `pedir_mail: true` (decisión #17, hito 2.3, supuesto #35): Lucía lo pide en el mismo mensaje en que ofrece los horarios, una sola vez por charla — si no lo quiere dar, agenda igual y no insiste. |
 | `ver_turnos_cliente()` | Turnos del cliente que vienen, con su `turno_id` | Ya vienen en el contexto; se llama solo si acaba de crear/mover/cancelar uno en este turno |
 
 ### Acción (tocan el mundo; validación en código obligatoria)
@@ -135,7 +136,7 @@ el índice del prompt.
 | `agendar_turno(fecha_hora, tipo, nombre, evento, fecha_evento)` | Fecha futura · cliente sin turno activo · nombre y fecha del evento presentes (en los argumentos o en la ficha), el evento no pasó y el turno no cae después · hueco salió de `buscar_horarios` en este turno para ese tipo · dentro de una franja de turnos vigente · dura lo que dice `duraciones_turno` | Fila en `turnos` en el primer probador libre + ficha + evento en Google Calendar (si falla, el turno queda con `aviso`) + confirmación armada en código (fecha y hora, el fragmento de `como-funciona` sobre el turno en el local, el mapa de `enlaces`) que sale en un mensaje aparte. No recibe teléfono: el turno es siempre del cliente de la charla. El texto propio del modelo en este turno se descarta (barandilla `confirmacion_doble`): la confirmación es solo la de código |
 | `reprogramar_turno(turno_id, fecha_hora)` | Turno existe, es del cliente y está activo · hueco válido (mismas reglas que agendar) | Actualiza la misma fila y el evento, vuelve a sin confirmar y el recordatorio sale de nuevo. Nunca crea uno nuevo encima. Mismo descarte del texto propio que agendar_turno (`confirmacion_doble`) |
 | `cancelar_turno(turno_id, motivo)` | Turno del cliente y activo | Marca `cancelado` con `motivo_cancelacion` (no borra), libera el hueco y saca el evento de Calendar |
-| `guardar_datos_cliente({...})` | Campos de la ficha (§ 7) salvo los de código y las notas libres · enums de la base · fecha del evento no pasada | Update en `clientes`, con historial |
+| `guardar_datos_cliente({...})` | Campos de la ficha (§ 7) salvo los de código y las notas libres · enums de la base · fecha del evento no pasada · mail con forma de mail (hito 2.3), si no se rechaza con `email_invalido` | Update en `clientes`, con historial. El mail se guarda en minúscula (igual que el check de la base, 0029); uno nuevo y válido reemplaza al anterior |
 | `anotar(texto)` | — | Nota libre en la libreta (`notas`, autor `lucia`) |
 | `enviar_fotos(modelo_ids[])` | Máximo 3 · ids existen en catálogo, activos y con fotos | Manda la primera foto cargada en la ficha de cada modelo |
 | `enviar_link(tipo)` | tipo ∈ {mapa, resena, web} · el link está cargado en `enlaces` (se reconoce por el nombre) | Manda el link de `enlaces` |
@@ -216,12 +217,15 @@ nunca infiere.
 nombre · evento (casamiento / graduacion / fiesta / laboral / otro)
 fecha_evento · rol (novio / invitado / graduado / padre / otro)
 dia_o_noche · talle_aprox · ciudad · color_preferido · presupuesto_mencionado
+email (hito 2.3, formato validado en código, en minúscula)
 turno_id (lo pone código) · recordatorio_enviado_at (código)
 confirmado (código, solo tras la plantilla) · notas_libres
 ```
 
 La ficha completa se inyecta arriba de cada turno como TU LIBRETA. Si algo está
-ahí, Lucía ya lo sabe: no lo pregunta de nuevo y no se vuelve a presentar.
+ahí, Lucía ya lo sabe: no lo pregunta de nuevo y no se vuelve a presentar. Un
+mail sin forma de mail se descarta y queda en la bitácora, igual que una fecha
+o un enum inválido; nunca borra el que ya había (null no pisa nada).
 
 ---
 

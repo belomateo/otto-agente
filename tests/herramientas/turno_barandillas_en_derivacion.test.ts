@@ -12,6 +12,7 @@ import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import type { Db, Fila } from "../../supabase/functions/_shared/db.ts";
 import { calendarioDeEnsayo } from "../../supabase/functions/_shared/herramientas/tipos.ts";
 import { correrTurno } from "../../supabase/functions/_shared/turno/turno.ts";
+import { sinSignosDeApertura } from "../../supabase/functions/_shared/whatsapp/preparar.ts";
 import { AHORA, conBase, contar, fila, prueba, TZ } from "./_arnes.ts";
 
 // Arma una respuesta de Chat Completions mínima, con o sin tool_call.
@@ -217,8 +218,11 @@ prueba("supuesto #33 resuelto: solo una foto (sin texto) contesta con el texto f
     calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: fetcherQueNuncaHayQueLlamar,
   });
   assertEquals(resultado.derivo, false);
+  // El turno pasa por prepararParaEnviar (decisión #17, hito 2.3) antes de guardar: el «¿» del
+  // texto fijo se saca ahí, no en contexto_agente (el dueño lo sigue editando con buena
+  // ortografía en el panel).
   assertEquals(resultado.mensajesAlCliente, [
-    "Por ahora todavía no puedo leer fotos, audios ni stickers. ¿Me contás en un mensaje de texto qué necesitás? Así te ayudo enseguida.",
+    sinSignosDeApertura("Por ahora todavía no puedo leer fotos, audios ni stickers. ¿Me contás en un mensaje de texto qué necesitás? Así te ayudo enseguida."),
   ]);
 });
 
