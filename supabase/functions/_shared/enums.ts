@@ -41,6 +41,10 @@ export const MOTIVOS_DERIVACION = [
 export type MotivoDerivacion = typeof MOTIVOS_DERIVACION[number];
 
 // Con estos motivos no se le manda la despedida al cliente: sigue una persona (PROCESOS.md § 4).
+// Es sobre el mensaje_al_cliente que ESCRIBE EL MODELO al llamar derivar_a_persona (lo usa
+// derivar_a_persona.ts). No confundir con MOTIVOS_DERIVAN_EN_SILENCIO de _shared/turno/turno.ts:
+// esa otra es sobre si el turno manda incluso el texto fijo genérico al derivar por código (una
+// lista distinta, con motivos distintos, para una pregunta parecida).
 export const MOTIVOS_SIN_MENSAJE: readonly MotivoDerivacion[] = ["reclamo", "descuento"];
 
 // Motivos que SOLO decide el código, nunca el modelo llamando a derivar_a_persona (AGENTE.md

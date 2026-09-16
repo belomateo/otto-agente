@@ -9,7 +9,6 @@
 export type PrecioModelo = { entradaPorMillon: number; entradaCacheadaPorMillon: number; salidaPorMillon: number };
 
 export const PRECIOS: Record<string, PrecioModelo> = {
-  "gpt-6-astra": { entradaPorMillon: 10, entradaCacheadaPorMillon: 1, salidaPorMillon: 50 },
   "gpt-5.6-sol": { entradaPorMillon: 5, entradaCacheadaPorMillon: 0.5, salidaPorMillon: 30 },
   "gpt-5.6-terra": { entradaPorMillon: 2.5, entradaCacheadaPorMillon: 0.25, salidaPorMillon: 15 },
   "gpt-5.6-luna": { entradaPorMillon: 1, entradaCacheadaPorMillon: 0.1, salidaPorMillon: 6 },

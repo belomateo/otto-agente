@@ -32,7 +32,11 @@ import { prepararParaEnviar } from "../whatsapp/preparar.ts";
 export const LIMITE_TURNO_MS = 25_000;
 const CLAVE_TEXTO_DERIVACION_DURA = "texto_derivacion_dura_generica";
 const CLAVE_TEXTO_MENSAJE_NO_SOPORTADO = "texto_mensaje_no_soportado";
-const MOTIVOS_SIN_MENSAJE_PROPIO: readonly MotivoDerivacion[] = ["reclamo", "sin_respuesta", "timeout", "barandilla_doble"];
+// Con estos motivos, derivar() de acá abajo no manda nada al cliente, ni siquiera el texto fijo
+// genérico de derivación dura (CLAVE_TEXTO_DERIVACION_DURA). No confundir con MOTIVOS_SIN_MENSAJE
+// de _shared/enums.ts: esa otra es sobre la despedida que ESCRIBE EL MODELO al llamar
+// derivar_a_persona (otra lista, con otros motivos, para una pregunta parecida).
+const MOTIVOS_DERIVAN_EN_SILENCIO: readonly MotivoDerivacion[] = ["reclamo", "sin_respuesta", "timeout", "barandilla_doble"];
 
 export type ResultadoTurno = {
   mensajesAlCliente: string[];
@@ -48,7 +52,7 @@ async function derivar(
   p: { conversacionId: string; motivo: MotivoDerivacion; mensaje: string | null; derivacionTel: string | null },
 ): Promise<ResultadoTurno> {
   const { id } = await registrarDerivacion({ db, conversacionId: p.conversacionId, derivacionTel: p.derivacionTel }, p.motivo);
-  const mensajesAlCliente = MOTIVOS_SIN_MENSAJE_PROPIO.includes(p.motivo) ? [] : prepararParaEnviar([p.mensaje]);
+  const mensajesAlCliente = MOTIVOS_DERIVAN_EN_SILENCIO.includes(p.motivo) ? [] : prepararParaEnviar([p.mensaje]);
   return { mensajesAlCliente, imagenes: [], derivo: true, motivoDerivacion: p.motivo, avisoEquipo: { motivo: p.motivo, derivacionId: id }, bloqueadoPorVentana: false };
 }
 
