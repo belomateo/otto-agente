@@ -6,9 +6,11 @@
 // que la API ya trae calculadas). El aviso de sincronización con Calendar va además del estado
 // real del turno, nunca en su lugar (decisión #2, 12/9). Puerto de d-turnos.html / m-turnos.html.
 //
-// «Nuevo turno», «Mover», «Cancelar» y «Marcar alquiló» todavía no tienen ruta en paneles
-// (solo existen GET /api/turnos y el OK del cartel, H1.16): quedan deshabilitados con una nota,
-// en vez de simular una acción que no pasa a ninguna base.
+// Los estados del turno (Marcar alquiló/retiró/devolvió, No vino, Cancelar) van contra
+// PATCH /api/turnos/<id> (lib/edicion/entidades.ts, `turnos`): el servidor valida qué
+// transición es posible desde el estado actual y exige un motivo para cancelar. «Nuevo turno»
+// y «Mover» a otro horario todavía no tienen ruta en paneles: quedan deshabilitados con una
+// nota, en vez de simular una acción que no pasa a ninguna base.
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -18,6 +20,7 @@ import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
 import { useDatos } from '@/components/api/useDatos';
+import { useEstadoTurno } from '@/components/api/useEstadoTurno';
 import type { AgendaDelDia, FilaTurno } from '@/lib/queries/turnos';
 import { aHora, aMinutos, describirFranjas, horaCorta } from '../configuracion/agenda/franjas';
 
@@ -85,29 +88,100 @@ function Flechas({ fecha, children }: { fecha: string; children: React.ReactNode
   );
 }
 
-function AccionesTurno({ compacto = false }: { compacto?: boolean }) {
+// Próximo estado posible desde el actual (lib/edicion/entidades.ts, `turnos`, espejo de las
+// transiciones que valida el servidor). sin-confirmar y confirmado se tratan igual: las dos
+// pueden pasar a alquiló, no vino o cancelado.
+const SIGUIENTES: Record<string, { estado: string; label: string }[]> = {
+  'sin-confirmar': [
+    { estado: 'alquilo', label: 'Marcar alquiló' },
+    { estado: 'no-vino', label: 'No vino' },
+  ],
+  confirmado: [
+    { estado: 'alquilo', label: 'Marcar alquiló' },
+    { estado: 'no-vino', label: 'No vino' },
+  ],
+  alquilo: [{ estado: 'retiro', label: 'Marcar retiró' }],
+  retiro: [{ estado: 'devolvio', label: 'Marcar devolvió' }],
+};
+const PUEDE_CANCELAR = new Set(['sin-confirmar', 'confirmado', 'alquilo', 'retiro']);
+
+function AccionesTurno({ turno, compacto = false, onCambio }: { turno: FilaTurno; compacto?: boolean; onCambio: () => void }) {
+  const { enviando, error, cambiarEstado } = useEstadoTurno(turno, onCambio);
+  const [cancelando, setCancelando] = useState(false);
+  const [motivo, setMotivo] = useState('');
+
   const boton = compacto
-    ? 'flex-1 rounded-otto border border-borde bg-lino py-2 text-[14px] font-medium text-[#8A8578] md:text-[13px]'
-    : 'flex-1 rounded-otto border border-borde bg-lino py-3 text-sm font-medium text-[#8A8578]';
+    ? 'flex-1 rounded-otto border border-borde bg-lino py-2 text-[14px] font-medium md:text-[13px] disabled:opacity-50'
+    : 'flex-1 rounded-otto border border-borde bg-lino py-3 text-sm font-medium disabled:opacity-50';
+
+  const siguientes = SIGUIENTES[turno.estado] ?? [];
+  const puedeCancelar = PUEDE_CANCELAR.has(turno.estado);
+  if (siguientes.length === 0 && !puedeCancelar) return null; // estado final: nada para hacer acá
+
+  if (cancelando) {
+    return (
+      <div className="flex flex-col gap-2">
+        <input
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder="Motivo de la cancelación"
+          disabled={enviando}
+          className="w-full rounded-otto border border-borde bg-lino px-3 py-2.5 text-sm outline-none focus:border-cobre disabled:bg-hueso"
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setCancelando(false);
+              setMotivo('');
+            }}
+            disabled={enviando}
+            className={boton}
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (await cambiarEstado('cancelado', motivo.trim())) {
+                setCancelando(false);
+                setMotivo('');
+              }
+            }}
+            disabled={enviando || !motivo.trim()}
+            className="flex-1 rounded-otto bg-ladrillo py-3 text-sm font-medium text-lino disabled:opacity-50"
+          >
+            Confirmar cancelación
+          </button>
+        </div>
+        {error && <div className="text-center text-[14px] text-ladrillo md:text-xs">{error}</div>}
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="flex gap-2">
-        <button type="button" disabled className={boton} title={SIN_CONECTAR}>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled title={SIN_CONECTAR} className={`${boton} text-[#8A8578]`}>
           Mover
         </button>
-        <button type="button" disabled className={boton} title={SIN_CONECTAR}>
-          Cancelar
-        </button>
-        <button type="button" disabled className={boton}>
-          Marcar alquiló
-        </button>
+        {siguientes.map((s) => (
+          <button key={s.estado} type="button" onClick={() => cambiarEstado(s.estado)} disabled={enviando} className={boton}>
+            {s.label}
+          </button>
+        ))}
+        {puedeCancelar && (
+          <button type="button" onClick={() => setCancelando(true)} disabled={enviando} className={boton}>
+            Cancelar
+          </button>
+        )}
       </div>
-      <div className="mt-1 text-center text-[14px] text-[#8A8578] md:text-xs">{SIN_CONECTAR}: paneles todavía no tiene la ruta para mover, cancelar o cambiar el estado.</div>
+      {error && <div className="mt-1 text-center text-[14px] text-ladrillo md:text-xs">{error}</div>}
     </>
   );
 }
 
-function Popover({ turno, onCerrar }: { turno: FilaTurno; onCerrar: () => void }) {
+function Popover({ turno, onCerrar, onCambio }: { turno: FilaTurno; onCerrar: () => void; onCambio: () => void }) {
   const actual = PASOS.findIndex((p) => p.estado === turno.estado);
   return (
     <div
@@ -137,12 +211,22 @@ function Popover({ turno, onCerrar }: { turno: FilaTurno; onCerrar: () => void }
       <button type="button" disabled title={SIN_CONECTAR} className="mb-2 w-full rounded-otto border border-cobre bg-lino py-2.5 text-[14px] font-medium text-cobre/60 md:text-[13px]">
         Abrir la charla de WhatsApp
       </button>
-      <AccionesTurno />
+      <AccionesTurno turno={turno} onCambio={onCambio} />
     </div>
   );
 }
 
-function Grilla({ agenda, abiertoId, onAbrir }: { agenda: AgendaDelDia; abiertoId: string | null; onAbrir: (id: string | null) => void }) {
+function Grilla({
+  agenda,
+  abiertoId,
+  onAbrir,
+  onCambio,
+}: {
+  agenda: AgendaDelDia;
+  abiertoId: string | null;
+  onAbrir: (id: string | null) => void;
+  onCambio: () => void;
+}) {
   const probadores = Array.from({ length: agenda.probadores ?? 1 }, (_, i) => i + 1);
   // El rótulo «SIN TURNOS» va una sola vez por tramo: en el primer probador que lo tiene.
   const rotulados = new Set<string>();
@@ -219,13 +303,13 @@ function Grilla({ agenda, abiertoId, onAbrir }: { agenda: AgendaDelDia; abiertoI
           ))}
         </div>
 
-        {abierto && <Popover turno={abierto} onCerrar={() => onAbrir(null)} />}
+        {abierto && <Popover turno={abierto} onCerrar={() => onAbrir(null)} onCambio={onCambio} />}
       </div>
     </>
   );
 }
 
-function HojaTurno({ turno, onCerrar }: { turno: FilaTurno; onCerrar: () => void }) {
+function HojaTurno({ turno, onCerrar, onCambio }: { turno: FilaTurno; onCerrar: () => void; onCambio: () => void }) {
   const estilo = { background: turno.eb, color: turno.ef };
   return (
     <div role="dialog" aria-label={`Turno de ${turno.n}`} className="fixed inset-0 z-50 flex flex-col justify-end">
@@ -248,7 +332,7 @@ function HojaTurno({ turno, onCerrar }: { turno: FilaTurno; onCerrar: () => void
           <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto border border-cobre bg-lino py-3 text-sm font-medium text-cobre/60">
             Abrir la charla
           </button>
-          <AccionesTurno compacto />
+          <AccionesTurno turno={turno} compacto onCambio={onCambio} />
         </div>
       </div>
     </div>
@@ -300,7 +384,7 @@ export default function TurnosPage() {
             <EstadoVacio titulo={vacio.titulo} texto={vacio.texto} />
           </div>
         ) : (
-          <Grilla agenda={agenda} abiertoId={abiertoId} onAbrir={setAbiertoId} />
+          <Grilla agenda={agenda} abiertoId={abiertoId} onAbrir={setAbiertoId} onCambio={recargar} />
         )}
       </div>
 
@@ -362,7 +446,7 @@ export default function TurnosPage() {
       </div>
       {abierto && (
         <div className="md:hidden">
-          <HojaTurno turno={abierto} onCerrar={() => setAbiertoId(null)} />
+          <HojaTurno turno={abierto} onCerrar={() => setAbiertoId(null)} onCambio={recargar} />
         </div>
       )}
     </>

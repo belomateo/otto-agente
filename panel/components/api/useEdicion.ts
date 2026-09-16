@@ -9,6 +9,22 @@
 import { useState } from 'react';
 import { enviar, ErrorApi } from './cliente';
 
+// El `error` de una respuesta de validación (lib/api/respuestas.ts) es genérico ("Datos
+// inválidos"); el motivo de verdad viene en `detalle`, una lista de {campo, mensaje} (zod). Si
+// está, se muestra eso — así "mail inválido" dice "Email inválido", no un genérico que obliga
+// a adivinar qué campo falló.
+function motivoDeError(e: unknown): string {
+  if (!(e instanceof ErrorApi)) return 'No se pudo guardar';
+  const detalle = e.detalle;
+  if (Array.isArray(detalle) && detalle.length > 0) {
+    const mensajes = detalle
+      .map((d) => (d && typeof d === 'object' && 'mensaje' in d ? String((d as { mensaje: unknown }).mensaje) : null))
+      .filter((m): m is string => Boolean(m));
+    if (mensajes.length > 0) return mensajes.join(' · ');
+  }
+  return e.message;
+}
+
 export function useEdicion<T extends { version: number }>(inicial: T) {
   const [guardado, setGuardado] = useState(inicial);
   const [valor, setValor] = useState(inicial);
@@ -45,7 +61,7 @@ export function useEdicion<T extends { version: number }>(inicial: T) {
       setValor(nuevo);
       return null;
     } catch (e) {
-      return e instanceof ErrorApi ? e.message : 'No se pudo guardar';
+      return motivoDeError(e);
     } finally {
       setGuardando(false);
     }

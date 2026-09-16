@@ -103,11 +103,15 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
             {!compacto && charla.cliente.resumen && <span className="text-[14px] text-grafito md:text-[13px]">{charla.cliente.resumen}</span>}
           </div>
           {compacto ? (
-            <div className="truncate text-[14px] text-grafito md:text-xs">{charla.cliente.resumen || charla.cliente.telefono}</div>
+            <div className="truncate text-[14px] text-grafito md:text-xs">
+              {charla.cliente.resumen || charla.cliente.telefono}
+              {charla.cliente.email && ` · ${charla.cliente.email}`}
+            </div>
           ) : (
-            <div className="mt-0.5 flex items-center gap-1.5 text-[14px] text-grafito md:text-xs">
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[14px] text-grafito md:text-xs">
               <span className="inline-block h-[7px] w-[7px] rounded-pill bg-noche" />
               La charla la tiene {charla.quien}
+              {charla.cliente.email && <span className="ml-1">· {charla.cliente.email}</span>}
               {charla.cliente.etiqueta && <span className="ml-2 rounded-pill border border-borde px-2 py-0.5 text-[14px] md:text-[11px]">{charla.cliente.etiqueta}</span>}
               <span title="Todavía no conectado" className="cursor-not-allowed rounded-pill border border-dashed border-[#C9C4B9] px-2 py-0.5 text-[14px] text-[#8A8578] md:text-[11px]">
                 + Etiqueta

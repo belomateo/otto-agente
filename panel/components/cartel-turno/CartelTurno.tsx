@@ -63,6 +63,7 @@ function Detalle({ turno }: { turno: AvisoTurno }) {
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1">
         <Dato etiqueta="Teléfono" valor={turno.cliente.telefono_legible} />
+        <Dato etiqueta="Mail" valor={turno.cliente.email} />
         <Dato etiqueta="Evento" valor={evento} />
         <Dato etiqueta="Rol" valor={turno.cliente.rol} />
         <Dato etiqueta="Talle" valor={turno.cliente.talle_aprox} />
