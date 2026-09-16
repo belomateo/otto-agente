@@ -1,0 +1,78 @@
+// consultar_catalogo(color?, talle?) — modelos de alquiler (AGENTE.md § 4). Consulta.
+// Todo precio que diga Lucía sale de acá (regla 8) y va con lo que incluye, que también sale
+// de acá: la sección que-incluye de la base de conocimiento. Sin esa sección cargada no se da
+// ningún precio. El catálogo no tiene evento (paneles 0016): se filtra por color y talle.
+
+import { textosDeSeccion } from "../conocimiento/busqueda.ts";
+import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
+
+type Args = { color: string | null; talle: string | null };
+
+const MAXIMO_MODELOS = 10;
+
+function nombresDeColores(colores: unknown): string[] {
+  if (!Array.isArray(colores)) return [];
+  return colores.map((c) => String((c as { nombre?: unknown })?.nombre ?? "").trim()).filter(Boolean);
+}
+
+export const consultarCatalogo: Herramienta<Args> = {
+  nombre: "consultar_catalogo",
+  tipo: "consulta",
+  descripcion: "Devuelve los modelos de alquiler cargados: nombre, descripción, colores, talles, precio base y " +
+    "si tienen fotos. Obligatoria antes de decir cualquier precio o describir un modelo. Devuelve también qué " +
+    "incluye el precio: eso va SIEMPRE junto con el precio, en el mismo mensaje, dicho con tus palabras. " +
+    "Filtrá por color o talle solo si el cliente lo dijo. Si lo que busca no aparece, no está cargado: no lo aproximes.",
+  parametros: objeto({
+    color: { type: ["string", "null"], maxLength: 40, description: "Color que pidió el cliente, o null." },
+    talle: { type: ["string", "null"], maxLength: 10, description: "Talle que dijo el cliente, o null." },
+  }),
+  async ejecutar(args, ctx) {
+    const queIncluye = await textosDeSeccion(ctx.db, "que-incluye");
+    if (!queIncluye) {
+      return rechazo(
+        "falta_que_incluye",
+        "Falta cargar qué incluye el precio (sección que-incluye) y sin eso no se da un precio. Si el cliente pide precio, derivá con motivo dato_no_encontrado.",
+      );
+    }
+    const filtros = ["activo"];
+    const valores: unknown[] = [];
+    const color = limpio(args.color);
+    const talle = limpio(args.talle);
+    if (color) {
+      valores.push(color);
+      filtros.push(
+        `exists (select 1 from jsonb_array_elements(colores) c
+                  where immutable_unaccent(lower(c->>'nombre')) like '%' || immutable_unaccent(lower($${valores.length})) || '%')`,
+      );
+    }
+    if (talle) {
+      valores.push(talle);
+      filtros.push(`exists (select 1 from unnest(talles) t where lower(t) = lower($${valores.length}))`);
+    }
+    const filas = await ctx.db.consulta(
+      `select id::text as id, modelo, descripcion, colores, talles, precio_base::float8 as precio_base,
+              coalesce(cardinality(fotos), 0) as fotos
+         from catalogo_alquiler where ${filtros.join(" and ")}
+        order by precio_base, modelo limit ${MAXIMO_MODELOS}`,
+      valores,
+    );
+    const total = Number((await ctx.db.consulta("select count(*)::int as n from catalogo_alquiler where activo"))[0]?.n ?? 0);
+    const modelos = filas.map((f) => ({
+      id: String(f.id),
+      modelo: String(f.modelo),
+      descripcion: f.descripcion === null ? null : String(f.descripcion),
+      colores: nombresDeColores(f.colores),
+      talles: Array.isArray(f.talles) ? f.talles.map(String) : [],
+      precio_base: Number(f.precio_base),
+      tiene_fotos: Number(f.fotos) > 0,
+    }));
+    ctx.traza.preciosDevueltos.push(...modelos.map((m) => m.precio_base));
+    const datos: Record<string, unknown> = { modelos, que_incluye: queIncluye, modelos_cargados_en_total: total };
+    if (modelos.length === 0) {
+      datos.nota = total === 0
+        ? "No hay ningún modelo cargado todavía. No des precios ni describas modelos: si el cliente los pide, derivá con motivo dato_no_encontrado."
+        : "Con ese color o talle no hay nada cargado. Decilo sin un «no» a secas y ofrecé lo que sí hay (consultá sin filtros).";
+    }
+    return { ok: true, datos };
+  },
+};
