@@ -494,6 +494,25 @@ try {
       x.datos.mensajes.map((m) => m.autor).join(",") === "cliente,lucia,cliente",
       `Charla › autor por mensaje, sin mostrador todavía (corrección de logica): ${x.datos.mensajes.map((m) => m.autor).join(",")}`
     );
+    ok(
+      x.datos.mensajes.every((m) => m.no_enviado_motivo === null),
+      `Charla › no_enviado_motivo en null cuando no pasó nada raro: ${x.datos.mensajes.map((m) => m.no_enviado_motivo).join(",")}`
+    );
+  }
+  {
+    // 0042 (logica): la ventana se puede cerrar entre que se escribe y que el worker lo toma;
+    // el worker lo marca en mensajes.no_enviado_motivo. No hay forma de disparar al worker real
+    // desde el arnés (ver el comentario de mostrador_enviar más abajo), así que se simula
+    // directo en la base, como haría el worker, y se prueba que el GET lo expone.
+    const idMsj = (await q("select id from mensajes where conversacion_id = $1 order by enviado_at limit 1", [conv]))[0].id;
+    await q("update mensajes set no_enviado_motivo = 'ventana_cerrada' where id = $1", [idMsj]);
+    const x = await api(sa, "GET", `/api/bandeja/${conv}`);
+    const m = x.datos.mensajes.find((v) => v.id === idMsj);
+    ok(
+      m?.no_enviado_motivo === "ventana_cerrada" && x.datos.mensajes.filter((v) => v.id !== idMsj).every((v) => v.no_enviado_motivo === null),
+      `Charla › no_enviado_motivo (0042, logica) sale en el mensaje marcado y en ningún otro (${m?.no_enviado_motivo})`
+    );
+    await q("update mensajes set no_enviado_motivo = null where id = $1", [idMsj]);
   }
   let derivId;
   {
