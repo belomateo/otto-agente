@@ -724,7 +724,9 @@ try {
   {
     const x = await api(sa, "GET", "/api/configuracion");
     ok(
-      x.status === 200 && x.datos.reglas.length >= 1 && x.datos.reglas.every((r) => tiene(r, ["i", "t", "id", "version"])) && x.datos.agenda.horarios.length === 6 && x.datos.agenda.duraciones.length === 6 && x.datos.agenda.configuracion?.cantidad_probadores === 3 && x.datos.herramientas.length === 13 && Boolean(x.datos.presentacion),
+      // herramientas: >= 13 (las de H1.4), no === 13: agente suma herramientas nuevas con el
+      // tiempo (p. ej. confirmar_turno, 16/9) y esto no es un control de cuántas hay.
+      x.status === 200 && x.datos.reglas.length >= 1 && x.datos.reglas.every((r) => tiene(r, ["i", "t", "id", "version"])) && x.datos.agenda.horarios.length === 6 && x.datos.agenda.duraciones.length === 6 && x.datos.agenda.configuracion?.cantidad_probadores === 3 && x.datos.herramientas.length >= 13 && Boolean(x.datos.presentacion),
       `Configuración (${x.status}): ${x.datos.reglas?.length} reglas, ${x.datos.agenda?.horarios.length} horarios, ${x.datos.herramientas?.length} herramientas`
     );
     const y = await api(sa, "GET", `/api/historial?tabla=perfiles&id=${A.id}`);
