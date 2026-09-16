@@ -208,6 +208,11 @@ Deno.test("precio_sin_herramienta reconoce CUALQUIER monto corto suelto, no solo
       "por 150 te llevás el combo",
       "arranca en 150",
       "y bueno, 150 y sale con todo",
+      // Tercera vuelta, 16/9: el lookahead descartaba con CUALQUIER puntuación después, incluida
+      // la de la oración — esto es casi todo precio que cae al final de una frase.
+      "son 150, más el accesorio",
+      "son 150. Te sirve?",
+      "el traje sale 150.",
     ]
   ) {
     assert(montos(frase).length > 0, `"${frase}" tendría que reconocer un monto`);
@@ -216,6 +221,9 @@ Deno.test("precio_sin_herramienta reconoce CUALQUIER monto corto suelto, no solo
   assertEquals(montos("sale 150 mil"), [150000]);
   await salta(precioSinHerramienta, entrada("Un traje te sale como 150 😊"));
   await salta(precioSinHerramienta, entrada("Por 150 te llevás el combo completo."));
+  // Ojo acá con el punto final pegado al número ("como 150."): tiene que reconocerlo (no vale que
+  // "no salta" dé lo mismo por no haber encontrado nada que por haberlo encontrado en la traza).
+  assertEquals(montos("Un traje te sale como 150."), [150]);
   await noSalta(precioSinHerramienta, entrada("Un traje te sale como 150.", { traza: traza({ precios: [150] }) }));
 });
 
@@ -228,9 +236,12 @@ Deno.test("precio_sin_herramienta no confunde un número con contexto que lo exp
   assertEquals(montos("uso el talle 44"), []);
   assertEquals(montos("tenemos del 44 al 68"), []);
   assertEquals(montos("mide 170"), []);
+  assertEquals(montos("medís 180 de altura?"), []);
+  assertEquals(montos("170 de altura"), []);
   assertEquals(montos("tengo 44 años"), []);
   assertEquals(montos("es el cumpleaños de 15 de mi hija"), []);
   await noSalta(precioSinHerramienta, entrada("El talle 48 te queda bien."));
+  await noSalta(precioSinHerramienta, entrada("¿Medís 180 de altura?"));
   await noSalta(precioSinHerramienta, entrada("Estamos en España 764, Rosario."));
   await noSalta(precioSinHerramienta, entrada("Nos vemos a las 15."));
   await noSalta(precioSinHerramienta, entrada("Se puede pagar en 3 cuotas."));

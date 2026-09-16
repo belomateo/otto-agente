@@ -25,7 +25,9 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   /\d+(?:[.,]\d+)?\s*(?:mil|lucas|k)\b/g, // "150 mil": ya lo cuenta la regla del millar, es OTRO monto
   /\btalle\s+\d{2,3}\b/g, // "talle 48"
   /\bdel?\s+\d{2,3}\s+al?\s+\d{2,3}\b/g, // rango de talles: "del 44 al 68"
-  /\b(?:mide|mido|altura)\s+\d{2,3}\b/g, // altura en cm
+  /\b(?:mide|mido|medis|medimos|altura)\s+\d{2,3}\b/g, // "mide/medís 170", "altura 170"
+  /\b\d{2,3}\s+de\s+altura\b/g, // "170 de altura"
+  /\b\d{2,3}\s*cm\b/g, // "170cm" / "170 cm"
   /\ba\s+las?\s+\d{1,2}\b(?!\s*[:.]\d)/g, // hora sin dos puntos: "a las 15"
   /\b\d{1,2}\s*(?:hs|h|horas)\b/g, // hora: "15 hs"
   /\b\d{1,3}\s+(?:cuotas?|pagos?|meses)\b/g, // "en 3 cuotas"
@@ -49,8 +51,14 @@ export function montos(t: string): number[] {
     res.add(Math.round(Number(m[1].replace(",", ".")) * 1000));
   }
   // Cualquier número suelto de 2 o 3 cifras, salvo que el contexto lo explique de otra forma.
+  // Hallazgo de Mateo, 16/9 (tercera vuelta): (?![\d.,:]) descartaba con CUALQUIER puntuación
+  // después, incluida la de la oración — "son 150, más el accesorio" y "son 150. Te sirve?" no
+  // se detectaban, que es casi todo precio al final de una frase. El punto/coma/dos puntos solo
+  // separa un número de otro (150.000, 15:30) cuando sigue OTRO DÍGITO pegado; si sigue una
+  // palabra o un espacio, es puntuación de la oración y no descarta nada. Mismo criterio para
+  // atrás: 000 en 150.000 va precedido de dígito+punto pegado, no de puntuación suelta.
   const enmascarado = enmascararContexto(crudo);
-  for (const m of enmascarado.matchAll(/(?<![\d.,:])(\d{2,3})(?![\d.,:])/g)) res.add(Number(m[1]));
+  for (const m of enmascarado.matchAll(/(?<!\d)(?<!\d[.,:])(\d{2,3})(?!\d)(?![.,:]\d)/g)) res.add(Number(m[1]));
   return [...res].filter((n) => Number.isFinite(n) && n > 0);
 }
 
