@@ -30,6 +30,7 @@ import { eventosDeLaTraza, registrarConsumo, registrarEventos, type EventoAgente
 
 export const LIMITE_TURNO_MS = 25_000;
 const CLAVE_TEXTO_DERIVACION_DURA = "texto_derivacion_dura_generica";
+const CLAVE_TEXTO_MENSAJE_NO_SOPORTADO = "texto_mensaje_no_soportado";
 const MOTIVOS_SIN_MENSAJE_PROPIO: readonly MotivoDerivacion[] = ["reclamo", "sin_respuesta", "timeout", "barandilla_doble"];
 
 export type ResultadoTurno = {
@@ -95,6 +96,16 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
   try {
     if (!mensaje) {
+      // Supuesto #33: llegó algo (foto, audio, sticker, ubicación...) pero no hay nada de texto
+      // para leer — no es lo mismo que "no pasó nada" (rafaga.soloNoTexto lo distingue). No tiene
+      // sentido gastar el clasificador ni el principal en esto: no hay una palabra que entender,
+      // así que el texto es fijo, en código, como el de una derivación dura.
+      if (rafaga.soloNoTexto) {
+        eventos.push({ tipo: "pensamiento", detalle: { etapa: "no-es-texto", nota: "mensaje entrante sin texto (foto/audio/sticker/otro): contesta con el texto fijo, sin pasar por el modelo" } });
+        const texto = await textoDeContexto(db, CLAVE_TEXTO_MENSAJE_NO_SOPORTADO);
+        resultado = { mensajesAlCliente: enBurbujas(texto), imagenes: [], derivo: false, bloqueadoPorVentana: false };
+        return resultado;
+      }
       eventos.push({ tipo: "error", detalle: { etapa: "agrupar-rafaga", error: "no había ningún mensaje entrante nuevo para contestar" } });
       resultado = { mensajesAlCliente: [], imagenes: [], derivo: false, bloqueadoPorVentana: false };
       return resultado;
@@ -114,6 +125,10 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
     // Paso 4b — el clasificador, red para la intención de derivar cuando no hay palabra clave.
     historial = await leerHistorial(db, p.conversacionId, rafaga.desde);
+    // Sin nada antes de esta ráfaga, es la primera vez que Lucía le contesta algo en esta charla
+    // (hallazgo M2 del tester, 15/9: lo usa presentacion_repetida para no dejar que se vuelva a
+    // presentar en un mensaje que no es el primero).
+    const esPrimerMensaje = historial.length === 0;
     const clasificacion = await clasificar(ultimasLineasParaClasificar(historial, mensaje), p.fetcher);
     if (!clasificacion) {
       eventos.push({ tipo: "error", detalle: { etapa: "clasificar", error: "sin respuesta del clasificador; se sigue sin derivar por esta vía" } });
@@ -174,7 +189,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       const mensajesRevisados: string[] = [];
       let seDescartoAlgo = false;
       for (const pieza of piezas) {
-        const b = await aplicarBarandillas({ texto: pieza, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt });
+        const b = await aplicarBarandillas({ texto: pieza, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje });
         for (const s of b.saltos) eventos.push({ tipo: "error", detalle: { etapa: "barandilla-en-derivacion", barandilla: s.barandilla, accion: s.accion, motivo: s.motivo } });
         if (b.decision === "enviar") mensajesRevisados.push(...enBurbujas(b.texto));
         else if (b.decision !== "bloquear") seDescartoAlgo = true;
@@ -211,7 +226,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
     // Paso 8 — barandillas sobre lo que escribió Lucía. Hasta un "rehacer".
     const evaluar = (texto: string, saltosPrevios: number) =>
-      aplicarBarandillas({ texto, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt }, { saltosPrevios });
+      aplicarBarandillas({ texto, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje }, { saltosPrevios });
 
     let b = await evaluar(r.textoFinal, 0);
     if (b.decision === "rehacer") {
@@ -269,28 +284,33 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     // pesando cuando el turno de ahora no lo repite ("es de noche, en un salón"), o el extractor
     // adivina sin contexto y puede llegar a PISAR un campo que ya estaba bien con una suposición
     // (pasó de verdad probando esto: "evento" cambió de casamiento a fiesta en el turno 3, que
-    // no volvía a nombrar el casamiento). No bloquea ni rompe el turno si falla.
-    try {
-      const textoLucia = resultado ? resultado.mensajesAlCliente.join("\n") : "";
-      const turnoActual = `Cliente: ${mensaje}` + (textoLucia ? `\nLucía: ${textoLucia}` : "");
-      const turnoTexto = [...historial.map((m) => `${m.role === "user" ? "Cliente" : "Lucía"}: ${m.content}`), turnoActual].join("\n");
-      const extraccion = await extraer(turnoTexto, p.fetcher);
-      if (!extraccion) {
-        eventos.push({ tipo: "error", detalle: { etapa: "extraer", error: "sin respuesta del extractor" } });
-      } else {
-        llamadasLlm.push({
-          modelo: Deno.env.get("LLM_EXTRACTOR") ?? "",
-          uso: { tokensIn: extraccion.tokensIn, tokensOut: extraccion.tokensOut, tokensCacheados: extraccion.tokensCacheados },
-          ms: extraccion.ms,
-        });
-        if (Object.keys(extraccion.ficha).length > 0) {
-          const campos = await actualizarFicha(db, p.clienteId, extraccion.ficha);
-          if (campos.length) eventos.push({ tipo: "pensamiento", detalle: { etapa: "extraer", guardado: campos } });
+    // no volvía a nombrar el casamiento). No bloquea ni rompe el turno si falla. Sin mensaje de
+    // texto de este turno (nada nuevo, o supuesto #33) no hay nada que el cliente haya dicho de
+    // sí mismo para leer: no tiene sentido pagar un llamado que no puede extraer nada nuevo
+    // (hallazgo propio, 15/9: antes se llamaba igual, con "Cliente: " vacío).
+    if (mensaje) {
+      try {
+        const textoLucia = resultado ? resultado.mensajesAlCliente.join("\n") : "";
+        const turnoActual = `Cliente: ${mensaje}` + (textoLucia ? `\nLucía: ${textoLucia}` : "");
+        const turnoTexto = [...historial.map((m) => `${m.role === "user" ? "Cliente" : "Lucía"}: ${m.content}`), turnoActual].join("\n");
+        const extraccion = await extraer(turnoTexto, p.fetcher);
+        if (!extraccion) {
+          eventos.push({ tipo: "error", detalle: { etapa: "extraer", error: "sin respuesta del extractor" } });
+        } else {
+          llamadasLlm.push({
+            modelo: Deno.env.get("LLM_EXTRACTOR") ?? "",
+            uso: { tokensIn: extraccion.tokensIn, tokensOut: extraccion.tokensOut, tokensCacheados: extraccion.tokensCacheados },
+            ms: extraccion.ms,
+          });
+          if (Object.keys(extraccion.ficha).length > 0) {
+            const campos = await actualizarFicha(db, p.clienteId, extraccion.ficha);
+            if (campos.length) eventos.push({ tipo: "pensamiento", detalle: { etapa: "extraer", guardado: campos } });
+          }
+          if (extraccion.descartados.length) eventos.push({ tipo: "error", detalle: { etapa: "extraer", descartados: extraccion.descartados } });
         }
-        if (extraccion.descartados.length) eventos.push({ tipo: "error", detalle: { etapa: "extraer", descartados: extraccion.descartados } });
+      } catch (e) {
+        eventos.push({ tipo: "error", detalle: { etapa: "extraer", error: String((e as Error)?.message ?? e) } });
       }
-    } catch (e) {
-      eventos.push({ tipo: "error", detalle: { etapa: "extraer", error: String((e as Error)?.message ?? e) } });
     }
 
     // Paso 11 — bitácora. Siempre, pase lo que pase arriba: si esto tira (hallazgo propio,

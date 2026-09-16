@@ -2,15 +2,16 @@
 // mientras CRONS_ENVIOS no valga "on", rechaza un tipo desconocido), los tres crons programados,
 // y el botón "Confirmo" de punta a punta: el mensaje entra por registrar_mensaje_entrante con la
 // charla DERIVADA, el trigger dispara el worker desplegado y el turno queda confirmado por el
-// cliente. Usa un teléfono de prueba que no está en WORKER_STUB_TELEFONOS (con los envíos
-// apagados no se le contesta) y borra todo lo que crea al terminar.
+// cliente. Usa un teléfono que no existe, que no está en LUCIA_TELEFONOS y que no es de los
+// ficticios 5490000000… (a esos Lucía les contesta siempre): con los envíos apagados no se le
+// contesta. Borra todo lo que crea al terminar.
 // Uso: node tests/sql/envios-desplegado.mjs
 import "dotenv/config";
 import pg from "pg";
 
 const BASE = `${process.env.SUPABASE_URL}/functions/v1`;
 const SECRETO = process.env.WORKER_SECRET;
-const TEL = "5490000000078";
+const TEL = "5490000019078";
 
 if (!SECRETO || !process.env.SUPABASE_URL || !process.env.SUPABASE_DB_URL) {
   console.error("Faltan SUPABASE_URL, SUPABASE_DB_URL y WORKER_SECRET en .env.");

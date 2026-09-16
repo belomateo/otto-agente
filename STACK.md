@@ -57,10 +57,9 @@ Un proyecto nuevo, solo para Otto. Nada compartido con otros clientes de ZW Labs
 | --- | --- | --- |
 | `webhook-whatsapp` | POST de Meta | Verifica firma, dedup por `wa_message_id`, guarda mensaje, encola. Responde 200 en < 1 s siempre. |
 | `worker` | pg_cron cada 10 s / o llamada tras encolar | Toma trabajos, corre el turno del agente (ver `AGENTE.md` § 3), envía por Meta, escribe bitácora. |
-| `cron-recordatorios` | pg_cron cada 15 min | Turnos a 24 hs sin recordatorio → manda plantilla, marca `recordatorio_enviado_at`. |
-| `cron-confirmacion` | webhook (respuesta al botón) | Marca `confirmado=true` **solo** cuando llega la respuesta a la plantilla. Código puro. |
-| `cron-post-evento` | pg_cron diario | Turnos con devolución registrada ayer → agradecimiento + pedido de reseña. |
+| `cron-envios` | pg_cron por `tipo` (0022) | Los cuatro envíos por plantilla: recordatorio 24 hs antes del turno (marca `recordatorio_enviado_at`), agradecimiento con pedido de reseña tras la devolución, y los dos recontactos. Apagado mientras `CRONS_ENVIOS` no valga `on`: espera que Meta apruebe las plantillas. |
 | `cron-analista` | pg_cron 03:00 | Subagente LLM que lee las charlas del día y propone mejoras (ver `PROCESOS.md` § 6). |
+| — | webhook (respuesta al botón) | La confirmación del turno **no es una función aparte**: la resuelve el `worker` (`confirmarPorBoton` en `atender.ts`, `turno_confirmar_por_boton` en 0021). |
 | `probar-agente` | POST desde `scripts/` | Emulador: mismo agente, misma base, sin Meta, sin Calendar real (usa modo dry-run). |
 
 ---
@@ -90,9 +89,16 @@ Reglas de uso:
 
 ---
 
-## 4. Agenda — Google Calendar y doyturnos
+## 4. Agenda — calendario propio (Google Calendar, en pausa)
 
-**Google Calendar** (✅ integración decidida): un calendario por probador (3) o uno
+**Hoy la agenda es propia**: los turnos viven solo en la tabla `turnos` y
+`_shared/agenda/calendario_propio.ts` es un `Calendario` que no hace nada afuera.
+Lo decidió Mateo el 15/9 (decisión #13 de `docs/decisiones-pendientes-fase1.md`):
+primero que Lucía agende con la lógica del negocio, Calendar después.
+
+Lo que sigue queda escrito **por si Calendar vuelve**, no es lo que corre:
+
+**Google Calendar** (en pausa): un calendario por probador (3) o uno
 solo con el probador como campo — decisión de `logica` en la fase 1; supuesto:
 **un calendario "Otto Su Misura — Alquiler" con el probador en la descripción**,
 que es lo que el equipo va a mirar desde el celular. Acceso por cuenta de servicio
@@ -179,9 +185,9 @@ GOOGLE_CALENDAR_ID
 
 # Negocio
 NEGOCIO_TZ=America/Argentina/Cordoba
-LINK_RESENA_GOOGLE
-LINK_MAPS
 DERIVACION_ALQUILER_TEL            # a quién se avisa cuando Lucía deriva
+# Los links (reseña, maps, catálogo) NO van acá: viven en la tabla `enlaces` y se
+# editan desde Configuración › Enlaces. Los resuelve enlaceDeTipo().
 ```
 
 ---

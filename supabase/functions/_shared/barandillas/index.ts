@@ -1,4 +1,4 @@
-// Las 11 barandillas de AGENTE.md § 6, en su orden: formato → contenido → reglas.
+// Las barandillas de AGENTE.md § 6, en su orden: formato → contenido → reglas.
 //
 // aplicarBarandillas corre todas sobre el texto que Lucía quiere mandar. Las que arreglan en
 // código (limpiar, cortar, quitar la pregunta) cambian el texto y lo pasan a la siguiente; no
@@ -15,6 +15,7 @@
 
 import { accesorioSinHerramienta } from "./accesorio_sin_herramienta.ts";
 import { anunciaSinDerivar } from "./anuncia_sin_derivar.ts";
+import { confirmacionDoble } from "./confirmacion_doble.ts";
 import { derivaYPregunta } from "./deriva_y_pregunta.ts";
 import { fueraVentanaMeta } from "./fuera_ventana_meta.ts";
 import { horarioSinHerramienta } from "./horario_sin_herramienta.ts";
@@ -22,14 +23,17 @@ import { largo } from "./largo.ts";
 import { mencionaIa } from "./menciona_ia.ts";
 import { noASecas } from "./no_a_secas.ts";
 import { precioSinHerramienta } from "./precio_sin_herramienta.ts";
+import { presentacionRepetida } from "./presentacion_repetida.ts";
 import { sinMarkdown } from "./sin_markdown.ts";
 import { sinRelleno } from "./sin_relleno.ts";
 import type { Accion, Barandilla, EntradaBarandilla } from "./tipos.ts";
 import { unaPregunta } from "./una_pregunta.ts";
 
 export const BARANDILLAS: readonly Barandilla[] = [
+  confirmacionDoble,
   sinMarkdown,
   sinRelleno,
+  presentacionRepetida,
   unaPregunta,
   largo,
   precioSinHerramienta,

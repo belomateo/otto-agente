@@ -1,6 +1,6 @@
 // Que las barandillas no se desalineen de lo que dicen el prompt y AGENTE.md: las fórmulas de
-// relleno que prohíbe el prompt son las que corta sin_relleno, y las 11 de AGENTE.md § 6 son
-// las del código, cada una en su archivo (TRABAJO.md § 5).
+// relleno que prohíbe el prompt son las que corta sin_relleno, y las de AGENTE.md § 6 son las
+// del código, en el mismo orden y cada una en su archivo (TRABAJO.md § 5).
 
 import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import { BARANDILLAS } from "../../supabase/functions/_shared/barandillas/index.ts";

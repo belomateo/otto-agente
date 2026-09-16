@@ -69,6 +69,13 @@ async function insertarEntrante(sql: import("npm:pg@8.13.1").Client, conversacio
   );
 }
 
+async function insertarEntranteNoTexto(sql: import("npm:pg@8.13.1").Client, conversacionId: string, tipo: string) {
+  await sql.query(
+    "insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at) values ($1, 'entrante', $2, null, $3::timestamptz)",
+    [conversacionId, tipo, AHORA.toISOString()],
+  );
+}
+
 prueba("C1 resuelto: una despedida de derivar_a_persona que menciona \"el sistema\" no llega tal cual al cliente", async ({ ctx, sql, conversacionId }) => {
   await insertarEntrante(sql, conversacionId, "hola, quiero un turno pero no me deja");
   const fetcher = fetcherSimulado("Che, el sistema no me permite hacer eso ahora. Le paso tu consulta al equipo.");
@@ -192,4 +199,34 @@ Deno.test({
         await sql.query("rollback");
       }
     }),
+});
+
+// Supuesto #33 (H2.1, 15/9): antes, una foto/audio/sticker sin texto no tenía respuesta. Un
+// `fetcher` que tira si se llama prueba, de forma directa, que esto NUNCA llega a ningún LLM
+// (ni clasificador, ni principal, ni el extractor del paso 10 — este último se paró acá mismo:
+// antes se llamaba igual, con "Cliente: " vacío, un gasto que no podía extraer nada nuevo): el
+// texto es fijo, en código, igual que una derivación dura.
+const fetcherQueNuncaHayQueLlamar = (() => {
+  throw new Error("no tendría que llamar a ningún LLM para un mensaje que no es texto");
+}) as unknown as typeof fetch;
+
+prueba("supuesto #33 resuelto: solo una foto (sin texto) contesta con el texto fijo, sin pasar por el modelo", async ({ ctx, sql, conversacionId }) => {
+  await insertarEntranteNoTexto(sql, conversacionId, "image");
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: fetcherQueNuncaHayQueLlamar,
+  });
+  assertEquals(resultado.derivo, false);
+  assertEquals(resultado.mensajesAlCliente, [
+    "Por ahora todavía no puedo leer fotos, audios ni stickers. ¿Me contás en un mensaje de texto qué necesitás? Así te ayudo enseguida.",
+  ]);
+});
+
+prueba("supuesto #33, caso parecido: nada nuevo en la ráfaga sigue sin contestar nada (no se confunde con soloNoTexto)", async ({ ctx, conversacionId }) => {
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: fetcherQueNuncaHayQueLlamar,
+  });
+  assertEquals(resultado.mensajesAlCliente, []);
+  assertEquals(resultado.derivo, false);
 });

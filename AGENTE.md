@@ -84,6 +84,8 @@ una función separada en `_shared/`, testeable sola.
 1. webhook-whatsapp      recibe → verifica firma → dedup → guarda mensaje → encola
 2. worker                toma el trabajo (SKIP LOCKED)
 3. agrupar_rafaga        espera 4 s: si llegan más mensajes del mismo cliente, se contestan juntos
+     └ si lo único que llegó no es texto (foto, audio, sticker — supuesto #33)
+       → texto fijo en código, sin pasar por ningún LLM, y FIN
 4. clasificar            LLM_CLASIFICADOR → { intencion, urgencia, derivar_duro: bool }   [JSON estricto]
      └ si derivar_duro (reclamo / prenda dañada / corporativo / turno urgente sin hueco)
        → derivar_a_persona en código, con texto fijo, y FIN
@@ -129,8 +131,8 @@ el índice del prompt.
 
 | Herramienta | Precondiciones que el código verifica | Efecto |
 | --- | --- | --- |
-| `agendar_turno(fecha_hora, tipo, nombre, evento, fecha_evento)` | Fecha futura · cliente sin turno activo · nombre y fecha del evento presentes (en los argumentos o en la ficha), el evento no pasó y el turno no cae después · hueco salió de `buscar_horarios` en este turno para ese tipo · dentro de una franja de turnos vigente · dura lo que dice `duraciones_turno` | Fila en `turnos` en el primer probador libre + ficha + evento en Google Calendar (si falla, el turno queda con `aviso`) + confirmación armada en código (fecha y hora, el fragmento de `como-funciona` sobre el turno en el local, el mapa de `enlaces`) que sale en un mensaje aparte. No recibe teléfono: el turno es siempre del cliente de la charla |
-| `reprogramar_turno(turno_id, fecha_hora)` | Turno existe, es del cliente y está activo · hueco válido (mismas reglas que agendar) | Actualiza la misma fila y el evento, vuelve a sin confirmar y el recordatorio sale de nuevo. Nunca crea uno nuevo encima |
+| `agendar_turno(fecha_hora, tipo, nombre, evento, fecha_evento)` | Fecha futura · cliente sin turno activo · nombre y fecha del evento presentes (en los argumentos o en la ficha), el evento no pasó y el turno no cae después · hueco salió de `buscar_horarios` en este turno para ese tipo · dentro de una franja de turnos vigente · dura lo que dice `duraciones_turno` | Fila en `turnos` en el primer probador libre + ficha + evento en Google Calendar (si falla, el turno queda con `aviso`) + confirmación armada en código (fecha y hora, el fragmento de `como-funciona` sobre el turno en el local, el mapa de `enlaces`) que sale en un mensaje aparte. No recibe teléfono: el turno es siempre del cliente de la charla. El texto propio del modelo en este turno se descarta (barandilla `confirmacion_doble`): la confirmación es solo la de código |
+| `reprogramar_turno(turno_id, fecha_hora)` | Turno existe, es del cliente y está activo · hueco válido (mismas reglas que agendar) | Actualiza la misma fila y el evento, vuelve a sin confirmar y el recordatorio sale de nuevo. Nunca crea uno nuevo encima. Mismo descarte del texto propio que agendar_turno (`confirmacion_doble`) |
 | `cancelar_turno(turno_id, motivo)` | Turno del cliente y activo | Marca `cancelado` con `motivo_cancelacion` (no borra), libera el hueco y saca el evento de Calendar |
 | `guardar_datos_cliente({...})` | Campos de la ficha (§ 7) salvo los de código y las notas libres · enums de la base · fecha del evento no pasada | Update en `clientes`, con historial |
 | `anotar(texto)` | — | Nota libre en la libreta (`notas`, autor `lucia`) |
@@ -180,8 +182,10 @@ en el caso parecido. Orden: formato → contenido → reglas.
 
 | Barandilla | Qué detecta | Qué hace |
 | --- | --- | --- |
+| `confirmacion_doble` | `agendar_turno` o `reprogramar_turno` salió bien en este turno: la confirmación ya la arma el código aparte (hallazgo de Mateo probando el worker real, H2.1, 15/9: el cliente recibía dos «¡Listo!») | Descarta entero el texto del modelo |
 | `sin_markdown` | `**`, `__`, `*negrita*`, `#` o `- ` al inicio, ```, links en markdown | Limpia en código |
 | `sin_relleno` | Las fórmulas prohibidas al final (la lista incluye todas las del prompt) | Corta la frase, y las anteriores si también son relleno |
+| `presentacion_repetida` | De las primeras 3 oraciones, alguna trae «soy Lucía» + «Otto» juntos (cualquiera de las dos formas del nombre), y no es el primer mensaje de la charla (hallazgo M2 del tester, 15/9: se presenta dos veces si una pregunta la pone a la defensiva, a veces parafraseando la apertura) | Corta hasta ahí (incluido un «¡Hola!» suelto antes, si lo hay) |
 | `una_pregunta` | Más de un `?` de cierre (varios seguidos cuentan como uno) | Rehace |
 | `largo` | Un bloque de más de 600 caracteres sin línea en blanco | Rehace pidiendo párrafos cortos |
 | `precio_sin_herramienta` | Un monto ($150.000, 150000, 150 mil) que no devolvió `consultar_catalogo` ni `consultar_accesorios` en este turno: precio sin herramienta o total armado sumando (regla 9) | Rehace |
@@ -193,7 +197,7 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje); además, desde el 15/9 (hallazgo M3 del tester), un patrón más amplio: "ia" cerca de una palabra de meta-funcionamiento («instrucción», «configuración», «protege», «entrena», «responde de forma segura»), para cubrir una frase que rodea el tema sin decir ninguna de las exactas de arriba | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
-Son 12 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
+Son 14 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
 código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
 del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
 el segundo del mismo turno deriva con motivo `barandilla_doble`. Si Lucía anunció un pase,

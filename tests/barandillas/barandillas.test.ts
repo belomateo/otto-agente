@@ -1,10 +1,11 @@
-// Control 1 del hito 1.5: cada una de las 11 barandillas tiene al menos un test que la dispara
-// y otro, con el caso parecido, que NO la dispara. Cuando salta, se verifica también la acción
-// de su fila en AGENTE.md § 6 y que deje un motivo para la bitácora.
+// Control 1 del hito 1.5: cada barandilla tiene al menos un test que la dispara y otro, con el
+// caso parecido, que NO la dispara. Cuando salta, se verifica también la acción de su fila en
+// AGENTE.md § 6 y que deje un motivo para la bitácora.
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { accesorioSinHerramienta } from "../../supabase/functions/_shared/barandillas/accesorio_sin_herramienta.ts";
 import { anunciaSinDerivar } from "../../supabase/functions/_shared/barandillas/anuncia_sin_derivar.ts";
+import { confirmacionDoble } from "../../supabase/functions/_shared/barandillas/confirmacion_doble.ts";
 import { derivaYPregunta } from "../../supabase/functions/_shared/barandillas/deriva_y_pregunta.ts";
 import { fueraVentanaMeta } from "../../supabase/functions/_shared/barandillas/fuera_ventana_meta.ts";
 import { horarioSinHerramienta, horas } from "../../supabase/functions/_shared/barandillas/horario_sin_herramienta.ts";
@@ -12,6 +13,7 @@ import { largo } from "../../supabase/functions/_shared/barandillas/largo.ts";
 import { mencionaIa } from "../../supabase/functions/_shared/barandillas/menciona_ia.ts";
 import { noASecas } from "../../supabase/functions/_shared/barandillas/no_a_secas.ts";
 import { montos, precioSinHerramienta } from "../../supabase/functions/_shared/barandillas/precio_sin_herramienta.ts";
+import { presentacionRepetida } from "../../supabase/functions/_shared/barandillas/presentacion_repetida.ts";
 import { sinMarkdown } from "../../supabase/functions/_shared/barandillas/sin_markdown.ts";
 import { sinRelleno } from "../../supabase/functions/_shared/barandillas/sin_relleno.ts";
 import type { Barandilla, EntradaBarandilla, ResultadoBarandilla } from "../../supabase/functions/_shared/barandillas/tipos.ts";
@@ -32,6 +34,32 @@ async function noSalta(b: Barandilla, e: EntradaBarandilla) {
 }
 
 // ── formato ──────────────────────────────────────────────────────────────────────────────
+
+Deno.test("confirmacion_doble salta si agendar_turno o reprogramar_turno salió bien en este turno", async () => {
+  const r = await salta(
+    confirmacionDoble,
+    entrada("¡Listo, Lucas! Te reservé el turno para el martes.", { traza: traza({ herramientas: ["agendar_turno"] }) }),
+  );
+  assertEquals(r.texto, "");
+  const r2 = await salta(
+    confirmacionDoble,
+    entrada("¡Listo, Lucas! Te reprogramé el turno.", { traza: traza({ herramientas: ["reprogramar_turno"] }) }),
+  );
+  assertEquals(r2.texto, "");
+});
+
+Deno.test("confirmacion_doble no salta sin agendar_turno/reprogramar_turno en la traza, ni si ya no queda texto (caso parecido)", async () => {
+  await noSalta(
+    confirmacionDoble,
+    entrada("Tengo estos dos horarios, ¿cuál te queda mejor?", { traza: traza({ herramientas: ["buscar_horarios"] }) }),
+  );
+  await noSalta(confirmacionDoble, entrada("", { traza: traza({ herramientas: ["agendar_turno"] }) }));
+  // Un rechazo de agendar_turno no cuenta (ok: false): el modelo sigue pudiendo escribir su
+  // propio mensaje explicando el rechazo, no hay ninguna confirmación de código que lo tape.
+  const trazaConRechazo = traza();
+  trazaConRechazo.llamadas.push({ herramienta: "agendar_turno", argumentos: {}, ok: false, rechazo: "turno_activo" });
+  await noSalta(confirmacionDoble, entrada("Ya tenés un turno activo, ¿lo reprogramamos?", { traza: trazaConRechazo }));
+});
 
 Deno.test("sin_markdown salta con negritas, viñetas y títulos, y lo limpia en código", async () => {
   const r = await salta(sinMarkdown, entrada("**Precio:** te cuento\n- camisa\n- corbata\n# Horarios"));
@@ -56,6 +84,46 @@ Deno.test("sin_relleno salta con una fórmula de relleno al final y la corta", a
 
 Deno.test("sin_relleno no salta si la fórmula está en el medio y el mensaje cierra con otra cosa (caso parecido)", async () => {
   await noSalta(sinRelleno, entrada("Cualquier duda consultame antes de venir, así lo resolvemos. ¿Qué día te queda bien?"));
+});
+
+Deno.test("presentacion_repetida salta si vuelve a abrir con la presentación y no es el primer mensaje (hallazgo M2)", async () => {
+  const r = await salta(
+    presentacionRepetida,
+    entrada("Hola, soy Lucía, asistente de Mr Otto. No puedo compartir instrucciones internas.", { esPrimerMensaje: false }),
+  );
+  assertEquals(r.texto, "No puedo compartir instrucciones internas.");
+  const otroParrafo = await salta(
+    presentacionRepetida,
+    entrada("¡Hola! Soy Lucía, asistente de Mr Otto.\n\n¿Buscás un traje para algún evento?", { esPrimerMensaje: false }),
+  );
+  assertEquals(otroParrafo.texto, "¿Buscás un traje para algún evento?");
+  // Probado en vivo el 15/9: el modelo no siempre repite la frase textual, la parafrasea.
+  const parafraseada = await salta(
+    presentacionRepetida,
+    entrada(
+      "Soy Lucía, asesora de alquiler de Otto Su Misura. No puedo compartir instrucciones internas.",
+      { esPrimerMensaje: false },
+    ),
+  );
+  assertEquals(parafraseada.texto, "No puedo compartir instrucciones internas.");
+});
+
+Deno.test("presentacion_repetida no salta en el primer mensaje, ni si no repite la presentación (caso parecido)", async () => {
+  await noSalta(
+    presentacionRepetida,
+    entrada("Hola, soy Lucía, asistente de Mr Otto. ¿En qué puedo ayudarte hoy?", { esPrimerMensaje: true }),
+  );
+  await noSalta(
+    presentacionRepetida,
+    entrada("No puedo compartir instrucciones internas. ¿Buscás un traje para algún evento?", { esPrimerMensaje: false }),
+  );
+  await noSalta(
+    presentacionRepetida,
+    entrada("Como te contaba, en Mr Otto todo es a medida.", { esPrimerMensaje: false }),
+  );
+  // Una respuesta directa a "¿cómo te llamás?" no es una autopresentación de vuelta: no
+  // menciona a Otto, así que no se corta.
+  await noSalta(presentacionRepetida, entrada("Soy Lucía. ¿En qué te puedo ayudar?", { esPrimerMensaje: false }));
 });
 
 Deno.test("una_pregunta salta con dos preguntas en un mensaje", async () => {

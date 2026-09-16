@@ -1,11 +1,14 @@
 // Saca del payload del webhook de Meta los mensajes entrantes, uno por cada elemento de
 // `messages`. Los avisos de estado (sent / delivered / read) vienen en `statuses` y no
-// generan trabajo: acá se ignoran.
+// generan trabajo: acá se ignoran. Tampoco entran las reacciones ni los avisos del sistema
+// (TIPOS_SIN_TRABAJO).
 export type MensajeEntrante = {
   waMessageId: string;
-  // Formato de Meta: E.164 sin "+", ej. 5493417519525.
+  // Formato de Meta: E.164 sin "+", ej. 5490000000000.
   telefono: string;
   nombre: string | null;
+  // Como se guarda en la base: 'texto' para el texto de Meta ('text'), el resto con su nombre
+  // de Meta (button, image, audio…). Ver TIPO_EN_LA_BASE.
   tipo: string;
   contenido: string | null;
   // ISO. Meta manda segundos desde epoch en `timestamp`.
@@ -18,6 +21,16 @@ type Obj = Record<string, unknown>;
 const esObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
 const lista = (v: unknown): Obj[] => (Array.isArray(v) ? v.filter(esObj) : []);
 const texto = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+
+// En la base el tipo va en castellano, como lo leen el turno (agruparRafaga filtra 'texto') y el
+// panel. Solo se traduce el texto: 'button' lo reconoce registrar_mensaje_entrante para el
+// "Confirmo" (1.14), y los demás no los contesta Lucía todavía.
+const TIPO_EN_LA_BASE: Record<string, string> = { text: "texto" };
+
+// Lo que llega por `messages` pero no es un mensaje para contestar: una reacción (el 👍 a un
+// mensaje de Lucía) o un aviso del sistema (el cliente cambió de número). Si entraran, el turno
+// los tomaría como "algo que no es texto" y Lucía contestaría que no puede leer fotos ni audios.
+const TIPOS_SIN_TRABAJO = new Set(["reaction", "system"]);
 
 // El texto legible de cada tipo. Lo que no trae texto (una foto sin epígrafe, un audio) queda
 // en null: con el tipo alcanza para que el worker decida qué hacer.
@@ -67,13 +80,13 @@ export function mensajesEntrantes(cuerpo: unknown): MensajeEntrante[] {
         const id = texto(m.id);
         const de = texto(m.from);
         const tipo = texto(m.type);
-        if (!id || !de || !tipo) continue;
+        if (!id || !de || !tipo || TIPOS_SIN_TRABAJO.has(tipo)) continue;
         const segundos = Number(m.timestamp);
         salida.push({
           waMessageId: id,
           telefono: de,
           nombre: nombres.get(de) ?? null,
-          tipo,
+          tipo: TIPO_EN_LA_BASE[tipo] ?? tipo,
           contenido: contenidoDe(m, tipo),
           enviadoAt: Number.isFinite(segundos) && segundos > 0 ? new Date(segundos * 1000).toISOString() : null,
           crudo: m,
