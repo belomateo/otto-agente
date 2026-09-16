@@ -10,6 +10,7 @@
 // Lo que se le muestra al modelo queda en la traza: es lo único que agendar_turno y
 // reprogramar_turno aceptan en este turno.
 
+import type { Db } from "../db.ts";
 import { TIPOS_TURNO, type TipoTurno } from "../enums.ts";
 import { diasEntre, fechaLarga, fechaLocal, horaLocal, isoLocal, MINUTOS_POR_HORA, minutosDelDia } from "../tiempo.ts";
 import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
@@ -23,6 +24,24 @@ const RANGO_MAXIMO_DIAS = 13; // dos semanas por consulta
 const MEDIODIA = 13 * MINUTOS_POR_HORA; // antes de la una se dice "a la mañana"
 const POR_FRANJA = 2; // por día: dos opciones a la mañana y dos a la tarde
 const MAXIMO_OPCIONES = 16;
+
+// Hallazgo de logica probando en vivo, 16/9: "una sola vez por charla" (supuesto #35) dependía
+// solo de que el prompt no lo pidiera de nuevo leyendo el historial — y en vivo no alcanzó:
+// Lucía volvió a pedir el mail en el turno en que el cliente ya estaba confirmando, y como
+// nunca llegó a agendar_turno, el cliente se quedó sin turno. Se marca en código, no solo en el
+// prompt: la primera vez que se pide, queda un evento en la bitácora (no hay una columna para
+// esto — no se agrega una sin coordinar con logica); las siguientes llamadas a buscar_horarios
+// de esta charla —en este turno o en cualquier otro— ya no vuelven a pedirlo, aunque el mail
+// siga sin estar en la ficha.
+const ETAPA_EVENTO_PEDIR_MAIL = "pedir_mail";
+
+async function yaSePidioElMail(db: Db, conversacionId: string): Promise<boolean> {
+  const filas = await db.consulta(
+    "select 1 from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = $2 limit 1",
+    [conversacionId, ETAPA_EVENTO_PEDIR_MAIL],
+  );
+  return filas.length > 0;
+}
 
 export const buscarHorarios: Herramienta<Args> = {
   nombre: "buscar_horarios",
@@ -136,8 +155,15 @@ export const buscarHorarios: Herramienta<Args> = {
     // Supuesto #35 (decisión #17, hito 2.3): sin mail en la ficha, pedilo una sola vez, en el
     // mismo mensaje en que ofrecés estos horarios (antes de agendar: después la confirmación de
     // código le pisa el texto). Si huecos viene vacío no tiene sentido pedirlo todavía — no hay
-    // nada que ofrecer en el mismo mensaje.
-    if (huecos.length > 0 && !ficha.email) datos.pedir_mail = true;
+    // nada que ofrecer en el mismo mensaje. Ya pedido en esta charla (código, no el prompt): no
+    // se vuelve a ofrecer, aunque el mail siga sin estar en la ficha.
+    if (huecos.length > 0 && !ficha.email && !(await yaSePidioElMail(ctx.db, ctx.conversacionId))) {
+      datos.pedir_mail = true;
+      await ctx.db.consulta(
+        "insert into eventos_agente (conversacion_id, tipo, detalle) values ($1, 'pensamiento', $2::jsonb)",
+        [ctx.conversacionId, JSON.stringify({ etapa: ETAPA_EVENTO_PEDIR_MAIL, herramienta: "buscar_horarios" })],
+      );
+    }
     return { ok: true, datos };
   },
 };

@@ -1,4 +1,4 @@
-// Los 16 guiones de AGENTE.md § 13 (los 14 originales, evento-manana-deriva —decisión #8 del
+// Los 17 guiones de AGENTE.md § 13 (los 14 originales, evento-manana-deriva —decisión #8 del
 // 14/9— y cliente-enojado-deriva —pedido de Mateo, 16/9—): un solo lugar con las conversaciones
 // y los chequeos contra la base,
 // para que el emulador (scripts/probar-turno.js) y el worker desplegado
@@ -314,6 +314,27 @@ function crearGuiones() {
         return [
           [!/^no\b/.test(todo.trim()), "no dice que no a secas"],
           [/62|68|medida|confeccion/.test(todo), "menciona el talle, el rango hasta el 68, o que se puede confeccionar"],
+        ];
+      },
+    },
+
+    // Hallazgo de logica probando en vivo, 16/9: Lucía pedía el mail al ofrecer horarios (bien),
+    // pero volvía a pedirlo en el turno en que el cliente decía "confirmame ese horario" — y
+    // como nunca llegó a agendar_turno, el cliente se quedó sin turno (supuesto #35 violado: el
+    // mail no puede frenar una reserva).
+    "mail-no-bloquea-la-reserva": {
+      necesitaCatalogo: true,
+      mensajes: [
+        `hola soy lucas gomez, necesito un turno de invitado para un cumpleaños de 15 el ${EN_2_MESES}, de tarde`,
+        "dale, la primera que tengas me sirve",
+        "si, confirmame ese horario porfa",
+      ],
+      async verificar(sql, telefono) {
+        const cli = (await fila(sql, "select id from clientes where telefono=$1", [telefono]))[0];
+        const turnos = await fila(sql, "select estado from turnos where cliente_id=$1", [cli?.id]);
+        return [
+          [turnos.length === 1, `quedó un turno agendado a pesar de no haber dado el mail (hay ${turnos.length})`],
+          [turnos[0]?.estado === "sin-confirmar", `el turno quedó sin-confirmar, como cualquier reserva nueva (fue: ${turnos[0]?.estado})`],
         ];
       },
     },

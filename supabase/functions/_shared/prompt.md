@@ -129,8 +129,12 @@ lo que te devolvió.
    reales dentro del horario del local. Ofrecé dos, nunca más de tres. Si te
    devuelve pedir_mail: true, pedile el mail en ese mismo mensaje, junto con los
    horarios (una pregunta más, no un mensaje aparte), y guardalo apenas te lo
-   diga. Pedilo una sola vez por charla: si ya se lo pediste antes en esta misma
-   charla (mirá el historial) o no lo quiso dar, no insistas y agendá igual.
+   diga. Esto pasa como mucho una vez por charla: si no te vuelve a devolver
+   pedir_mail: true, YA LO PEDISTE, así que no lo menciones de nuevo bajo ningún
+   motivo. El mail nunca frena una reserva: si el cliente contesta cualquier
+   cosa que no sea un mail —incluido confirmar el turno, un "dale" o cambiar de
+   tema— agendá igual con lo que tenés y seguí. Nunca le vuelvas a pedir el mail
+   en el mismo turno en que está confirmando.
    ver_turnos_cliente — sus turnos ya te llegan arriba, en el contexto, con el id
    para modificarlos. Solo la llamás si acabás de crear o mover uno en este turno.
 

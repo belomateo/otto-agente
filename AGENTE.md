@@ -388,7 +388,7 @@ verificar contra la base) viven en `scripts/guiones-agente.cjs`, escritos como e
 cliente desde el celular; son transporte-agnósticos, así que un solo lugar sirve para las dos
 corridas que existen: `scripts/probar-turno.js` contra el emulador (teléfonos
 `+5493410001NNN`) y `tests/sql/guiones-desplegado.mjs` contra el worker real (teléfonos
-`5490000000NNN`, sin «+» — cierre de Fase 2, control 5 de H2.1: los 16 tienen que pasar contra
+`5490000000NNN`, sin «+» — cierre de Fase 2, control 5 de H2.1: los 17 tienen que pasar contra
 lo desplegado, no solo contra el emulador). Mínimos para la V1:
 
 `novio-noche` · `invitado-casamiento` · `graduado-desde-otra-ciudad` ·
@@ -397,6 +397,8 @@ lo desplegado, no solo contra el emulador). Mínimos para la V1:
 (pedido de Mateo, 16/9: un mensaje agresivo, sin decir "reclamo", tiene que derivar igual —
 lo detecta el clasificador por tono, § 10) · `corporativo-deriva` ·
 `fuera-de-horario-agenda-igual` · `reprograma` · `talle-grande` ·
+`mail-no-bloquea-la-reserva` (hallazgo de logica en vivo, 16/9: el cliente confirma sin dar el
+mail — tiene que agendar igual, no volver a pedirlo, supuesto #35) ·
 `evento-manana-deriva` (decisión #8 del 14/9: el evento es mañana y el código deriva con
 `evento_inminente` y el texto fijo; ya escrito en `scripts/guiones-agente.cjs`)
 

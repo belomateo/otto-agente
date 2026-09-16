@@ -12,6 +12,7 @@ import {
   DOMINGO,
   esOk,
   esRechazo,
+  fila,
   hueco,
   JUEVES,
   local,
@@ -154,6 +155,30 @@ prueba("buscar_horarios no pide el mail si ya lo tenemos, ni si no hay huecos", 
   const sinHuecos = await buscar(ctx, JUEVES, JUEVES, "invitado");
   esOk(sinHuecos);
   assertEquals(sinHuecos.datos.pedir_mail, undefined);
+});
+
+prueba("buscar_horarios no vuelve a pedir el mail en esta charla, ni en el mismo turno ni en uno después (hallazgo de logica, 16/9)", async ({ ctx, sql, conversacionId, agenda }) => {
+  // En vivo, Lucía volvió a pedir el mail justo cuando el cliente estaba confirmando, y como
+  // nunca llegó a agendar_turno, el cliente se quedó sin turno (supuesto #35 violado). Antes
+  // dependía solo de que el prompt no insistiera leyendo el historial; ahora queda marcado en
+  // código, para que ni el prompt más flojo pueda insistir.
+  agenda.lista = [hueco(JUEVES, "11:00", 45)];
+  const primera = await buscar(ctx, JUEVES, JUEVES, "invitado");
+  esOk(primera);
+  assertEquals(primera.datos.pedir_mail, true);
+
+  // Segunda llamada en el MISMO turno (como hace el prompt, justo antes de agendar_turno):
+  // ya no lo vuelve a pedir, aunque el mail siga sin estar en la ficha.
+  const segunda = await buscar(ctx, JUEVES, JUEVES, "invitado");
+  esOk(segunda);
+  assertEquals(segunda.datos.pedir_mail, undefined);
+
+  const eventos = await fila(
+    sql,
+    "select detalle->>'etapa' as etapa from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = 'pedir_mail'",
+    [conversacionId],
+  );
+  assert(eventos, "queda una marca en la bitácora, no solo en la memoria del turno");
 });
 
 prueba("ver_turnos_cliente devuelve los que vienen y no los cancelados ni los que pasaron", async ({ ctx, sql, clienteId }) => {
