@@ -10,26 +10,33 @@ import { ESTADOS_LIBERAN, nombreDe, normalizar, resumenFicha, telefonoLegible, t
 
 export type FilaCliente = Cliente & { id: string; evento: string | null; ultimo_at: string | null };
 
-// La lista trae los clientes más recientes; la búsqueda filtra sobre ellos.
+// Sin búsqueda, la lista trae los clientes más recientes. Con búsqueda, contra toda la tabla
+// (columna `busqueda`, 0034: nombre + teléfono + evento, sin tildes ni mayúsculas) — antes
+// filtraba en memoria solo sobre estos 500, así que un cliente viejo que volvía a escribir
+// daba "no existe" y el equipo le duplicaba la ficha.
 const LIMITE = 500;
 const OCUPA = new Set(['sin-confirmar', 'confirmado', 'alquilo', 'retiro']);
+
+// Escapa lo que ILIKE toma como comodín, para que buscar "50%" no se interprete como patrón.
+const escaparIlike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 export async function listarClientes(
   db: ClienteDb,
   o: { busqueda?: string; evento?: string } = {}
 ): Promise<{ clientes: FilaCliente[]; total: number }> {
+  const b = normalizar(o.busqueda ?? '');
   let q = db
     .from('clientes')
     .select('id, nombre, telefono, evento, fecha_evento, rol, creado_at, conversaciones(ultimo_mensaje_at), turnos(inicio, estado)')
-    .order('creado_at', { ascending: false })
-    .limit(LIMITE);
+    .order('creado_at', { ascending: false });
   if (o.evento) q = q.eq('evento', o.evento);
+  q = b ? q.ilike('busqueda', `%${escaparIlike(b)}%`) : q.limit(LIMITE);
   const { data, error } = await q;
   if (error) throw error;
 
   const ahora = new Date();
   const ahoraIso = ahora.toISOString();
-  let filas = (data ?? []).map((c) => {
+  const filas = (data ?? []).map((c) => {
     const ultimo = c.conversaciones
       .map((v) => v.ultimo_mensaje_at)
       .filter((v): v is string => Boolean(v))
@@ -54,8 +61,6 @@ export async function listarClientes(
   });
   // Último contacto primero; los que nunca escribieron, al final.
   filas.sort((a, b) => (b.ultimo_at ?? '').localeCompare(a.ultimo_at ?? ''));
-  const b = normalizar(o.busqueda ?? '');
-  if (b) filas = filas.filter((f) => normalizar(`${f.n} ${f.tel} ${f.ev}`).includes(b));
   return { clientes: filas, total: filas.length };
 }
 
