@@ -122,7 +122,7 @@ export async function insertarEnProbadorLibre(
 }
 
 // Mover reinicia el ciclo: vuelve a "sin confirmar" y el recordatorio sale de nuevo para el
-// horario nuevo (confirmar es solo por el botón de la plantilla, AGENTE.md § 2).
+// horario nuevo (confirmar_turno, AGENTE.md § 4).
 export async function moverAProbadorLibre(
   db: Db,
   p: { turnoId: string; inicio: Date; fin: Date; probadores: number[] },

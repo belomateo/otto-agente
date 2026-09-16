@@ -1,4 +1,4 @@
-// Tipos compartidos por las 13 herramientas de Lucía (AGENTE.md § 4).
+// Tipos compartidos por las 14 herramientas de Lucía (AGENTE.md § 4).
 //
 // Cada herramienta es un archivo con su nombre, su descripción (lo que lee el modelo; el dueño
 // la puede reemplazar desde Configuración › Herramientas), su schema de parámetros (tool

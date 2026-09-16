@@ -148,10 +148,10 @@ function bloqueDeReglas(prompt) {
     const agente = lf(fs.readFileSync(AGENTE_MD, "utf8"));
     const herramientas = [...seccionMd(agente, 4).matchAll(/^\| `([a-z_]+)\(/gm)].map((m) => m[1]);
     const secciones = [...seccionMd(agente, 8).matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]);
-    registrar("5a. AGENTE.md § 4 tiene 13 herramientas", "13", `${herramientas.length}`, herramientas.length === 13);
+    registrar("5a. AGENTE.md § 4 tiene 14 herramientas", "14", `${herramientas.length}`, herramientas.length === 14);
     registrar("5b. AGENTE.md § 8 tiene 16 secciones", "16", `${secciones.length}`, secciones.length === 16);
     const faltanH = herramientas.filter((h) => !new RegExp(`\\b${h}\\b`).test(p));
-    registrar("5c. las 13 herramientas están en el prompt", "ninguna falta", faltanH.length ? `faltan: ${faltanH.join(", ")}` : "ninguna falta", faltanH.length === 0);
+    registrar("5c. las 14 herramientas están en el prompt", "ninguna falta", faltanH.length ? `faltan: ${faltanH.join(", ")}` : "ninguna falta", faltanH.length === 0);
     const permitidos = new Set([...herramientas, "mensaje_al_cliente", "pedir_mail"]);
     const identificadores = [...new Set([...p.matchAll(/\b[a-z]+(?:_[a-z]+)+\b/g)].map((m) => m[0]))];
     const extras = identificadores.filter((x) => !permitidos.has(x));

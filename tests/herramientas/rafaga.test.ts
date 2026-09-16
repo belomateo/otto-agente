@@ -6,7 +6,7 @@
 // resuelve antes, en atender.ts, sin correr el turno).
 
 import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
-import { agruparRafaga } from "../../supabase/functions/_shared/turno/rafaga.ts";
+import { agruparRafaga, MAXIMO_CARACTERES_RAFAGA } from "../../supabase/functions/_shared/turno/rafaga.ts";
 import { AHORA, prueba } from "./_arnes.ts";
 
 async function insertar(
@@ -62,4 +62,32 @@ prueba("agrupar_rafaga: el botón «Necesito reprogramar» cuenta como texto, no
   const r = await agruparRafaga(ctx.db, conversacionId, AHORA);
   assertEquals(r.texto, "Necesito reprogramar");
   assertEquals(r.soloNoTexto, false);
+});
+
+prueba("agrupar_rafaga: un texto corto no se toca (caso parecido)", async ({ ctx, sql, conversacionId }) => {
+  await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: "hola, necesito un turno", enviadoAt: AHORA });
+  const r = await agruparRafaga(ctx.db, conversacionId, AHORA);
+  assertEquals(r.recortada, false);
+  assertEquals(r.texto, "hola, necesito un turno");
+});
+
+prueba("agrupar_rafaga: una ráfaga que pasa el tope se recorta antes del clasificador y el principal (hallazgo de Mateo, 16/9)", async ({ ctx, sql, conversacionId }) => {
+  await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: "a".repeat(2000), enviadoAt: AHORA });
+  await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: "b".repeat(2000), enviadoAt: new Date(AHORA.getTime() + 1000) });
+  const r = await agruparRafaga(ctx.db, conversacionId, new Date(AHORA.getTime() + 2000));
+  assertEquals(r.recortada, true);
+  assertEquals([...r.texto].length, MAXIMO_CARACTERES_RAFAGA);
+  // El corte cae adentro del segundo mensaje (2000 "a" + un salto de línea + 499 "b"): no se
+  // pierde el principio de la ráfaga, se corta lo de más.
+  assert(r.texto.endsWith("b"), "el corte cae en el segundo mensaje, no antes");
+  assert(!r.texto.includes("b".repeat(2000)), "no entró el segundo mensaje completo");
+});
+
+prueba("agrupar_rafaga: un emoji justo en el borde del tope no se parte a la mitad", async ({ ctx, sql, conversacionId }) => {
+  const texto = "a".repeat(MAXIMO_CARACTERES_RAFAGA - 1) + "😊😊";
+  await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: texto, enviadoAt: AHORA });
+  const r = await agruparRafaga(ctx.db, conversacionId, AHORA);
+  assertEquals(r.recortada, true);
+  assertEquals([...r.texto].length, MAXIMO_CARACTERES_RAFAGA);
+  assertEquals(r.texto, "a".repeat(MAXIMO_CARACTERES_RAFAGA - 1) + "😊");
 });

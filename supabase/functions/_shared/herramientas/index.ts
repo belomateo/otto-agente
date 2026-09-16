@@ -1,4 +1,4 @@
-// Las 13 herramientas de Lucía (AGENTE.md § 4), en el orden del índice del prompt.
+// Las 14 herramientas de Lucía (AGENTE.md § 4), en el orden del índice del prompt.
 //
 // ejecutarHerramienta es la única puerta de entrada: valida los argumentos contra el schema
 // en código, corre la herramienta, atrapa cualquier error sin mostrárselo al cliente y deja la
@@ -13,6 +13,7 @@ import { anotar } from "./anotar.ts";
 import { buscarHorarios } from "./buscar_horarios.ts";
 import { buscarInformacion } from "./buscar_informacion.ts";
 import { cancelarTurno } from "./cancelar_turno.ts";
+import { confirmarTurno } from "./confirmar_turno.ts";
 import { consultarAccesorios } from "./consultar_accesorios.ts";
 import { consultarCatalogo } from "./consultar_catalogo.ts";
 import { derivarAPersona } from "./derivar_a_persona.ts";
@@ -34,6 +35,7 @@ export const HERRAMIENTAS: readonly Herramienta[] = [
   agendarTurno,
   reprogramarTurno,
   cancelarTurno,
+  confirmarTurno,
   guardarDatosCliente,
   anotar,
   enviarFotos,

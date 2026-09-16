@@ -255,7 +255,7 @@ prueba("enviar_link rechaza un tipo fuera de mapa, resena y web", async ({ ctx }
 const derivacionesDe = "select count(*)::int as n from derivaciones where conversacion_id = $1";
 
 prueba("derivar_a_persona rechaza un motivo fuera del enum", async ({ ctx, sql, conversacionId }) => {
-  const r = await ejecutarHerramienta("derivar_a_persona", { motivo: "cliente_enojado", mensaje_al_cliente: null }, ctx);
+  const r = await ejecutarHerramienta("derivar_a_persona", { motivo: "motivo_inventado", mensaje_al_cliente: null }, ctx);
   esRechazo(r, "argumentos_invalidos");
   assertEquals(await contar(sql, derivacionesDe, [conversacionId]), 0);
   assertEquals((await fila(sql, "select estado from conversaciones where id = $1", [conversacionId])).estado, "activa");

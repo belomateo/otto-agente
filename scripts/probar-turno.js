@@ -1,5 +1,5 @@
-// scripts/probar-turno.js — los 15 guiones de scripts/guiones-agente.cjs (AGENTE.md § 13, más
-// evento-manana-deriva de la decisión #8 del 14/9) contra el emulador `probar-agente` (H1.7).
+// scripts/probar-turno.js — los 16 guiones de scripts/guiones-agente.cjs (AGENTE.md § 13) contra
+// el emulador `probar-agente` (H1.7).
 //
 // Los guiones en sí (mensajes y verificar) viven en guiones-agente.cjs, compartidos con
 // tests/sql/guiones-desplegado.mjs (Fase 2, contra el worker real): un solo lugar para que las
@@ -12,7 +12,7 @@
 // dijo Lucía (principio 9).
 //
 // Uso:
-//   node scripts/probar-turno.js                 corre los 15 guiones, de a uno
+//   node scripts/probar-turno.js                 corre los 16 guiones, de a uno
 //   node scripts/probar-turno.js <guion>          corre uno solo
 //   node scripts/probar-turno.js --listar         lista los guiones
 //

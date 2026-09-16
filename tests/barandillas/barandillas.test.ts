@@ -48,6 +48,25 @@ Deno.test("confirmacion_doble salta si agendar_turno o reprogramar_turno salió 
   assertEquals(r2.texto, "");
 });
 
+Deno.test("confirmacion_doble recorta solo la frase repetida y deja lo demás (hallazgo de Mateo, 16/9)", async () => {
+  const r = await salta(
+    confirmacionDoble,
+    entrada("¡Listo, Lucas! Te reservé el turno para el martes. Y sí, también alquilamos corbata.", {
+      traza: traza({ herramientas: ["agendar_turno"] }),
+    }),
+  );
+  assertEquals(r.texto, "Y sí, también alquilamos corbata.");
+
+  // La confirmación al final del mensaje, no al principio: también se saca, sin tocar lo de antes.
+  const r2 = await salta(
+    confirmacionDoble,
+    entrada("Sí, alquilamos corbata y cinturón para completar el look. ¡Listo! Tu turno quedó agendado para el martes.", {
+      traza: traza({ herramientas: ["agendar_turno"] }),
+    }),
+  );
+  assertEquals(r2.texto, "Sí, alquilamos corbata y cinturón para completar el look.");
+});
+
 Deno.test("confirmacion_doble no salta sin agendar_turno/reprogramar_turno en la traza, ni si ya no queda texto (caso parecido)", async () => {
   await noSalta(
     confirmacionDoble,
@@ -174,9 +193,75 @@ Deno.test("precio_sin_herramienta reconoce 150 mil y 150000 sin signo", async ()
   await salta(precioSinHerramienta, entrada("Sale 150 mil."));
 });
 
+Deno.test("precio_sin_herramienta reconoce CUALQUIER monto corto suelto, no solo una lista fija de palabras (hallazgo de Mateo, 16/9)", async () => {
+  // La primera versión (16/9, a la mañana) solo miraba sale/cuesta/son/anda en, y se escapaba con
+  // cualquier otra forma de decir un precio. Dado vuelta: cualquier número de 2 o 3 cifras es
+  // sospechoso, salvo que el contexto lo explique (ver el test de abajo).
+  for (
+    const frase of [
+      "te sale como 150",
+      "180 nomás",
+      "cuesta 220",
+      "anda en 90",
+      "te queda en unos 150",
+      "te lo dejo en 150",
+      "por 150 te llevás el combo",
+      "arranca en 150",
+      "y bueno, 150 y sale con todo",
+      // Tercera vuelta, 16/9: el lookahead descartaba con CUALQUIER puntuación después, incluida
+      // la de la oración — esto es casi todo precio que cae al final de una frase.
+      "son 150, más el accesorio",
+      "son 150. Te sirve?",
+      "el traje sale 150.",
+    ]
+  ) {
+    assert(montos(frase).length > 0, `"${frase}" tendría que reconocer un monto`);
+  }
+  // "sale 150 mil" es un solo monto ($150.000), no dos (150 y 150000).
+  assertEquals(montos("sale 150 mil"), [150000]);
+  await salta(precioSinHerramienta, entrada("Un traje te sale como 150 😊"));
+  await salta(precioSinHerramienta, entrada("Por 150 te llevás el combo completo."));
+  // Ojo acá con el punto final pegado al número ("como 150."): tiene que reconocerlo (no vale que
+  // "no salta" dé lo mismo por no haber encontrado nada que por haberlo encontrado en la traza).
+  assertEquals(montos("Un traje te sale como 150."), [150]);
+  await noSalta(precioSinHerramienta, entrada("Un traje te sale como 150.", { traza: traza({ precios: [150] }) }));
+});
+
+Deno.test("precio_sin_herramienta no confunde un número con contexto que lo explica (caso parecido)", async () => {
+  assertEquals(montos("talle 48"), []);
+  assertEquals(montos("Estamos en España 764, Rosario."), []);
+  assertEquals(montos("nos vemos a las 15"), []);
+  assertEquals(montos("se puede pagar en 3 cuotas"), []);
+  assertEquals(montos("somos 44 invitados"), []);
+  assertEquals(montos("uso el talle 44"), []);
+  assertEquals(montos("tenemos del 44 al 68"), []);
+  assertEquals(montos("mide 170"), []);
+  assertEquals(montos("medís 180 de altura?"), []);
+  assertEquals(montos("170 de altura"), []);
+  assertEquals(montos("tengo 44 años"), []);
+  assertEquals(montos("es el cumpleaños de 15 de mi hija"), []);
+  await noSalta(precioSinHerramienta, entrada("El talle 48 te queda bien."));
+  await noSalta(precioSinHerramienta, entrada("¿Medís 180 de altura?"));
+  await noSalta(precioSinHerramienta, entrada("Estamos en España 764, Rosario."));
+  await noSalta(precioSinHerramienta, entrada("Nos vemos a las 15."));
+  await noSalta(precioSinHerramienta, entrada("Se puede pagar en 3 cuotas."));
+  await noSalta(precioSinHerramienta, entrada("Somos 44 invitados en el casamiento."));
+});
+
 Deno.test("horario_sin_herramienta salta con una hora ofrecida sin buscar_horarios", async () => {
   await salta(horarioSinHerramienta, entrada("Tengo lugar el jueves a las 16:15."));
   await salta(horarioSinHerramienta, entrada("Te espero a las 16 hs."));
+});
+
+Deno.test("horario_sin_herramienta lee una hora en palabras (hallazgo de Mateo, 16/9)", async () => {
+  assertEquals(horas("nos vemos a las tres de la tarde"), ["15:00"]);
+  assertEquals(horas("a las diez de la manana"), ["10:00"]);
+  assertEquals(horas("a la una de la tarde"), ["13:00"]);
+  await salta(horarioSinHerramienta, entrada("Te espero a las tres de la tarde."));
+  await noSalta(
+    horarioSinHerramienta,
+    entrada("Te espero a las tres de la tarde.", { traza: traza({ herramientas: ["buscar_horarios"], horas: ["15:00"] }) }),
+  );
 });
 
 Deno.test("horario_sin_herramienta no salta con la hora que devolvió buscar_horarios, ni con «¿a la mañana o a la tarde?» (caso parecido)", async () => {

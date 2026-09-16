@@ -43,7 +43,7 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
 | Confirmación al cliente | 🔧 | Texto fijo: día, hora, España 764, mapa, un acompañante, 45 min con 10 de tolerancia, la reserva del traje se abona en el local, avisar si no puede | `mensajes` |
 | Recontacto si NO agendó | 🔧 | Consultó y no agendó → plantilla al día siguiente y a las 72 hs, una vez cada una | `recontactos` |
 | 24 hs antes | 🔧 | Plantilla `recordatorio_turno_24h` con botones. `recordatorio_enviado_at` | `turnos` |
-| Confirmación | 🔧 | **Solo** cuando llega la respuesta al botón "Confirmo" se marca `confirmado=true`, con `confirmado_por = 'cliente'`. Ninguna interpretación del LLM lo marca. "Reprogramar" → Lucía retoma con `reprogramar_turno` | `turnos.confirmado_at` |
+| Confirmación | 🧠→🔧 | Decisión de Mateo, 16/9: sin botón. Lucía entiende la intención de confirmar, venga como venga (respondiendo al recordatorio o en cualquier otro momento de la charla) y ejecuta `confirmar_turno`, que marca `confirmado=true` con `confirmado_por = 'cliente'`. "Reprogramar" → Lucía retoma con `reprogramar_turno` | `turnos.confirmado_at` |
 | Sin respuesta al recordatorio | 👤 | Aparece en Turnos con estado "sin confirmar"; el equipo decide llamar | panel |
 | 30 min antes | 🔧→👤 | Cartel en todo el panel con los datos del turno (decisión #10). El OK de alguien del equipo lo cierra para todos y, si el turno seguía sin confirmar, lo confirma con `confirmado_por` = su email | `turnos.aviso_ok_at` |
 | En el local | 👤 | Turno de 45'; el asesor toma medidas; se reserva con el 100% (esto lo hace el equipo, Lucía nunca cobra) | el asesor marca "alquiló" en Turnos |
@@ -72,15 +72,17 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
 3. 🔧 Se pausa la conversación para Lucía.
 4. 🔧 Se avisa por WhatsApp al número del canal de alquiler: «Nueva derivación:
    <motivo> — <nombre> — <resumen>. Panel: <link>».
-5. 🔧 Al cliente se le manda el `mensaje_al_cliente` (o nada si es reclamo o
-   descuento, para que siga una persona).
+5. 🔧 Al cliente se le manda el `mensaje_al_cliente` (o nada si es reclamo,
+   cliente enojado o descuento, para que siga una persona).
 6. 👤 Alguien la toma desde Atención humana: responde desde el panel (esos
    mensajes salen marcados `[mostrador]` en el historial que Lucía lee), y al
    terminar aprieta **"Devolver a Lucía"** o **"Cerrar"**.
 7. 🔧 "Devolver a Lucía" despausa; el siguiente mensaje del cliente lo contesta
    ella con todo el historial, sin volver a presentarse.
 
-Motivos (enum): `reclamo`, `prenda_danada`, `corporativo`, `turno_urgente_sin_hueco`,
+Motivos (enum): `reclamo`, `cliente_enojado` (el tono, no el contenido: lo detecta el
+clasificador aunque no diga "reclamo" ni nombre nada roto — pedido de Mateo, 16/9),
+`prenda_danada`, `corporativo`, `turno_urgente_sin_hueco`,
 `evento_inminente` (evento hoy o mañana: deriva siempre, decisión #8 del 14/9),
 `descuento`, `dato_no_encontrado`, `pide_persona`, `barandilla_doble`, `sin_respuesta`,
 `timeout`.

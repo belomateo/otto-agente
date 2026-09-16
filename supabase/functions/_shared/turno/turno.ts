@@ -25,7 +25,7 @@ import { contextoDeHerramientas } from "./contexto_herramientas.ts";
 import { armarContextoDelTurno } from "./contexto.ts";
 import { derivacionDuraPorEventoInminente, derivacionDuraPorPalabraClave } from "./derivacion_dura.ts";
 import { leerHistorial, ultimasLineasParaClasificar, type MensajeChat } from "./historial.ts";
-import { agruparRafaga } from "./rafaga.ts";
+import { agruparRafaga, MAXIMO_CARACTERES_RAFAGA } from "./rafaga.ts";
 import { eventosDeLaTraza, registrarConsumo, registrarEventos, type EventoAgente } from "./bitacora.ts";
 import { prepararParaEnviar } from "../whatsapp/preparar.ts";
 
@@ -36,7 +36,7 @@ const CLAVE_TEXTO_MENSAJE_NO_SOPORTADO = "texto_mensaje_no_soportado";
 // genérico de derivación dura (CLAVE_TEXTO_DERIVACION_DURA). No confundir con MOTIVOS_SIN_MENSAJE
 // de _shared/enums.ts: esa otra es sobre la despedida que ESCRIBE EL MODELO al llamar
 // derivar_a_persona (otra lista, con otros motivos, para una pregunta parecida).
-const MOTIVOS_DERIVAN_EN_SILENCIO: readonly MotivoDerivacion[] = ["reclamo", "sin_respuesta", "timeout", "barandilla_doble"];
+const MOTIVOS_DERIVAN_EN_SILENCIO: readonly MotivoDerivacion[] = ["reclamo", "cliente_enojado", "sin_respuesta", "timeout", "barandilla_doble"];
 
 export type ResultadoTurno = {
   mensajesAlCliente: string[];
@@ -91,6 +91,9 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
   const rafaga = await agruparRafaga(db, p.conversacionId, p.ahora);
   const mensaje = rafaga.texto;
   const ultimoMensajeClienteAt = rafaga.ultimoEnviadoAt ?? p.ahora;
+  if (rafaga.recortada) {
+    eventos.push({ tipo: "error", detalle: { etapa: "agrupar-rafaga", error: `ráfaga recortada a ${MAXIMO_CARACTERES_RAFAGA} caracteres antes del clasificador y el principal` } });
+  }
 
   try {
     if (!mensaje) {

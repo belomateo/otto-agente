@@ -13,9 +13,12 @@ export type ResultadoClasificador = { clasificacion: Clasificacion; tokensIn: nu
 const INSTRUCCION =
   "Clasificá el último mensaje del cliente de una casa de alquiler de trajes, con el contexto de las últimas líneas. " +
   "intencion: de qué habla. urgencia: qué tan apurado suena. derivar_duro: true solo si hay un reclamo, una prenda " +
-  "dañada o manchada, o un pedido corporativo/de uniformes que las palabras clave no hayan agarrado (parafraseado, " +
-  "con errores, sin la palabra exacta). Si derivar_duro es true, motivo_derivacion dice cuál de esas tres es; si es " +
-  "false, motivo_derivacion es null. Ante la duda de si es o no una de esas tres categorías, false.";
+  "dañada o manchada, un pedido corporativo/de uniformes que las palabras clave no hayan agarrado (parafraseado, " +
+  "con errores, sin la palabra exacta), o el cliente está enojado. Un cliente enojado no es el que se queja de " +
+  "algo puntual (eso ya es reclamo): es el TONO del mensaje, no el contenido — insulta, grita en mayúsculas, usa " +
+  "groserías o amenaza, aunque no diga la palabra \"reclamo\" ni nombre nada roto o mal hecho. Si derivar_duro es " +
+  "true, motivo_derivacion dice cuál de esas cuatro es (reclamo, cliente_enojado, prenda_danada o corporativo); " +
+  "si es false, motivo_derivacion es null. Ante la duda de si es o no una de esas cuatro categorías, false.";
 
 export async function clasificar(
   ultimasLineas: string,
