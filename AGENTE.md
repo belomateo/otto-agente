@@ -361,9 +361,13 @@ En el panel:
 
 ## 13. Emulador y pruebas del agente
 
-`probar-agente` es el mismo agente sin Meta ni Calendar real. Guiones en
-`scripts/probar-turno.js`, escritos como escribe un cliente desde el celular.
-Mínimos para la V1:
+`probar-agente` es el mismo agente sin Meta ni Calendar real. Los guiones (mensajes y qué
+verificar contra la base) viven en `scripts/guiones-agente.cjs`, escritos como escribe un
+cliente desde el celular; son transporte-agnósticos, así que un solo lugar sirve para las dos
+corridas que existen: `scripts/probar-turno.js` contra el emulador (teléfonos
+`+5493410001NNN`) y `tests/sql/guiones-desplegado.mjs` contra el worker real (teléfonos
+`5490000000NNN`, sin «+» — cierre de Fase 2, control 5 de H2.1: los 15 tienen que pasar contra
+lo desplegado, no solo contra el emulador). Mínimos para la V1:
 
 `novio-noche` · `invitado-casamiento` · `graduado-desde-otra-ciudad` ·
 `solo-precio` · `urgente-misma-semana` · `pregunta-horarios` · `accesorios` ·
