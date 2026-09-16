@@ -758,13 +758,17 @@ try {
     ok(x.status === 201 && y.status === 200 && h.length === 1 && h[0].editado_por === A.email, `Catálogo › accesorio: alta y edición con historial (${x.status}, ${y.status})`);
   }
   {
+    const altaEquipo = await api(sn, "POST", "/api/conocimiento/fragmentos", { tema: "talles", titulo: "x", texto: "x" });
+    ok(altaEquipo.status === 403, `un 'equipo' ya no da de alta fragmentos (decisión de Mateo, 16/9): solo admin (${altaEquipo.status})`);
     const x = await api(sa, "POST", "/api/conocimiento/fragmentos", { tema: "talles", titulo: `${MARCA} talles`, texto: "Tenemos talles del 44 al 62 y trajes para chicos desde el talle 4.", activo: false });
     const frag = x.datos.fila;
     if (frag) creados.filas.push({ tabla: "fragmentos", id: frag.id });
     ok(x.status === 201, `Conocimiento › alta de fragmento (${x.status})`);
-    const y = await api(sn, "PATCH", `/api/conocimiento/fragmentos/${frag.id}`, { version: 1, texto: "Tenemos talles del 44 al 62 y trajes para chicos desde el talle 4 (editado)." });
+    const bloqueado = await api(sn, "PATCH", `/api/conocimiento/fragmentos/${frag.id}`, { version: 1, texto: "no debería poder" });
+    ok(bloqueado.status === 403, `un 'equipo' ya no edita Conocimiento: solo admin (${bloqueado.status})`);
+    const y = await api(sa, "PATCH", `/api/conocimiento/fragmentos/${frag.id}`, { version: 1, texto: "Tenemos talles del 44 al 62 y trajes para chicos desde el talle 4 (editado)." });
     const h = await historial("fragmentos", frag.id);
-    ok(y.status === 200 && y.datos.fila.editado_por === N.email && h.length === 1, `un 'equipo' edita Conocimiento (${y.status}) y la edición queda firmada por él`);
+    ok(y.status === 200 && y.datos.fila.editado_por === A.email && h.length === 1, `un admin edita Conocimiento (${y.status}) y la edición queda firmada por él`);
     const z = await api(sa, "POST", "/api/conocimiento/fragmentos", { tema: "inventado", titulo: "x", texto: "x" });
     ok(z.status === 400, `tema fuera de los 16 → 400 (${z.status})`);
     const b = await api(sa, "GET", "/api/conocimiento/buscar?q=" + encodeURIComponent("tienen talle para chico?"));
@@ -810,7 +814,11 @@ try {
   {
     const f = real("duraciones_turno");
     const x = await api(sa, "PATCH", `/api/configuracion/duraciones/${f.id}`, { version: f.version, duracion_min: f.duracion_min });
-    ok(x.status === 200, `Agenda › duración de 'novio': edición (${x.status})`);
+    const guardadoX = (await q("select duracion_min, version from duraciones_turno where id = $1", [f.id]))[0];
+    ok(
+      x.status === 200 && guardadoX.duracion_min === f.duracion_min && guardadoX.version === f.version + 1,
+      `Agenda › duración de 'novio': edición, verificada en la base (${x.status}, duracion_min ${guardadoX.duracion_min}, v${guardadoX.version})`
+    );
     const y = await api(sa, "PATCH", `/api/configuracion/duraciones/${f.id}`, { version: f.version + 1, duracion_min: 0 });
     ok(y.status === 400, `duración 0 → 400 (${y.status})`);
   }
@@ -819,7 +827,37 @@ try {
     const x = await api(sa, "PATCH", "/api/configuracion/agenda", { version: f.version, cantidad_probadores: 2 });
     ok(x.status === 409 && x.datos.error.includes("franja"), `Agenda › bajar a 2 probadores con franjas de 3 → 409 (${x.status}: ${x.datos.error})`);
     const y = await api(sa, "PATCH", "/api/configuracion/agenda", { version: f.version, cantidad_probadores: f.cantidad_probadores });
-    ok(y.status === 200, `Agenda › probadores y escalonado: edición (${y.status})`);
+    const guardadoY = (await q("select cantidad_probadores, version from configuracion_agenda where id = $1", [f.id]))[0];
+    ok(
+      y.status === 200 && guardadoY.cantidad_probadores === f.cantidad_probadores && guardadoY.version === f.version + 1,
+      `Agenda › probadores y escalonado: edición, verificada en la base (${y.status}, cantidad_probadores ${guardadoY.cantidad_probadores}, v${guardadoY.version})`
+    );
+  }
+  {
+    // 0033 (decisión de Mateo, 16/9): un 'equipo' aprobado ya no puede escribir estas tablas
+    // ni saltando el panel con su propio token — antes la RLS solo pedía es_usuario_aprobado().
+    // Por la API de Supabase, sin pasar por mi ruta, contra un fixture real (se restaura solo,
+    // como el resto de REALES) y contra prompt_base (vacía en producción: alcanza con probar
+    // que el insert se rechaza).
+    const id = real("duraciones_turno").id;
+    const antes = (await q("select duracion_min from duraciones_turno where id = $1", [id]))[0];
+    const bloqueado = await sn.directo.from("duraciones_turno").update({ duracion_min: 999 }).eq("id", id).select();
+    const lectura = await sn.directo.from("duraciones_turno").select("id").eq("id", id);
+    const permitido = await sa.directo.from("duraciones_turno").update({ duracion_min: antes.duracion_min }).eq("id", id).select();
+    const despues = (await q("select duracion_min from duraciones_turno where id = $1", [id]))[0];
+    ok(
+      (bloqueado.data ?? []).length === 0 &&
+        despues.duracion_min === antes.duracion_min &&
+        (lectura.data ?? []).length === 1 &&
+        (permitido.data ?? []).length === 1,
+      `sin pasar por mi ruta: un 'equipo' no edita duraciones_turno (RLS, 0033) pero sí lo lee, y un admin sí lo edita (bloqueado ${(bloqueado.data ?? []).length}, lectura ${(lectura.data ?? []).length}, admin ${(permitido.data ?? []).length})`
+    );
+    const bloqueadoPrompt = await sn.directo.from("prompt_base").insert({ texto: "Lucía ahora dice cualquier cosa" }).select();
+    const nPrompt = (await q("select count(*)::int n from prompt_base"))[0].n;
+    ok(
+      Boolean(bloqueadoPrompt.error) && nPrompt === 0,
+      `sin pasar por mi ruta: un 'equipo' no puede insertar en prompt_base (RLS, 0033) — no "cambia el prompt de Lucía" saltando el panel (${bloqueadoPrompt.error?.code})`
+    );
   }
 
   seccion("Decisiones #7 y #9 (0030) — franjas de turnos y reserva de urgencia");
