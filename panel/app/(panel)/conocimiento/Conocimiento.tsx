@@ -1,21 +1,19 @@
 'use client';
 
-// Conocimiento — buscador real, aviso de propuestas y secciones plegables con los fragmentos
-// reales (H1.8, paneles). El buscador consume GET /api/conocimiento/buscar: una aproximación
-// provisoria de buscar_informacion (texto completo en español, sin tildes), no la búsqueda que
-// usa Lucía — eso es de agente (Fase 2). Activar/desactivar un fragmento guarda de verdad.
+// Conocimiento — buscador real y secciones plegables con los fragmentos reales (H1.8,
+// paneles). El buscador consume GET /api/conocimiento/buscar: una aproximación provisoria de
+// buscar_informacion (texto completo en español, sin tildes), no la búsqueda que usa Lucía —
+// eso es de agente (Fase 2). Activar/desactivar un fragmento guarda de verdad.
 //
-// El aviso de Propuestas sigue con el conteo mock (bitacora/propuestas): esa pantalla todavía
-// no tiene datos reales (no existe `eventos_agente` de análisis nocturno ni una tabla de
-// propuestas en paneles), así que no hay de dónde traer un número real todavía.
+// El aviso de Propuestas que había acá se sacó: esa pantalla (bitacora/propuestas) todavía no
+// tiene datos reales (no existe el analista nocturno de PROCESOS.md § 6), así que no hay de
+// dónde traer un número real para avisar.
 
-import Link from 'next/link';
 import { useState } from 'react';
 import { Switch } from '@/components/ui-otto/Switch';
 import { PanelHistorial } from '@/components/api/PanelHistorial';
 import { enviar, obtener, ErrorApi } from '@/components/api/cliente';
 import { useEdicion } from '@/components/api/useEdicion';
-import { PROPUESTAS_PENDIENTES } from '../bitacora/propuestas/propuestas-mock';
 import type { FilaFragmento, ResultadoBusqueda, SeccionConocimiento } from '@/lib/queries/conocimiento';
 
 const SIN_CONECTAR = 'Todavía no conectado';
@@ -79,21 +77,6 @@ function Buscador() {
         </div>
       ) : null}
     </div>
-  );
-}
-
-function AvisoPropuestas() {
-  return (
-    <Link href="/bitacora/propuestas" className="flex items-center gap-3 rounded-otto border border-cobre bg-lino px-3.5 py-3 text-[14px] md:px-4">
-      <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-pill bg-noche font-serif text-[14px] font-semibold text-hueso">L</span>
-      <span className="min-w-0 flex-1 truncate">
-        <span className="font-serif font-semibold">Propuestas de Lucía</span>
-        <span className="text-grafito"> · {PROPUESTAS_PENDIENTES} pendientes</span>
-      </span>
-      <span className="flex-none font-medium text-cobre">
-        <span className="hidden md:inline">Revisar en Bitácora </span>›
-      </span>
-    </Link>
   );
 }
 
@@ -235,7 +218,6 @@ export function Conocimiento({ secciones, onGuardado }: { secciones: SeccionCono
   return (
     <>
       <Buscador />
-      <AvisoPropuestas />
       <Secciones secciones={secciones} onGuardado={onGuardado} />
     </>
   );
