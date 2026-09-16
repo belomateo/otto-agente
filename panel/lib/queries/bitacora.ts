@@ -1,6 +1,7 @@
 // Bitácora (H1.8; en el panel de hoy la pestaña se llama "Estadísticas", ruta que front
 // renombra a /bitacora): KPIs del día, atención humana, costo de OpenAI y los eventos de
-// Lucía. Trae la forma de `kpis` y `EventoBitacora` de lib/mock-data.ts.
+// Lucía. `kpis` tiene la forma que tenía el mock; `EventoBitacora` sigue viviendo en
+// lib/mock-data.ts (la usan tanto acá como front).
 //
 // Qué lee de lo que escriben otros roles: `eventos_agente` (tipo + detalle jsonb, worker de
 // logica) y `consumo_llm` (costo_usd). Del detalle toma `resumen`, `texto` o `mensaje` si
