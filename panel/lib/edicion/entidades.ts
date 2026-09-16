@@ -255,11 +255,13 @@ export const ENTIDADES = {
     }
   ),
 
-  // Conocimiento: fragmentos (activar, editar; la versión la lleva el trigger).
+  // Conocimiento: fragmentos (activar, editar; la versión la lleva el trigger). Decisión de
+  // Mateo (16/9): lo edita solo un admin, como el resto de lo que Lucía usa para hablar
+  // (herramientas, contexto, reglas, prompt base); leerlo sigue abierto a cualquier aprobado.
   fragmentos: definir(
     'fragmentos',
     { tema: z.enum(TEMAS_FRAGMENTO), titulo: texto(120), texto: texto(4000), activo: z.boolean() },
-    { obligatorios: ['tema', 'titulo', 'texto'], soloAdmin: false }
+    { obligatorios: ['tema', 'titulo', 'texto'] }
   ),
 
   // Configuración › Reglas. Sin número, va al final.

@@ -2,7 +2,10 @@
 // proyecto real: la base es una sola y la comparten los cuatro roles, así que esto refleja
 // también migraciones de otros roles ya aplicadas (p. ej. mostrador_enviar, 0028 de logica).
 // No se editan a mano: si cambia el esquema, se regeneran (CLAUDE.md § 7: no hay vistas
-// tipadas a mano).
+// tipadas a mano). Excepción puntual (16/9): mensajes.no_enviado_motivo (0042 de logica) se
+// sumó a mano porque el CLI (`gen types --db-url`) falla acá por Docker Desktop inalcanzable,
+// no por la base; verificado contra el esquema real (information_schema, pg_constraint) antes
+// de escribirlo. Se reemplaza solo con regenerar de verdad en cuanto Docker ande.
 
 export type Json =
   | string
@@ -697,6 +700,7 @@ export type Database = {
           direccion: string
           enviado_at: string
           id: string
+          no_enviado_motivo: string | null
           tipo: string
           wa_message_id: string | null
         }
@@ -706,6 +710,7 @@ export type Database = {
           direccion: string
           enviado_at?: string
           id?: string
+          no_enviado_motivo?: string | null
           tipo?: string
           wa_message_id?: string | null
         }
@@ -715,6 +720,7 @@ export type Database = {
           direccion?: string
           enviado_at?: string
           id?: string
+          no_enviado_motivo?: string | null
           tipo?: string
           wa_message_id?: string | null
         }
