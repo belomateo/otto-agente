@@ -88,7 +88,7 @@ export type Charla = {
   id: string;
   estado: string;
   quien: 'Lucía' | 'Persona' | 'Cerrada';
-  cliente: { id: string; nombre: string; telefono: string; resumen: string; etiqueta: string };
+  cliente: { id: string; nombre: string; telefono: string; email: string | null; resumen: string; etiqueta: string };
   mensajes: MensajeCharla[];
   eventos: EventoCharla[];
 };
@@ -99,7 +99,7 @@ const LIMITE_HILO = 500;
 export async function obtenerCharla(db: ClienteDb, id: string): Promise<Charla | null> {
   const { data: c, error } = await db
     .from('conversaciones')
-    .select('id, estado, cliente_id, clientes(id, nombre, telefono, evento, fecha_evento, rol, dia_o_noche, talle_aprox)')
+    .select('id, estado, cliente_id, clientes(id, nombre, telefono, email, evento, fecha_evento, rol, dia_o_noche, talle_aprox)')
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
@@ -132,6 +132,7 @@ export async function obtenerCharla(db: ClienteDb, id: string): Promise<Charla |
       id: c.cliente_id,
       nombre: nombreDe(c.clientes),
       telefono: c.clientes?.telefono ?? '',
+      email: c.clientes?.email ?? null,
       resumen: resumenFicha(c.clientes, turno),
       etiqueta: evento ? (ETIQUETA_EVENTO[evento] ?? '') : '',
     },

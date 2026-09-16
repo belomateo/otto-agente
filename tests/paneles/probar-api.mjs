@@ -175,8 +175,8 @@ async function sembrar() {
   await q("delete from turnos where cliente_id in (select id from clientes where telefono = $1)", [TEL]);
   await q("delete from clientes where telefono = $1", [TEL]);
   cli = (await q(
-    `insert into clientes (telefono, nombre, evento, fecha_evento, rol, talle_aprox)
-     values ($1, $2, 'casamiento', '2031-01-20', 'invitado', '48') returning id`,
+    `insert into clientes (telefono, nombre, evento, fecha_evento, rol, talle_aprox, email)
+     values ($1, $2, 'casamiento', '2031-01-20', 'invitado', '48', 'prueba.paneles@example.com') returning id`,
     [TEL, MARCA]
   ))[0].id;
   conv = (await q("insert into conversaciones (cliente_id, ultimo_mensaje_at) values ($1, now()) returning id", [cli]))[0].id;
@@ -489,6 +489,7 @@ try {
       x.status === 200 && x.datos.mensajes.length === 3 && x.datos.eventos.length === 2 && x.datos.cliente.resumen.includes("Casamiento 20/1") && x.datos.cliente.resumen.includes("Talle 48"),
       `Charla (${x.status}): ${x.datos.cliente?.resumen}`
     );
+    ok(x.datos.cliente.email === "prueba.paneles@example.com", `Charla › trae el mail del cliente (2.4): ${x.datos.cliente?.email}`);
     ok(
       x.datos.mensajes.map((m) => m.autor).join(",") === "cliente,lucia,cliente",
       `Charla › autor por mensaje, sin mostrador todavía (corrección de logica): ${x.datos.mensajes.map((m) => m.autor).join(",")}`
@@ -918,6 +919,16 @@ try {
     const h = await historial("clientes", cli);
     ok(x.status === 200 && y.status === 200 && h.length === 2 && h[1].editado_por === A.email, `Clientes › ficha: dos ediciones (admin y equipo) → 2 filas de historial (${h.map((r) => r.editado_por).join(", ")})`);
     ok(z.status === 400 && w.status === 400, `evento fuera del enum y teléfono → 400 (${z.status}, ${w.status})`);
+
+    // 2.4: el mail se guarda en minúscula y sin espacios; inválido da 400 con el motivo; vacío lo
+    // borra. Termina con un mail válido puesto de nuevo: el aviso de turno (más abajo) también
+    // verifica que lo trae.
+    const e2 = await api(sn, "PATCH", `/api/clientes/${cli}`, { version: v + 2, email: "no-es-un-mail" });
+    const e3 = await api(sn, "PATCH", `/api/clientes/${cli}`, { version: v + 2, email: "" });
+    const e1 = await api(sa, "PATCH", `/api/clientes/${cli}`, { version: v + 3, email: "  Juan.Perez@Gmail.COM  " });
+    ok(e2.status === 400 && e2.datos.detalle?.some((d) => d.campo === "email"), `email inválido → 400 con el motivo (${e2.status}: ${JSON.stringify(e2.datos.detalle)})`);
+    ok(e3.status === 200 && e3.datos.fila.email === null, `email vacío lo borra (${e3.status}: ${e3.datos.fila?.email})`);
+    ok(e1.status === 200 && e1.datos.fila.email === "juan.perez@gmail.com", `email: se guarda en minúscula y sin espacios (${e1.status}: ${e1.datos.fila?.email})`);
   }
   {
     const g = await api(sa, "GET", "/api/configuracion/prompt-base");
@@ -954,11 +965,12 @@ try {
       `GET /api/turnos/avisos (equipo): salen el que empezó hace 20' y el de dentro de 10', en ese orden; no el de 2 h, el terminado, el cancelado ni el no-vino (${g.status}, ${nuestros.length})`
     );
     const a = nuestros.find((t) => t.id === tA);
-    const ficha = (await q("select nombre, telefono, fecha_evento::text fecha_evento, talle_aprox, color_preferido, notas_libres from clientes where id = $1", [cli]))[0];
+    const ficha = (await q("select nombre, telefono, email, fecha_evento::text fecha_evento, talle_aprox, color_preferido, notas_libres from clientes where id = $1", [cli]))[0];
     ok(
-      a?.cliente.nombre === ficha.nombre && a.cliente.telefono === ficha.telefono && a.cliente.fecha_evento === ficha.fecha_evento && a.cliente.talle_aprox === ficha.talle_aprox && a.cliente.color_preferido === ficha.color_preferido && a.cliente.notas === ficha.notas_libres && Boolean(a.cliente.evento) && Boolean(a.cliente.rol) && /^\d\d:\d\d$/.test(a.desde) && /^\d\d:\d\d$/.test(a.hasta) && a.t === "Invitado · 45’" && a.p === "Probador 1" && a.cliente_confirmo === false && a.enlaces.charla === `/bandeja/charla?id=${conv}` && a.enlaces.ficha === `/clientes?id=${cli}`,
-      `el cartel trae el turno, la ficha y los links (${a?.desde}–${a?.hasta}, ${a?.t}, ${a?.cliente.nombre}, ${a?.cliente.evento} ${a?.cliente.fecha_evento_corta}, ${a?.cliente.rol}, talle ${a?.cliente.talle_aprox}, ${a?.cliente.color_preferido})`
+      a?.cliente.nombre === ficha.nombre && a.cliente.telefono === ficha.telefono && a.cliente.email === ficha.email && a.cliente.fecha_evento === ficha.fecha_evento && a.cliente.talle_aprox === ficha.talle_aprox && a.cliente.color_preferido === ficha.color_preferido && a.cliente.notas === ficha.notas_libres && Boolean(a.cliente.evento) && Boolean(a.cliente.rol) && /^\d\d:\d\d$/.test(a.desde) && /^\d\d:\d\d$/.test(a.hasta) && a.t === "Invitado · 45’" && a.p === "Probador 1" && a.cliente_confirmo === false && a.enlaces.charla === `/bandeja/charla?id=${conv}` && a.enlaces.ficha === `/clientes?id=${cli}`,
+      `el cartel trae el turno, la ficha (con el mail, 2.4) y los links (${a?.desde}–${a?.hasta}, ${a?.t}, ${a?.cliente.nombre}, ${a?.cliente.email}, ${a?.cliente.evento} ${a?.cliente.fecha_evento_corta}, ${a?.cliente.rol}, talle ${a?.cliente.talle_aprox}, ${a?.cliente.color_preferido})`
     );
+    ok(ficha.email === "juan.perez@gmail.com", `(control del propio test) el mail sigue puesto y normalizado antes del aviso: ${ficha.email}`);
     const c = nuestros.find((t) => t.id === tC);
     ok(c?.cliente_confirmo === true && c.confirmado_por === "cliente", "el que confirmó el cliente sale marcado como confirmado por WhatsApp");
 
