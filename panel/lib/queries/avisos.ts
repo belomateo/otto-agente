@@ -30,6 +30,8 @@ export type AvisoTurno = {
     nombre: string;
     telefono: string;
     telefono_legible: string;
+    /** En minúscula y sin espacios (0029); null si el cliente no lo dio. */
+    email: string | null;
     evento: string | null;
     fecha_evento: string | null;
     /** '25/10' */
@@ -83,7 +85,7 @@ export async function turnosPorAvisar(db: ClienteDb): Promise<AvisosDeTurno> {
   const [clientes, charlas] = await Promise.all([
     db
       .from('clientes')
-      .select('id, nombre, telefono, evento, fecha_evento, rol, talle_aprox, color_preferido, notas_libres')
+      .select('id, nombre, telefono, email, evento, fecha_evento, rol, talle_aprox, color_preferido, notas_libres')
       .in('id', idsClientes),
     db
       .from('conversaciones')
@@ -120,6 +122,7 @@ export async function turnosPorAvisar(db: ClienteDb): Promise<AvisosDeTurno> {
           nombre: nombreDe(c),
           telefono: c?.telefono ?? '',
           telefono_legible: c ? telefonoLegible(c.telefono) : '',
+          email: c?.email ?? null,
           evento: c?.evento ? (ETIQUETA_EVENTO[c.evento] ?? c.evento) : null,
           fecha_evento: c?.fecha_evento ?? null,
           fecha_evento_corta: c?.fecha_evento ? diaMes(c.fecha_evento) : null,

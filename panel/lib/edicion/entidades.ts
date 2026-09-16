@@ -5,8 +5,9 @@
 // telefono, creado_at…) no están nunca: las pone la base (triggers de 0003 y 0017).
 //
 // Quién: Configuración y Catálogo, solo un admin (0007 dejó "solo admin en precios" para
-// los route handlers de paneles). Clientes y Conocimiento, cualquier perfil aprobado. Es un
-// supuesto de H1.9: se cambia con `soloAdmin` en cada entidad.
+// los route handlers de paneles). Clientes, Conocimiento y los estados de Turnos, cualquier
+// perfil aprobado (el asesor de mostrador es rol 'equipo'). Es un supuesto de H1.9: se cambia
+// con `soloAdmin` en cada entidad.
 //
 // Los límites de largo son de cordura, no datos del negocio: los datos del negocio (precios,
 // horarios, duraciones, cantidad de probadores) viven en las tablas y acá solo se validan.
@@ -318,9 +319,13 @@ export const ENTIDADES = {
     'clientes',
     {
       nombre: textoOpcional(120),
+      // Se guarda en minúscula y sin espacios (2.4, decisión #17): la base lo exige igual
+      // (0029, clientes_email_formato) pero acá se normaliza antes de mandarlo, no se rechaza
+      // solo por mayúsculas. Vacío lo borra (lo decide una persona, no Lucía).
       email: z
         .string()
         .trim()
+        .toLowerCase()
         .max(200)
         .regex(/^([^\s@]+@[^\s@]+\.[^\s@]+)?$/, 'Email inválido')
         .nullable()
@@ -343,6 +348,49 @@ export const ENTIDADES = {
     'enlaces',
     { nombre: texto(80), url: enlace, activo: z.boolean() },
     { obligatorios: ['nombre', 'url'] }
+  ),
+
+  // Turnos: los 5 estados que marca el asesor desde la pestaña Turnos (PROCESOS.md § 2, "En el
+  // local" y "Retiro y devolución"). sin-confirmar/confirmado no se tocan por acá: sin-confirmar
+  // es el inicial y confirmado sale del OK del cartel (H1.16) o del botón de WhatsApp del
+  // cliente. No hay alta ni borrado: el turno ya existe (agendar_turno, o el propio panel más
+  // adelante). Transiciones válidas — no todas las que acepta el enum de la base (0011):
+  //   alquilo   ← sin-confirmar | confirmado   (tomó las medidas, se reservó con el 100%)
+  //   retiro    ← alquilo                       (retiró la prenda)
+  //   devolvio  ← retiro                        (la devolvió)
+  //   no-vino   ← sin-confirmar | confirmado    (no se presentó)
+  //   cancelado ← sin-confirmar | confirmado | alquilo | retiro, con motivo_cancelacion
+  // devolvio, no-vino y cancelado son finales: no se editan por acá (0011 ya libera el hueco
+  // de la agenda). Editar solo motivo_cancelacion sin cambiar el estado está permitido (p. ej.
+  // corregirlo). historial_ediciones y editado_por salen gratis de 0004/0017 (turnos ya tiene
+  // el trigger de autoría); cancelado_at lo pone 0011.
+  turnos: definir(
+    'turnos',
+    { estado: z.enum(['alquilo', 'retiro', 'devolvio', 'no-vino', 'cancelado']), motivo_cancelacion: textoOpcional(300) },
+    {
+      obligatorios: null,
+      soloAdmin: false,
+      verificar: async (_db, actual, final) => {
+        if (!actual) return null;
+        const previo = actual.estado as string;
+        const nuevo = final.estado as string;
+        if (nuevo === previo) return null; // no cambia el estado (p. ej. solo el motivo)
+        const origenValido: Record<string, string[]> = {
+          alquilo: ['sin-confirmar', 'confirmado'],
+          retiro: ['alquilo'],
+          devolvio: ['retiro'],
+          'no-vino': ['sin-confirmar', 'confirmado'],
+          cancelado: ['sin-confirmar', 'confirmado', 'alquilo', 'retiro'],
+        };
+        if (!origenValido[nuevo]?.includes(previo)) {
+          return { status: 409, mensaje: `No se puede pasar de "${previo}" a "${nuevo}"` };
+        }
+        if (nuevo === 'cancelado' && !(final.motivo_cancelacion as string | null)?.trim()) {
+          return { status: 400, mensaje: 'Cancelar un turno necesita un motivo' };
+        }
+        return null;
+      },
+    }
   ),
 } satisfies Record<string, Entidad>;
 
