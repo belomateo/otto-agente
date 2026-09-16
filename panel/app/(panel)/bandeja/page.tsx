@@ -5,13 +5,13 @@
 // en /bandeja/charla). Un solo pedido para las dos ramas (BandejaSplit lo usa en escritorio,
 // ConversationList en mobile): conviven en el DOM aunque solo una se vea, según el ancho.
 
-import { useDatos } from '@/components/api/useDatos';
+import { SONDEO_LISTAS_MS, useDatos } from '@/components/api/useDatos';
 import type { FilaBandeja } from '@/lib/queries/bandeja';
 import { BandejaSplit } from './BandejaSplit';
 import { ConversationList } from './ConversationList';
 
 export default function BandejaPage() {
-  const { datos, cargando, error, recargar } = useDatos<{ conversaciones: FilaBandeja[] }>('/api/bandeja');
+  const { datos, cargando, error, recargar } = useDatos<{ conversaciones: FilaBandeja[] }>('/api/bandeja', { sondeoMs: SONDEO_LISTAS_MS });
   const conversaciones = datos?.conversaciones ?? [];
 
   return (

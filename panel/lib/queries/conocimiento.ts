@@ -1,7 +1,7 @@
 // Conocimiento (H1.8): los fragmentos agrupados por tema (los 16 de AGENTE.md § 8, también
 // los que todavía no tienen ninguno, para que se vea qué falta cargar) y el buscador
-// "Probá cómo lo encontraría un cliente". Cada fragmento trae la forma de los mocks
-// (`fragmentos` de lib/mock-data.ts: t, txt, v, on) más id y versión para editarlo.
+// "Probá cómo lo encontraría un cliente". Cada fragmento trae la forma que tenía el mock
+// (t, txt, v, on) más id y versión para editarlo.
 //
 // El buscador es PROVISORIO: tiene que usar la misma consulta que buscar_informacion de
 // Lucía (agente, H1.4/H1.6), que todavía no existe. Hasta Fase 2 hace una búsqueda de texto

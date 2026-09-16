@@ -8,6 +8,7 @@
 // que no sea admin, el switch y Guardar van a fallar con 403; acá no se oculta nada, se deja
 // que el propio error lo diga.
 
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
@@ -20,7 +21,7 @@ import { SwitchMuestra } from './SwitchMuestra';
 const VACIO = { titulo: 'Todavía no hay modelos', texto: 'Lucía solo muestra lo que está cargado acá.' };
 const SIN_CONECTAR = 'Todavía no conectado';
 
-function FotoPlaceholder({ texto, chico = false }: { texto: string; chico?: boolean }) {
+export function FotoPlaceholder({ texto, chico = false }: { texto: string; chico?: boolean }) {
   return (
     <div className="flex aspect-[3/4] items-center justify-center" style={{ background: 'repeating-linear-gradient(45deg,#EFEBE3 0 12px,#F5F1EA 12px 24px)' }}>
       <span className={`max-w-[85%] rounded-[6px] border border-dashed border-[#C9C4B9] bg-lino text-center font-mono text-[#8A8578] ${chico ? 'px-[7px] py-[3px] text-[14px]' : 'px-2.5 py-1 text-[14px] md:text-[11px]'}`}>
@@ -30,10 +31,15 @@ function FotoPlaceholder({ texto, chico = false }: { texto: string; chico?: bool
   );
 }
 
+// Un link roto (foto borrada del storage, URL vieja) muestra el ícono roto del navegador si no
+// se hace nada: onError pasa al mismo placeholder que ya cubre "sin foto todavía". Se resetea
+// si la URL cambia (se subió una nueva) para no quedar pegado a un error de la anterior.
 function Foto({ modelo, chico = false }: { modelo: FilaModelo; chico?: boolean }) {
-  if (!modelo.foto) return <FotoPlaceholder texto={modelo.n} chico={chico} />;
+  const [rota, setRota] = useState(false);
+  useEffect(() => setRota(false), [modelo.foto]);
+  if (!modelo.foto || rota) return <FotoPlaceholder texto={modelo.n} chico={chico} />;
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={modelo.foto} alt={modelo.n} className="aspect-[3/4] w-full object-cover" />;
+  return <img src={modelo.foto} alt={modelo.n} className="aspect-[3/4] w-full object-cover" onError={() => setRota(true)} />;
 }
 
 export default function CatalogoPage() {

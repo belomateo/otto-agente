@@ -3,7 +3,7 @@
 // desde < hasta, las franjas de un día no se pisan y cada una tiene de 1 al total
 // de probadores del local. Qué hueco se ofrece es de logica (H1.13), no de acá.
 
-import type { Franja } from './agenda-mock';
+export type Franja = { desde: string; hasta: string; probadores: number };
 
 /** '13:30' → 810. Devuelve null si la hora está mal escrita. */
 export function aMinutos(hora: string): number | null {

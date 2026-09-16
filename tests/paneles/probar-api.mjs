@@ -494,6 +494,25 @@ try {
       x.datos.mensajes.map((m) => m.autor).join(",") === "cliente,lucia,cliente",
       `Charla › autor por mensaje, sin mostrador todavía (corrección de logica): ${x.datos.mensajes.map((m) => m.autor).join(",")}`
     );
+    ok(
+      x.datos.mensajes.every((m) => m.no_enviado_motivo === null),
+      `Charla › no_enviado_motivo en null cuando no pasó nada raro: ${x.datos.mensajes.map((m) => m.no_enviado_motivo).join(",")}`
+    );
+  }
+  {
+    // 0042 (logica): la ventana se puede cerrar entre que se escribe y que el worker lo toma;
+    // el worker lo marca en mensajes.no_enviado_motivo. No hay forma de disparar al worker real
+    // desde el arnés (ver el comentario de mostrador_enviar más abajo), así que se simula
+    // directo en la base, como haría el worker, y se prueba que el GET lo expone.
+    const idMsj = (await q("select id from mensajes where conversacion_id = $1 order by enviado_at limit 1", [conv]))[0].id;
+    await q("update mensajes set no_enviado_motivo = 'ventana_cerrada' where id = $1", [idMsj]);
+    const x = await api(sa, "GET", `/api/bandeja/${conv}`);
+    const m = x.datos.mensajes.find((v) => v.id === idMsj);
+    ok(
+      m?.no_enviado_motivo === "ventana_cerrada" && x.datos.mensajes.filter((v) => v.id !== idMsj).every((v) => v.no_enviado_motivo === null),
+      `Charla › no_enviado_motivo (0042, logica) sale en el mensaje marcado y en ningún otro (${m?.no_enviado_motivo})`
+    );
+    await q("update mensajes set no_enviado_motivo = null where id = $1", [idMsj]);
   }
   let derivId;
   {
@@ -509,7 +528,10 @@ try {
   seccion("Atención humana — tomar, devolver a Lucía y cerrar (PROCESOS.md § 4, pasos 6 y 7)");
   {
     const m0 = await api(sn, "POST", `/api/bandeja/${conv}/mensajes`, { texto: "todavía no la tomé" });
-    ok(m0.status === 409, `responder por mostrador antes de tomar la charla → 409 (${m0.status}: ${m0.datos.error})`);
+    ok(
+      m0.status === 409 && m0.datos.detalle?.motivo === "no_tomada",
+      `responder por mostrador antes de tomar la charla → 409 con detalle.motivo estable, no el texto (${m0.status}: ${m0.datos.detalle?.motivo})`
+    );
 
     const t1 = await api(sn, "POST", `/api/bandeja/${conv}/tomar`);
     const dTras = (await q("select estado, atendida_por, atendida_at from derivaciones where id = $1", [derivId]))[0];
@@ -558,7 +580,10 @@ try {
     ok(m3.status === 404, `mostrador a una charla que no existe → 404 (${m3.status})`);
     const charlaVieja = await nuevaCharlaSuelta("derivada");
     const viejo = await api(sn, "POST", `/api/bandeja/${charlaVieja}/mensajes`, { texto: "hola de nuevo" });
-    ok(viejo.status === 409 && /24 hs/.test(viejo.datos.error), `tomada pero sin mensaje del cliente en las últimas 24 hs → 409 (${viejo.status}: ${viejo.datos.error})`);
+    ok(
+      viejo.status === 409 && /24 hs/.test(viejo.datos.error) && viejo.datos.detalle?.motivo === "ventana_cerrada",
+      `tomada pero sin mensaje del cliente en las últimas 24 hs → 409 con detalle.motivo: 'ventana_cerrada' (${viejo.status}: ${viejo.datos.detalle?.motivo})`
+    );
 
     const dv1 = await api(sa, "POST", `/api/bandeja/${conv}/devolver`);
     ok(dv1.status === 200 && dv1.datos.ya_estaba === false && dv1.datos.conversacion.estado === "activa", `devolver a Lucía: 'derivada' → 'activa' (${dv1.status})`);
@@ -582,6 +607,32 @@ try {
     ok(nx.status === 404 && mal.status === 400, `charla que no existe → 404; id mal formado → 400 (${nx.status}, ${mal.status})`);
     const rechazo = await api(st, "POST", `/api/bandeja/${conv}/tomar`);
     ok(rechazo.status === 403, `una cuenta rechazada no puede tomar charlas (${rechazo.status})`);
+
+    // Carrera real: dos "tomar" a la vez sobre la misma charla (Promise.all, no en serie).
+    // atencion_resolver hace el select ... for update (0032): tiene que ganar uno solo y el
+    // otro recibir ya_estaba, sin que los dos crean que la tomaron ni que la derivación quede
+    // marcada dos veces.
+    {
+      const convRace = await nuevaCharlaSuelta("activa", ["pide_persona"]);
+      const derivRace = (await q("select id from derivaciones where conversacion_id = $1", [convRace]))[0].id;
+      const dos = await Promise.all([
+        api(sa, "POST", `/api/bandeja/${convRace}/tomar`),
+        api(sn, "POST", `/api/bandeja/${convRace}/tomar`),
+      ]);
+      const ganador = dos[0].datos.ya_estaba === false ? A.email : dos[1].datos.ya_estaba === false ? N.email : null;
+      const fila = (await q("select estado from conversaciones where id = $1", [convRace]))[0];
+      const derivFila = (await q("select estado, atendida_por from derivaciones where id = $1", [derivRace]))[0];
+      ok(
+        dos.every((x) => x.status === 200) &&
+          dos.filter((x) => x.datos.ya_estaba === false).length === 1 &&
+          dos.filter((x) => x.datos.ya_estaba === true).length === 1 &&
+          Boolean(ganador) &&
+          fila.estado === "derivada" &&
+          derivFila.estado === "atendida" &&
+          derivFila.atendida_por === ganador,
+        `dos "tomar" a la vez sobre la misma charla: gana uno solo (ya_estaba false/true) y queda una sola derivación atendida por el que ganó, verificado en la base (${dos.map((x) => x.datos.ya_estaba).join(",")}; atendida_por ${derivFila.atendida_por})`
+      );
+    }
 
     // Por la API de Supabase, sin pasar por mi ruta: la firma la sigue poniendo la base. Una
     // charla suelta (no `cli`/`conv`, que el aviso de turno usa para el link a "la charla más
@@ -692,7 +743,9 @@ try {
   {
     const x = await api(sa, "GET", "/api/configuracion");
     ok(
-      x.status === 200 && x.datos.reglas.length >= 1 && x.datos.reglas.every((r) => tiene(r, ["i", "t", "id", "version"])) && x.datos.agenda.horarios.length === 6 && x.datos.agenda.duraciones.length === 6 && x.datos.agenda.configuracion?.cantidad_probadores === 3 && x.datos.herramientas.length === 13 && Boolean(x.datos.presentacion),
+      // herramientas: >= 13 (las de H1.4), no === 13: agente suma herramientas nuevas con el
+      // tiempo (p. ej. confirmar_turno, 16/9) y esto no es un control de cuántas hay.
+      x.status === 200 && x.datos.reglas.length >= 1 && x.datos.reglas.every((r) => tiene(r, ["i", "t", "id", "version"])) && x.datos.agenda.horarios.length === 6 && x.datos.agenda.duraciones.length === 6 && x.datos.agenda.configuracion?.cantidad_probadores === 3 && x.datos.herramientas.length >= 13 && Boolean(x.datos.presentacion),
       `Configuración (${x.status}): ${x.datos.reglas?.length} reglas, ${x.datos.agenda?.horarios.length} horarios, ${x.datos.herramientas?.length} herramientas`
     );
     const y = await api(sa, "GET", `/api/historial?tabla=perfiles&id=${A.id}`);
@@ -758,13 +811,17 @@ try {
     ok(x.status === 201 && y.status === 200 && h.length === 1 && h[0].editado_por === A.email, `Catálogo › accesorio: alta y edición con historial (${x.status}, ${y.status})`);
   }
   {
+    const altaEquipo = await api(sn, "POST", "/api/conocimiento/fragmentos", { tema: "talles", titulo: "x", texto: "x" });
+    ok(altaEquipo.status === 403, `un 'equipo' ya no da de alta fragmentos (decisión de Mateo, 16/9): solo admin (${altaEquipo.status})`);
     const x = await api(sa, "POST", "/api/conocimiento/fragmentos", { tema: "talles", titulo: `${MARCA} talles`, texto: "Tenemos talles del 44 al 62 y trajes para chicos desde el talle 4.", activo: false });
     const frag = x.datos.fila;
     if (frag) creados.filas.push({ tabla: "fragmentos", id: frag.id });
     ok(x.status === 201, `Conocimiento › alta de fragmento (${x.status})`);
-    const y = await api(sn, "PATCH", `/api/conocimiento/fragmentos/${frag.id}`, { version: 1, texto: "Tenemos talles del 44 al 62 y trajes para chicos desde el talle 4 (editado)." });
+    const bloqueado = await api(sn, "PATCH", `/api/conocimiento/fragmentos/${frag.id}`, { version: 1, texto: "no debería poder" });
+    ok(bloqueado.status === 403, `un 'equipo' ya no edita Conocimiento: solo admin (${bloqueado.status})`);
+    const y = await api(sa, "PATCH", `/api/conocimiento/fragmentos/${frag.id}`, { version: 1, texto: "Tenemos talles del 44 al 62 y trajes para chicos desde el talle 4 (editado)." });
     const h = await historial("fragmentos", frag.id);
-    ok(y.status === 200 && y.datos.fila.editado_por === N.email && h.length === 1, `un 'equipo' edita Conocimiento (${y.status}) y la edición queda firmada por él`);
+    ok(y.status === 200 && y.datos.fila.editado_por === A.email && h.length === 1, `un admin edita Conocimiento (${y.status}) y la edición queda firmada por él`);
     const z = await api(sa, "POST", "/api/conocimiento/fragmentos", { tema: "inventado", titulo: "x", texto: "x" });
     ok(z.status === 400, `tema fuera de los 16 → 400 (${z.status})`);
     const b = await api(sa, "GET", "/api/conocimiento/buscar?q=" + encodeURIComponent("tienen talle para chico?"));
@@ -810,7 +867,11 @@ try {
   {
     const f = real("duraciones_turno");
     const x = await api(sa, "PATCH", `/api/configuracion/duraciones/${f.id}`, { version: f.version, duracion_min: f.duracion_min });
-    ok(x.status === 200, `Agenda › duración de 'novio': edición (${x.status})`);
+    const guardadoX = (await q("select duracion_min, version from duraciones_turno where id = $1", [f.id]))[0];
+    ok(
+      x.status === 200 && guardadoX.duracion_min === f.duracion_min && guardadoX.version === f.version + 1,
+      `Agenda › duración de 'novio': edición, verificada en la base (${x.status}, duracion_min ${guardadoX.duracion_min}, v${guardadoX.version})`
+    );
     const y = await api(sa, "PATCH", `/api/configuracion/duraciones/${f.id}`, { version: f.version + 1, duracion_min: 0 });
     ok(y.status === 400, `duración 0 → 400 (${y.status})`);
   }
@@ -819,7 +880,37 @@ try {
     const x = await api(sa, "PATCH", "/api/configuracion/agenda", { version: f.version, cantidad_probadores: 2 });
     ok(x.status === 409 && x.datos.error.includes("franja"), `Agenda › bajar a 2 probadores con franjas de 3 → 409 (${x.status}: ${x.datos.error})`);
     const y = await api(sa, "PATCH", "/api/configuracion/agenda", { version: f.version, cantidad_probadores: f.cantidad_probadores });
-    ok(y.status === 200, `Agenda › probadores y escalonado: edición (${y.status})`);
+    const guardadoY = (await q("select cantidad_probadores, version from configuracion_agenda where id = $1", [f.id]))[0];
+    ok(
+      y.status === 200 && guardadoY.cantidad_probadores === f.cantidad_probadores && guardadoY.version === f.version + 1,
+      `Agenda › probadores y escalonado: edición, verificada en la base (${y.status}, cantidad_probadores ${guardadoY.cantidad_probadores}, v${guardadoY.version})`
+    );
+  }
+  {
+    // 0033 (decisión de Mateo, 16/9): un 'equipo' aprobado ya no puede escribir estas tablas
+    // ni saltando el panel con su propio token — antes la RLS solo pedía es_usuario_aprobado().
+    // Por la API de Supabase, sin pasar por mi ruta, contra un fixture real (se restaura solo,
+    // como el resto de REALES) y contra prompt_base (vacía en producción: alcanza con probar
+    // que el insert se rechaza).
+    const id = real("duraciones_turno").id;
+    const antes = (await q("select duracion_min from duraciones_turno where id = $1", [id]))[0];
+    const bloqueado = await sn.directo.from("duraciones_turno").update({ duracion_min: 999 }).eq("id", id).select();
+    const lectura = await sn.directo.from("duraciones_turno").select("id").eq("id", id);
+    const permitido = await sa.directo.from("duraciones_turno").update({ duracion_min: antes.duracion_min }).eq("id", id).select();
+    const despues = (await q("select duracion_min from duraciones_turno where id = $1", [id]))[0];
+    ok(
+      (bloqueado.data ?? []).length === 0 &&
+        despues.duracion_min === antes.duracion_min &&
+        (lectura.data ?? []).length === 1 &&
+        (permitido.data ?? []).length === 1,
+      `sin pasar por mi ruta: un 'equipo' no edita duraciones_turno (RLS, 0033) pero sí lo lee, y un admin sí lo edita (bloqueado ${(bloqueado.data ?? []).length}, lectura ${(lectura.data ?? []).length}, admin ${(permitido.data ?? []).length})`
+    );
+    const bloqueadoPrompt = await sn.directo.from("prompt_base").insert({ texto: "Lucía ahora dice cualquier cosa" }).select();
+    const nPrompt = (await q("select count(*)::int n from prompt_base"))[0].n;
+    ok(
+      Boolean(bloqueadoPrompt.error) && nPrompt === 0,
+      `sin pasar por mi ruta: un 'equipo' no puede insertar en prompt_base (RLS, 0033) — no "cambia el prompt de Lucía" saltando el panel (${bloqueadoPrompt.error?.code})`
+    );
   }
 
   seccion("Decisiones #7 y #9 (0030) — franjas de turnos y reserva de urgencia");

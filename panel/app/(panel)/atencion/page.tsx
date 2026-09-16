@@ -20,7 +20,7 @@ import { Chip } from '@/components/ui-otto/Chip';
 import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
-import { useDatos } from '@/components/api/useDatos';
+import { SONDEO_LISTAS_MS, useDatos } from '@/components/api/useDatos';
 import { ChatThread } from '../bandeja/ChatThread';
 import type { EstadoDerivacion, FilaDerivacion } from '@/lib/queries/atencion';
 
@@ -72,7 +72,7 @@ function TarjetaDerivacion({ d, activa, onClick, compacta = false }: { d: FilaDe
 export default function AtencionPage() {
   const [tab, setTab] = useState<EstadoDerivacion>('pendiente');
   const [seleccionId, setSeleccionId] = useState<string | null>(null);
-  const { datos, cargando, error, recargar } = useDatos<Respuesta>(`/api/atencion?estado=${tab}`);
+  const { datos, cargando, error, recargar } = useDatos<Respuesta>(`/api/atencion?estado=${tab}`, { sondeoMs: SONDEO_LISTAS_MS });
   const lista = datos?.derivaciones ?? [];
   const pendientes = datos?.pendientes ?? 0;
   const atendidas = datos?.atendidas ?? 0;

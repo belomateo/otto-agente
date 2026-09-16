@@ -1,46 +1,50 @@
 'use client';
 
-// Solicitudes y usuarios mientras son mock. Viven en el layout de Configuración
-// para que el número de la subpestaña «Accesos» acompañe a cada Aprobar /
-// Rechazar / Deshacer. Cada acción devuelve la función que la deshace (Toast).
+// Solicitudes de acceso reales (H1.10, paneles): GET /api/accesos?estado=pendiente (admin) y
+// POST /api/accesos/<id> para aprobar (equipo, por defecto del servidor) o rechazar. Vive en
+// el layout para que el número de la subpestaña «Accesos» acompañe al Aprobar/Rechazar de la
+// propia pantalla. Con un usuario que no es admin, el pedido da 403: no se muestra número (no
+// "0", que sugeriría que se sabe que no hay ninguna) y la propia pantalla de Accesos explica
+// el error si alguien no-admin llega a abrirla.
 
-import { createContext, useContext, useState } from 'react';
-import { SOLICITUDES, USUARIOS, type Solicitud, type Usuario } from './accesos/accesos-mock';
+import { createContext, useContext } from 'react';
+import { enviar, ErrorApi } from '@/components/api/cliente';
+import { useDatos } from '@/components/api/useDatos';
+import type { SolicitudAcceso } from '@/lib/queries/accesos';
 
-type EstadoAccesos = { solicitudes: Solicitud[]; usuarios: Usuario[] };
-
-type Contexto = EstadoAccesos & {
-  aprobar: (id: string) => () => void;
-  rechazar: (id: string) => () => void;
-  quitar: (id: string) => () => void;
+type Contexto = {
+  pendientes: SolicitudAcceso[];
+  cargando: boolean;
+  error: string | null;
+  recargar: () => void;
+  aprobar: (id: string) => Promise<string | null>;
+  rechazar: (id: string) => Promise<string | null>;
 };
 
 const AccesosCtx = createContext<Contexto | null>(null);
 
 export function AccesosProvider({ children }: { children: React.ReactNode }) {
-  const [estado, setEstado] = useState<EstadoAccesos>({ solicitudes: SOLICITUDES, usuarios: USUARIOS });
+  const { datos, cargando, error, recargar } = useDatos<{ solicitudes: SolicitudAcceso[] }>('/api/accesos?estado=pendiente');
 
-  function aplicar(cambio: (e: EstadoAccesos) => EstadoAccesos) {
-    const anterior = estado;
-    setEstado(cambio);
-    return () => setEstado(anterior);
+  async function resolver(id: string, accion: 'aprobar' | 'rechazar') {
+    try {
+      await enviar(`/api/accesos/${id}`, 'POST', { accion });
+      recargar();
+      return null;
+    } catch (e) {
+      return e instanceof ErrorApi ? e.message : 'No se pudo guardar';
+    }
   }
 
   return (
     <AccesosCtx.Provider
       value={{
-        ...estado,
-        aprobar: (id) =>
-          aplicar((e) => {
-            const s = e.solicitudes.find((x) => x.id === id);
-            if (!s) return e;
-            return {
-              solicitudes: e.solicitudes.filter((x) => x.id !== id),
-              usuarios: [...e.usuarios, { id: s.id, nombre: s.nombre, email: s.email, rol: 'equipo' }],
-            };
-          }),
-        rechazar: (id) => aplicar((e) => ({ ...e, solicitudes: e.solicitudes.filter((x) => x.id !== id) })),
-        quitar: (id) => aplicar((e) => ({ ...e, usuarios: e.usuarios.filter((x) => x.id !== id) })),
+        pendientes: datos?.solicitudes ?? [],
+        cargando,
+        error,
+        recargar,
+        aprobar: (id) => resolver(id, 'aprobar'),
+        rechazar: (id) => resolver(id, 'rechazar'),
       }}
     >
       {children}

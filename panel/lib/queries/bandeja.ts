@@ -78,6 +78,11 @@ export type MensajeCharla = {
    *  mostrador). Antes de esto todo saliente se dibujaba como de Lucía (corrección pedida por
    *  Mateo tras la auditoría de logica). */
   autor: 'cliente' | 'lucia' | 'mostrador';
+  /** null = normal (salió o todavía no le tocó). Con valor, no salió y no va a salir: la
+   *  ventana de WhatsApp se cerró entre que se escribió y que el worker lo tomó, o falló el
+   *  envío (0042, logica). Misma recomendación que el 409 de mostrador_enviar: escribirle al
+   *  cliente desde otro número. */
+  no_enviado_motivo: 'ventana_cerrada' | 'error_al_enviar' | null;
   /** '10:01' */
   hora: string;
   /** 'YYYY-MM-DD' en la zona del negocio, para separar por día. */
@@ -108,7 +113,7 @@ export async function obtenerCharla(db: ClienteDb, id: string): Promise<Charla |
   const [mensajes, eventos, turno] = await Promise.all([
     db
       .from('mensajes')
-      .select('id, direccion, tipo, contenido, enviado_at')
+      .select('id, direccion, tipo, contenido, enviado_at, no_enviado_motivo')
       .eq('conversacion_id', id)
       .order('enviado_at', { ascending: true })
       .limit(LIMITE_HILO),
@@ -142,6 +147,7 @@ export async function obtenerCharla(db: ClienteDb, id: string): Promise<Charla |
       tipo: m.tipo,
       texto: textoDeMensaje(m),
       autor: autorDeMensaje(m),
+      no_enviado_motivo: m.no_enviado_motivo as 'ventana_cerrada' | 'error_al_enviar' | null,
       hora: hora(m.enviado_at),
       fecha: fechaEnZona(new Date(m.enviado_at)),
     })),

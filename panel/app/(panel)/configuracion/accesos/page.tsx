@@ -1,10 +1,8 @@
-// Configuración › Accesos (DISENO.md § 8). Solicitudes pendientes y usuarios.
-// Mock: se ve con cualquier usuario aprobado. Ocultarla al rol «equipo» y
-// conectar los datos es H1.10 (paneles), sobre esta maqueta.
+// Configuración › Accesos — conectado a GET /api/accesos y POST /api/accesos/<id> (H1.10,
+// paneles). Solo admin: con un usuario 'equipo' el pedido da 403 y Accesos.tsx lo explica.
 
-import { pideVacio, type BusquedaPagina } from '../../vacio';
 import { Accesos } from './Accesos';
 
-export default async function AccesosPage({ searchParams }: { searchParams: BusquedaPagina }) {
-  return <Accesos vacia={await pideVacio(searchParams)} />;
+export default function AccesosPage() {
+  return <Accesos />;
 }
