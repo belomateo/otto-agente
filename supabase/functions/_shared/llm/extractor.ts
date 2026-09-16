@@ -8,7 +8,7 @@
 // tampoco el LLM decide un hecho: si no pasa la validación, no es un hecho, es ruido).
 
 import { DIA_O_NOCHE, EVENTOS, ROLES_CLIENTE } from "../enums.ts";
-import { CAMPOS_FICHA, type Ficha } from "../herramientas/ficha.ts";
+import { CAMPOS_FICHA, formatoDeEmailValido, type Ficha } from "../herramientas/ficha.ts";
 import { esFechaValida } from "../tiempo.ts";
 import { llamarChat } from "./cliente.ts";
 import { ESQUEMA_FICHA } from "./esquemas.ts";
@@ -39,6 +39,7 @@ export function validarExtraccion(cruda: Record<string, unknown>): { ficha: Part
     if (campo === "rol" && !(ROLES_CLIENTE as readonly string[]).includes(valor)) { descartados.push(`rol="${valor}"`); continue; }
     if (campo === "dia_o_noche" && !(DIA_O_NOCHE as readonly string[]).includes(valor)) { descartados.push(`dia_o_noche="${valor}"`); continue; }
     if (campo === "fecha_evento" && !esFechaValida(valor)) { descartados.push(`fecha_evento="${valor}" (no es AAAA-MM-DD)`); continue; }
+    if (campo === "email" && !formatoDeEmailValido(valor)) { descartados.push(`email="${valor}" (no tiene forma de mail)`); continue; }
     ficha[campo] = valor;
   }
   return { ficha, descartados };

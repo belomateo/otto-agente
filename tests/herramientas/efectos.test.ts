@@ -11,6 +11,7 @@ import {
   crearCliente,
   crearTurno,
   esOk,
+  esRechazo,
   FECHA_EVENTO,
   fila,
   hueco,
@@ -164,6 +165,21 @@ prueba("guardar_datos_cliente escribe solo lo que vino y deja historial de la ve
   // Mandar lo mismo otra vez no escribe nada nuevo.
   esOk(await ejecutarHerramienta("guardar_datos_cliente", { ciudad: "Roldán" }, ctx));
   assertEquals(await contar(sql, "select count(*)::int as n from historial_ediciones where tabla = 'clientes' and fila_id = $1", [clienteId]), despues);
+});
+
+prueba("guardar_datos_cliente guarda el mail en minúscula (hito 2.3)", async ({ ctx, sql, clienteId }) => {
+  esOk(await ejecutarHerramienta("guardar_datos_cliente", { email: "Juan@Gmail.com" }, ctx));
+  assertEquals((await fila(sql, "select email from clientes where id = $1", [clienteId])).email, "juan@gmail.com");
+
+  // Uno nuevo y válido reemplaza al anterior (supuesto #35: se corrigió).
+  esOk(await ejecutarHerramienta("guardar_datos_cliente", { email: "juan.otro@hotmail.com" }, ctx));
+  assertEquals((await fila(sql, "select email from clientes where id = $1", [clienteId])).email, "juan.otro@hotmail.com");
+});
+
+prueba("guardar_datos_cliente rechaza un mail sin forma de mail y no toca la ficha", async ({ ctx, sql, clienteId }) => {
+  await sql.query("update clientes set email = 'valido@otto.com' where id = $1", [clienteId]);
+  esRechazo(await ejecutarHerramienta("guardar_datos_cliente", { email: "no es un mail" }, ctx), "email_invalido");
+  assertEquals((await fila(sql, "select email from clientes where id = $1", [clienteId])).email, "valido@otto.com");
 });
 
 prueba("anotar deja la nota en la libreta del cliente", async ({ ctx, sql, clienteId }) => {

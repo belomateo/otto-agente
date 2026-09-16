@@ -15,6 +15,7 @@ import {
   TIPOS_TURNO,
 } from "../../supabase/functions/_shared/enums.ts";
 import { enlacesDeTipo } from "../../supabase/functions/_shared/herramientas/enlaces.ts";
+import { FORMATO_EMAIL } from "../../supabase/functions/_shared/herramientas/ficha.ts";
 import { buscarHerramienta, HERRAMIENTAS } from "../../supabase/functions/_shared/herramientas/index.ts";
 import { conBase } from "./_arnes.ts";
 
@@ -152,6 +153,20 @@ Deno.test({
         assertEquals(ordenado(await enumDeLaBase(sql, restriccion)), ordenado(schema), restriccion);
       }
       assertEquals(enumDelSchema("agendar_turno", "evento"), [...EVENTOS]);
+    }),
+});
+
+Deno.test({
+  name: "mail: el formato de ficha.ts (FORMATO_EMAIL) es el mismo regex que el check de la base (0029, hito 2.3)",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: () =>
+    conBase(async (sql) => {
+      const r = await sql.query("select pg_get_constraintdef(oid) as d from pg_constraint where conname = 'clientes_email_formato'");
+      assert(r.rows.length === 1, "no existe la restricción clientes_email_formato en la base");
+      const m = String(r.rows[0].d).match(/~ '([^']+)'/);
+      assert(m, "el check de clientes_email_formato ya no usa un ~ con el formato del mail");
+      assertEquals(m[1], FORMATO_EMAIL.source, "clientes_email_formato (0029) vs. FORMATO_EMAIL de ficha.ts");
     }),
 });
 

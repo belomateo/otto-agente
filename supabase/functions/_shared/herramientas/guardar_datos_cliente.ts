@@ -5,7 +5,7 @@
 
 import { DIA_O_NOCHE, EVENTOS, ROLES_CLIENTE } from "../enums.ts";
 import { fechaLocal } from "../tiempo.ts";
-import { actualizarFicha, CAMPOS_FICHA, type Ficha } from "./ficha.ts";
+import { actualizarFicha, CAMPOS_FICHA, formatoDeEmailValido, type Ficha } from "./ficha.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
 export const guardarDatosCliente: Herramienta<Ficha> = {
@@ -13,8 +13,8 @@ export const guardarDatosCliente: Herramienta<Ficha> = {
   tipo: "accion",
   descripcion: "Guarda en la ficha del cliente lo que te dijo, en el mismo turno en que te lo dice: nombre, " +
     "evento, fecha del evento, si es novio, invitado, graduado o padre, si es de día o de noche, talle " +
-    "aproximado, ciudad, color preferido y lo que dijo del presupuesto. Mandá solo lo que dijo; lo demás, null. " +
-    "Nunca lo que suponés.",
+    "aproximado, ciudad, color preferido, lo que dijo del presupuesto y su mail. Mandá solo lo que dijo; lo " +
+    "demás, null. Nunca lo que suponés.",
   parametros: objeto({
     nombre: { type: ["string", "null"], maxLength: 80, description: "Nombre, como lo dijo." },
     evento: { type: ["string", "null"], enum: [...EVENTOS, null], description: "Para qué evento es." },
@@ -25,6 +25,7 @@ export const guardarDatosCliente: Herramienta<Ficha> = {
     ciudad: { type: ["string", "null"], maxLength: 60, description: "De dónde es." },
     color_preferido: { type: ["string", "null"], maxLength: 40, description: "Color que prefiere." },
     presupuesto_mencionado: { type: ["string", "null"], maxLength: 80, description: "Lo que dijo del presupuesto, con sus palabras." },
+    email: { type: ["string", "null"], maxLength: 120, description: "Mail que dio, como lo escribió." },
   }),
   async ejecutar(args, ctx) {
     if (!CAMPOS_FICHA.some((c) => limpio(args[c]))) {
@@ -32,6 +33,9 @@ export const guardarDatosCliente: Herramienta<Ficha> = {
     }
     if (args.fecha_evento && args.fecha_evento < fechaLocal(ctx.ahora, ctx.tz)) {
       return rechazo("fecha_evento_pasada", `La fecha del evento (${args.fecha_evento}) ya pasó. Confirmala con el cliente antes de guardarla.`);
+    }
+    if (limpio(args.email) && !formatoDeEmailValido(args.email as string)) {
+      return rechazo("email_invalido", `"${args.email}" no tiene forma de mail. Confirmalo con el cliente antes de guardarlo.`);
     }
     const escritos = await actualizarFicha(ctx.db, ctx.cliente.id, args);
     return { ok: true, datos: { guardado: escritos, nota: escritos.length ? "Guardado." : "Ya estaba así en la ficha." } };

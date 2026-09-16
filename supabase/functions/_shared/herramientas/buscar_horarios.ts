@@ -133,6 +133,11 @@ export const buscarHorarios: Herramienta<Args> = {
     }
     if (avisos.length) datos.aviso = avisos.join(" ");
     if (descartados) datos.descartados_fuera_de_horario = descartados;
+    // Supuesto #35 (decisión #17, hito 2.3): sin mail en la ficha, pedilo una sola vez, en el
+    // mismo mensaje en que ofrecés estos horarios (antes de agendar: después la confirmación de
+    // código le pisa el texto). Si huecos viene vacío no tiene sentido pedirlo todavía — no hay
+    // nada que ofrecer en el mismo mensaje.
+    if (huecos.length > 0 && !ficha.email) datos.pedir_mail = true;
     return { ok: true, datos };
   },
 };

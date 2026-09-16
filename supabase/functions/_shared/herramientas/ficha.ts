@@ -15,6 +15,7 @@ export const CAMPOS_FICHA = [
   "ciudad",
   "color_preferido",
   "presupuesto_mencionado",
+  "email",
 ] as const;
 export type CampoFicha = typeof CAMPOS_FICHA[number];
 export type Ficha = Record<CampoFicha, string | null>;
@@ -33,10 +34,19 @@ function capitalizarNombre(nombre: string): string {
     .join(" ");
 }
 
+// Mismo formato que exige la base (0029, hito 2.3): sin espacios y en minúscula. Lo usan
+// extractor.ts y guardar_datos_cliente para decidir si un mail descarta o se guarda — antes de
+// llegar acá, nunca después: si no pasa esto, no es un mail, es ruido (mismo principio que
+// validarExtraccion con evento/rol/fecha_evento).
+export const FORMATO_EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+export function formatoDeEmailValido(valor: string): boolean {
+  return FORMATO_EMAIL.test(valor.trim().toLowerCase());
+}
+
 export async function leerFicha(db: Db, clienteId: string): Promise<Ficha> {
   const filas = await db.consulta(
     `select nombre, evento, fecha_evento::text as fecha_evento, rol, dia_o_noche, talle_aprox,
-            ciudad, color_preferido, presupuesto_mencionado
+            ciudad, color_preferido, presupuesto_mencionado, email
        from clientes where id = $1`,
     [clienteId],
   );
@@ -56,7 +66,11 @@ export async function actualizarFicha(
   const cambios = CAMPOS_FICHA
     .map((c) => [c, campos[c]] as const)
     .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
-    .map(([c, v]) => [c, c === "nombre" ? capitalizarNombre(String(v).trim()) : String(v).trim()] as const);
+    .map(([c, v]) => {
+      if (c === "nombre") return [c, capitalizarNombre(String(v).trim())] as const;
+      if (c === "email") return [c, String(v).trim().toLowerCase()] as const;
+      return [c, String(v).trim()] as const;
+    });
   if (cambios.length === 0) return [];
   const sets = cambios.map(([c], i) => `${c} = $${i + 2}`).join(", ");
   const distintos = cambios.map(([c], i) => `${c} is distinct from $${i + 2}`).join(" or ");

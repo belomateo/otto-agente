@@ -27,11 +27,16 @@ import { derivacionDuraPorEventoInminente, derivacionDuraPorPalabraClave } from 
 import { leerHistorial, ultimasLineasParaClasificar, type MensajeChat } from "./historial.ts";
 import { agruparRafaga } from "./rafaga.ts";
 import { eventosDeLaTraza, registrarConsumo, registrarEventos, type EventoAgente } from "./bitacora.ts";
+import { prepararParaEnviar } from "../whatsapp/preparar.ts";
 
 export const LIMITE_TURNO_MS = 25_000;
 const CLAVE_TEXTO_DERIVACION_DURA = "texto_derivacion_dura_generica";
 const CLAVE_TEXTO_MENSAJE_NO_SOPORTADO = "texto_mensaje_no_soportado";
-const MOTIVOS_SIN_MENSAJE_PROPIO: readonly MotivoDerivacion[] = ["reclamo", "sin_respuesta", "timeout", "barandilla_doble"];
+// Con estos motivos, derivar() de acá abajo no manda nada al cliente, ni siquiera el texto fijo
+// genérico de derivación dura (CLAVE_TEXTO_DERIVACION_DURA). No confundir con MOTIVOS_SIN_MENSAJE
+// de _shared/enums.ts: esa otra es sobre la despedida que ESCRIBE EL MODELO al llamar
+// derivar_a_persona (otra lista, con otros motivos, para una pregunta parecida).
+const MOTIVOS_DERIVAN_EN_SILENCIO: readonly MotivoDerivacion[] = ["reclamo", "sin_respuesta", "timeout", "barandilla_doble"];
 
 export type ResultadoTurno = {
   mensajesAlCliente: string[];
@@ -42,19 +47,12 @@ export type ResultadoTurno = {
   bloqueadoPorVentana: boolean;
 };
 
-// Meta parte el texto en burbujas por doble salto de línea (AGENTE.md § 3 paso 9). El emulador
-// no manda nada por WhatsApp, pero devuelve las mismas burbujas que mandaría el worker real.
-function enBurbujas(texto: string | null | undefined): string[] {
-  if (!texto) return [];
-  return texto.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
-}
-
 async function derivar(
   db: Db,
   p: { conversacionId: string; motivo: MotivoDerivacion; mensaje: string | null; derivacionTel: string | null },
 ): Promise<ResultadoTurno> {
   const { id } = await registrarDerivacion({ db, conversacionId: p.conversacionId, derivacionTel: p.derivacionTel }, p.motivo);
-  const mensajesAlCliente = MOTIVOS_SIN_MENSAJE_PROPIO.includes(p.motivo) ? [] : enBurbujas(p.mensaje);
+  const mensajesAlCliente = MOTIVOS_DERIVAN_EN_SILENCIO.includes(p.motivo) ? [] : prepararParaEnviar([p.mensaje]);
   return { mensajesAlCliente, imagenes: [], derivo: true, motivoDerivacion: p.motivo, avisoEquipo: { motivo: p.motivo, derivacionId: id }, bloqueadoPorVentana: false };
 }
 
@@ -103,7 +101,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       if (rafaga.soloNoTexto) {
         eventos.push({ tipo: "pensamiento", detalle: { etapa: "no-es-texto", nota: "mensaje entrante sin texto (foto/audio/sticker/otro): contesta con el texto fijo, sin pasar por el modelo" } });
         const texto = await textoDeContexto(db, CLAVE_TEXTO_MENSAJE_NO_SOPORTADO);
-        resultado = { mensajesAlCliente: enBurbujas(texto), imagenes: [], derivo: false, bloqueadoPorVentana: false };
+        resultado = { mensajesAlCliente: prepararParaEnviar([texto]), imagenes: [], derivo: false, bloqueadoPorVentana: false };
         return resultado;
       }
       eventos.push({ tipo: "error", detalle: { etapa: "agrupar-rafaga", error: "no había ningún mensaje entrante nuevo para contestar" } });
@@ -186,20 +184,23 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       // si se descartó algo, se completa con el texto fijo genérico en vez de dejar la despedida
       // vacía.
       const piezas = [...(r.textoFinal ? [r.textoFinal] : []), ...r.efectos.flatMap((e) => e.mensajesAlCliente ?? [])];
-      const mensajesRevisados: string[] = [];
+      const textosRevisados: string[] = [];
       let seDescartoAlgo = false;
       for (const pieza of piezas) {
         const b = await aplicarBarandillas({ texto: pieza, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje });
         for (const s of b.saltos) eventos.push({ tipo: "error", detalle: { etapa: "barandilla-en-derivacion", barandilla: s.barandilla, accion: s.accion, motivo: s.motivo } });
-        if (b.decision === "enviar") mensajesRevisados.push(...enBurbujas(b.texto));
+        if (b.decision === "enviar") textosRevisados.push(b.texto);
         else if (b.decision !== "bloquear") seDescartoAlgo = true;
       }
       if (seDescartoAlgo) {
         const textoSeguro = await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_DURA);
-        if (textoSeguro) mensajesRevisados.push(...enBurbujas(textoSeguro));
+        if (textoSeguro) textosRevisados.push(textoSeguro);
       }
       resultado = {
-        mensajesAlCliente: mensajesRevisados,
+        // prepararParaEnviar de una sola vez sobre todo lo que sale (decisión #17, hito 2.3): no
+        // burbuja por pieza, sino sin «¡»/«¿» y en 1 a 3 mensajes según el largo total, igual que
+        // hace el worker con lo que devuelve el turno.
+        mensajesAlCliente: prepararParaEnviar(textosRevisados),
         imagenes: r.efectos.flatMap((e) => e.imagenes ?? []),
         derivo: true,
         motivoDerivacion: efectoQueCorta.avisoEquipo?.motivo as MotivoDerivacion | undefined,
@@ -261,7 +262,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       return resultado;
     }
 
-    resultado = { mensajesAlCliente: [...enBurbujas(b.texto), ...efectosMensajes], imagenes, derivo: false, bloqueadoPorVentana: false };
+    resultado = { mensajesAlCliente: prepararParaEnviar([b.texto, ...efectosMensajes]), imagenes, derivo: false, bloqueadoPorVentana: false };
     return resultado;
   } finally {
     // Paso 9 (la parte de guardar; el envío real por Meta lo hace el worker, no esto) — cada
