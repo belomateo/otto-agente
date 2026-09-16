@@ -583,6 +583,32 @@ try {
     const rechazo = await api(st, "POST", `/api/bandeja/${conv}/tomar`);
     ok(rechazo.status === 403, `una cuenta rechazada no puede tomar charlas (${rechazo.status})`);
 
+    // Carrera real: dos "tomar" a la vez sobre la misma charla (Promise.all, no en serie).
+    // atencion_resolver hace el select ... for update (0032): tiene que ganar uno solo y el
+    // otro recibir ya_estaba, sin que los dos crean que la tomaron ni que la derivación quede
+    // marcada dos veces.
+    {
+      const convRace = await nuevaCharlaSuelta("activa", ["pide_persona"]);
+      const derivRace = (await q("select id from derivaciones where conversacion_id = $1", [convRace]))[0].id;
+      const dos = await Promise.all([
+        api(sa, "POST", `/api/bandeja/${convRace}/tomar`),
+        api(sn, "POST", `/api/bandeja/${convRace}/tomar`),
+      ]);
+      const ganador = dos[0].datos.ya_estaba === false ? A.email : dos[1].datos.ya_estaba === false ? N.email : null;
+      const fila = (await q("select estado from conversaciones where id = $1", [convRace]))[0];
+      const derivFila = (await q("select estado, atendida_por from derivaciones where id = $1", [derivRace]))[0];
+      ok(
+        dos.every((x) => x.status === 200) &&
+          dos.filter((x) => x.datos.ya_estaba === false).length === 1 &&
+          dos.filter((x) => x.datos.ya_estaba === true).length === 1 &&
+          Boolean(ganador) &&
+          fila.estado === "derivada" &&
+          derivFila.estado === "atendida" &&
+          derivFila.atendida_por === ganador,
+        `dos "tomar" a la vez sobre la misma charla: gana uno solo (ya_estaba false/true) y queda una sola derivación atendida por el que ganó, verificado en la base (${dos.map((x) => x.datos.ya_estaba).join(",")}; atendida_por ${derivFila.atendida_por})`
+      );
+    }
+
     // Por la API de Supabase, sin pasar por mi ruta: la firma la sigue poniendo la base. Una
     // charla suelta (no `cli`/`conv`, que el aviso de turno usa para el link a "la charla más
     // reciente" del cliente).
