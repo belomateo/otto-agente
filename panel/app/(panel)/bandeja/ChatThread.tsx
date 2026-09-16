@@ -19,6 +19,19 @@ import { SONDEO_LISTAS_MS, useDatos } from '@/components/api/useDatos';
 import { useAccionesCharla } from '@/components/api/useAccionesCharla';
 import type { Charla } from '@/lib/queries/bandeja';
 
+// La ventana de WhatsApp se puede cerrar entre que se escribe un mensaje y que el worker lo
+// toma (segundos después, paneles 0042/logica): el mensaje queda en la charla pero nunca sale.
+// Misma recomendación que el 409 de mostrador_enviar (useAccionesCharla): escribirle al
+// cliente desde otro número, solo cuando el motivo es la ventana cerrada.
+function AvisoNoEnviado({ motivo }: { motivo: 'ventana_cerrada' | 'error_al_enviar' }) {
+  return (
+    <div className="mr-1 self-end text-right text-[13px] leading-[1.4] text-ladrillo">
+      <div>No se pudo enviar.</div>
+      {motivo === 'ventana_cerrada' && <div className="font-medium">Probá escribirle al cliente desde otro número.</div>}
+    </div>
+  );
+}
+
 function separador(fecha: string) {
   const hoy = new Date().toISOString().slice(0, 10);
   if (fecha === hoy) return 'Hoy';
@@ -203,6 +216,7 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
                 ) : (
                   <BurbujaLucia texto={m.texto} hora={m.hora} resumen={esUltimoLucia ? resumen : undefined} bitacora={esUltimoLucia ? bitacora : undefined} />
                 )}
+                {m.no_enviado_motivo && <AvisoNoEnviado motivo={m.no_enviado_motivo} />}
               </div>
             );
           })
