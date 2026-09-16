@@ -1,60 +1,91 @@
-// Atención humana — Pendientes / Consultas OK. Al marcar OK pasa de pestaña;
-// si el cliente vuelve a escribir, reaparece en Pendientes y en la Bandeja.
-// Puerto de d-atencion.html (escritorio: lista + detalle) y m-atencion.html
-// (mobile: solo tarjetas, sin detalle abierto — Fase 2 agrega el drill-in).
-// El chip muestra la etiqueta del motivo (derivaciones-mock.ts), no el enum.
+'use client';
 
+// Atención humana — conectada a GET /api/atencion?estado=pendiente|atendida (H1.8, paneles).
+// Puerto de d-atencion.html (escritorio: lista + detalle) y m-atencion.html (mobile: solo
+// tarjetas, sin detalle abierto — Fase 2 agrega el drill-in, como ya estaba planeado).
+//
+// `derivaciones` todavía no tiene la columna de resumen que pide PROCESOS.md § 4: mientras no
+// exista, la tarjeta muestra el último mensaje del cliente tal cual, no un resumen armado.
+//
+// El detalle de escritorio reusa <ChatThread>: es la misma charla que Bandeja (tomar, devolver,
+// cerrar y responder son acciones de la conversación, no de la derivación — PROCESOS.md § 4
+// pasos 6 y 7) y así el hilo completo con la burbuja de mostrador sale gratis, sin repetir la
+// lógica. La lista de acá se queda con lo que le sirve solo a ella: motivo, hace y el resumen.
+// En mobile, sin detalle abierto todavía, la tarjeta linkea a /bandeja/charla?id=... (mismo
+// hilo, mismas acciones) en vez de duplicar un lector/respondedor chico adentro de la tarjeta.
+
+import Link from 'next/link';
+import { useState } from 'react';
 import { Chip } from '@/components/ui-otto/Chip';
-import { BurbujaCliente, BurbujaLucia } from '@/components/ui-otto/Burbuja';
+import { Cargando } from '@/components/ui-otto/Cargando';
+import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
-import { pideVacio, type BusquedaPagina } from '../vacio';
-import { coloresMotivo, DERIVACIONES, ETIQUETA_MOTIVO, type Derivacion } from './derivaciones-mock';
+import { useDatos } from '@/components/api/useDatos';
+import { ChatThread } from '../bandeja/ChatThread';
+import type { EstadoDerivacion, FilaDerivacion } from '@/lib/queries/atencion';
 
-const VACIO = { titulo: 'Todavía no hay derivaciones', texto: 'Lucía está atendiendo sola.' };
-const CONSULTAS_OK = 5;
+const VACIOS: Record<EstadoDerivacion, { titulo: string; texto: string }> = {
+  pendiente: { titulo: 'Todavía no hay derivaciones', texto: 'Lucía está atendiendo sola.' },
+  atendida: { titulo: 'Todavía no hay consultas resueltas', texto: 'Cuando marques una derivación como OK, aparece acá.' },
+};
 
-// Texto fijo de la derivación por evento hoy o mañana: sin decirle que no (decisión #8, 14/9).
-const TEXTO_EVENTO_INMINENTE =
-  'Te paso con un asesor del local para que te ayude con tu evento, y vamos a hacer lo posible por encontrarte un lugar en la agenda.';
+type Respuesta = { derivaciones: FilaDerivacion[]; pendientes: number; atendidas: number };
 
-function ChipMotivo({ d, className }: { d: Derivacion; className: string }) {
-  const { bg, fg } = coloresMotivo(d.motivo);
-  return (
-    <Chip bg={bg} fg={fg} className={className}>
-      {ETIQUETA_MOTIVO[d.motivo]}
-    </Chip>
-  );
-}
-
-function TarjetaDerivacion({ d, abierta, compacta = false }: { d: Derivacion; abierta: boolean; compacta?: boolean }) {
-  return (
-    <div className="rounded-otto border bg-lino p-4 shadow-otto" style={{ borderColor: abierta ? '#A8703F' : '#E6E1D8' }}>
+function TarjetaDerivacion({ d, activa, onClick, compacta = false }: { d: FilaDerivacion; activa: boolean; onClick?: () => void; compacta?: boolean }) {
+  const clases = `rounded-otto border bg-lino p-4 text-left shadow-otto ${onClick ? 'w-full' : ''}`;
+  const estilo = { borderColor: activa ? '#A8703F' : '#E6E1D8' };
+  const interior = (
+    <>
       <div className="flex items-baseline gap-2.5">
-        <span className="flex-1 font-serif text-base font-semibold">{d.cliente}</span>
+        <span className="flex-1 font-serif text-base font-semibold">{d.n}</span>
         <span className="text-[14px] text-grafito md:text-xs">{d.hace}</span>
       </div>
       <div className="my-2">
-        <ChipMotivo d={d} className="px-2.5 py-[3px]" />
+        <Chip bg={d.cb} fg={d.cf} className="px-2.5 py-[3px]">
+          {d.motivo}
+        </Chip>
       </div>
       <div className={`text-[14px] leading-[1.5] text-grafito md:text-[13.5px] ${compacta ? '' : 'line-clamp-2'}`}>{d.resumen}</div>
       {compacta && (
-        <div className="mt-3 flex gap-2">
-          <button type="button" className="flex-1 rounded-otto bg-cobre py-2.5 text-sm font-medium text-lino">
-            Responder
-          </button>
-          <button type="button" className="rounded-otto border border-salvia bg-lino px-4 py-2.5 text-sm font-medium text-salvia">
-            ✓ OK
-          </button>
+        <div className="mt-3">
+          <Link
+            href={`/bandeja/charla?id=${d.conversacion_id}`}
+            className="block rounded-otto bg-cobre py-2.5 text-center text-sm font-medium text-lino"
+          >
+            Ver y responder
+          </Link>
         </div>
       )}
+    </>
+  );
+  return onClick ? (
+    <button type="button" onClick={onClick} className={clases} style={estilo}>
+      {interior}
+    </button>
+  ) : (
+    <div className={clases} style={estilo}>
+      {interior}
     </div>
   );
 }
 
-export default async function AtencionPage({ searchParams }: { searchParams: BusquedaPagina }) {
-  const vacia = await pideVacio(searchParams);
-  const lista = vacia ? [] : DERIVACIONES;
-  const principal = lista[0];
+export default function AtencionPage() {
+  const [tab, setTab] = useState<EstadoDerivacion>('pendiente');
+  const [seleccionId, setSeleccionId] = useState<string | null>(null);
+  const { datos, cargando, error, recargar } = useDatos<Respuesta>(`/api/atencion?estado=${tab}`);
+  const lista = datos?.derivaciones ?? [];
+  const pendientes = datos?.pendientes ?? 0;
+  const atendidas = datos?.atendidas ?? 0;
+  const principal = lista.find((d) => d.id === seleccionId) ?? lista[0] ?? null;
+
+  const contenido =
+    cargando && lista.length === 0 ? (
+      <Cargando />
+    ) : error ? (
+      <EstadoError mensaje={error} onReintentar={recargar} />
+    ) : lista.length === 0 ? (
+      <EstadoVacio titulo={VACIOS[tab].titulo} texto={VACIOS[tab].texto} />
+    ) : null;
 
   return (
     <>
@@ -64,65 +95,53 @@ export default async function AtencionPage({ searchParams }: { searchParams: Bus
           <div>
             <h1 className="font-serif text-[22px] font-semibold">Atención humana</h1>
             <div className="mt-2.5 flex gap-0.5 border-b border-borde text-[14px] font-medium md:text-[13.5px]">
-              <span className="-mb-px border-b-2 border-cobre px-3 py-2 text-cobre">
+              <button
+                type="button"
+                onClick={() => {
+                  setTab('pendiente');
+                  setSeleccionId(null);
+                }}
+                className={tab === 'pendiente' ? '-mb-px border-b-2 border-cobre px-3 py-2 text-cobre' : 'px-3 py-2 text-grafito'}
+              >
                 Pendientes{' '}
-                <Chip bg={lista.length ? '#A6473A' : '#EFEDE8'} fg={lista.length ? '#FFFFFF' : '#5C6068'} className="ml-0.5 px-[7px] py-px text-[14px] font-semibold md:text-[11px]">
-                  {lista.length}
+                <Chip bg={pendientes ? '#A6473A' : '#EFEDE8'} fg={pendientes ? '#FFFFFF' : '#5C6068'} className="ml-0.5 px-[7px] py-px text-[14px] font-semibold md:text-[11px]">
+                  {pendientes}
                 </Chip>
-              </span>
-              <span className="px-3 py-2 text-grafito">
-                Consultas OK <Chip className="ml-0.5 px-[7px] py-px text-[14px] font-semibold md:text-[11px]">{CONSULTAS_OK}</Chip>
-              </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTab('atendida');
+                  setSeleccionId(null);
+                }}
+                className={tab === 'atendida' ? '-mb-px border-b-2 border-cobre px-3 py-2 text-cobre' : 'px-3 py-2 text-grafito'}
+              >
+                Consultas OK <Chip className="ml-0.5 px-[7px] py-px text-[14px] font-semibold md:text-[11px]">{atendidas}</Chip>
+              </button>
             </div>
           </div>
-          {vacia ? (
-            <EstadoVacio titulo={VACIO.titulo} texto={VACIO.texto} />
-          ) : (
-            lista.map((d) => <TarjetaDerivacion key={d.cliente} d={d} abierta={d === principal} />)
+          {contenido ?? (
+            <div className="flex flex-col gap-3.5">
+              {lista.map((d) => (
+                <TarjetaDerivacion key={d.id} d={d} activa={d.id === principal?.id} onClick={() => setSeleccionId(d.id)} />
+              ))}
+            </div>
           )}
         </div>
         {principal ? (
           <div className="flex flex-1 flex-col">
-            <div className="flex items-center gap-3 border-b border-borde bg-lino px-6 py-4">
-              <div className="flex-1">
-                <span className="font-serif text-lg font-semibold">{principal.cliente}</span>
-                <ChipMotivo d={principal} className="ml-2.5 px-2.5 py-[3px]" />
+            <div className="border-b border-borde bg-lino px-6 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <Chip bg={principal.cb} fg={principal.cf} className="px-2.5 py-[3px]">
+                  {principal.motivo}
+                </Chip>
+                <span className="text-[14px] text-grafito md:text-[12.5px]">{principal.hace}</span>
               </div>
-              <span className="text-[14px] text-grafito md:text-[12.5px]">{principal.hace}</span>
-            </div>
-            <div className="flex flex-1 flex-col gap-3.5 overflow-y-auto px-6 py-5">
-              <div className="rounded-otto border border-borde border-l-[3px] border-l-ladrillo bg-lino px-4 py-3 text-sm leading-[1.55]">
-                <span className="font-semibold text-ladrillo">Resumen de Lucía:</span> {principal.resumen}
-              </div>
-              <BurbujaCliente texto="necesito el traje para hoy sí o sí, me recibo a la noche" hora="09:47" />
-              <BurbujaLucia
-                texto={TEXTO_EVENTO_INMINENTE}
-                hora="09:48"
-                resumen={{ tono: 'ladrillo', texto: `Derivado: ${ETIQUETA_MOTIVO[principal.motivo].toLowerCase()}` }}
-              />
-              <div className="flex-1" />
-              <textarea
-                placeholder={`Escribile a ${principal.cliente.split(' ')[0]} — tu mensaje sale con la etiqueta «mostrador»`}
-                aria-label="Respuesta del equipo"
-                className="min-h-[96px] w-full resize-none rounded-otto border border-borde px-3.5 py-3 text-[14.5px] leading-[1.5] outline-none focus:border-cobre"
-              />
-              <div className="flex items-center justify-between">
-                <button type="button" className="rounded-otto border border-salvia bg-lino px-4.5 py-2.5 text-sm font-medium text-salvia">
-                  ✓ Marcar OK
-                </button>
-                <div className="flex gap-2.5">
-                  <button type="button" className="rounded-otto border border-cobre bg-lino px-4.5 py-2.5 text-sm font-medium text-cobre">
-                    Devolver a Lucía
-                  </button>
-                  <button type="button" className="rounded-otto bg-cobre px-5 py-2.5 text-sm font-medium text-lino">
-                    Responder
-                  </button>
-                </div>
-              </div>
-              <div className="text-[14px] text-grafito md:text-xs">
-                Marcar OK la pasa a «Consultas OK». Si el cliente vuelve a escribir, reaparece en Pendientes y en la Bandeja.
+              <div className="mt-1.5 text-sm leading-[1.5]">
+                <span className="font-semibold text-ladrillo">Último mensaje del cliente:</span> {principal.resumen}
               </div>
             </div>
+            <ChatThread variante="desktop" conversacionId={principal.conversacion_id} />
           </div>
         ) : (
           <div className="flex-1 bg-hueso" />
@@ -134,18 +153,16 @@ export default async function AtencionPage({ searchParams }: { searchParams: Bus
         <div className="px-4 pb-1 pt-[18px]">
           <div className="font-serif text-[22px] font-semibold">Atención humana</div>
           <div className="mt-2.5 flex overflow-hidden rounded-otto border border-borde text-[14px] font-medium">
-            <span className="flex-1 bg-cobre py-2 text-center text-lino">Pendientes · {lista.length}</span>
-            <span className="flex-1 bg-lino py-2 text-center text-grafito">Consultas OK · {CONSULTAS_OK}</span>
+            <button type="button" onClick={() => setTab('pendiente')} className={`flex-1 py-2 text-center ${tab === 'pendiente' ? 'bg-cobre text-lino' : 'bg-lino text-grafito'}`}>
+              Pendientes · {pendientes}
+            </button>
+            <button type="button" onClick={() => setTab('atendida')} className={`flex-1 py-2 text-center ${tab === 'atendida' ? 'bg-cobre text-lino' : 'bg-lino text-grafito'}`}>
+              Consultas OK · {atendidas}
+            </button>
           </div>
         </div>
         <div className="flex flex-1 flex-col gap-3 p-4">
-          {vacia ? (
-            <div className="rounded-otto border border-borde bg-lino">
-              <EstadoVacio titulo={VACIO.titulo} texto={VACIO.texto} />
-            </div>
-          ) : (
-            lista.map((d) => <TarjetaDerivacion key={d.cliente} d={d} abierta={d === principal} compacta />)
-          )}
+          {contenido ? <div className="rounded-otto border border-borde bg-lino">{contenido}</div> : lista.map((d) => <TarjetaDerivacion key={d.id} d={d} activa={false} compacta />)}
         </div>
       </div>
     </>

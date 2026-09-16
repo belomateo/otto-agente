@@ -1,21 +1,34 @@
-// Turnos — vista día con la agenda por franjas (decisión #7, 14/9): de lunes a
-// viernes hay turnos desde las 13, el sábado a la tarde solo en los probadores 1 y 2
-// y el domingo no hay. Lo que queda fuera de una franja se ve gris, «SIN TURNOS». Las
-// flechas recorren los días del mock (?dia=AAAA-MM-DD). Puerto de d-turnos.html
-// (grilla por probador, 80 px por hora como el diseño) y m-turnos.html +
-// m-turno-abierto.html (lista + hoja inferior). El aviso de sincronización con
-// Calendar va además del estado real del turno, nunca en su lugar (decisión #2).
+'use client';
+
+// Turnos — vista día, conectada a GET /api/turnos?fecha=AAAA-MM-DD (H1.8, paneles). Grilla por
+// probador en escritorio (80 px por hora, geometría del diseño), lista + hoja en celular. Lo
+// que queda fuera de una franja de turnos se ve gris, «SIN TURNOS» (franjas reales del día,
+// que la API ya trae calculadas). El aviso de sincronización con Calendar va además del estado
+// real del turno, nunca en su lugar (decisión #2, 12/9). Puerto de d-turnos.html / m-turnos.html.
+//
+// Los estados del turno (Marcar alquiló/retiró/devolvió, No vino, Cancelar) van contra
+// PATCH /api/turnos/<id> (lib/edicion/entidades.ts, `turnos`): el servidor valida qué
+// transición es posible desde el estado actual y exige un motivo para cancelar. «Nuevo turno»
+// y «Mover» a otro horario todavía no tienen ruta en paneles: quedan deshabilitados con una
+// nota, en vez de simular una acción que no pasa a ninguna base.
 
 import Link from 'next/link';
-import { BloqueTurno, BORDE_ESTADO, ETIQUETA_ESTADO, type EstadoTurno } from '@/components/ui-otto/BloqueTurno';
+import { useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import { BloqueTurno, BORDE_ESTADO, type EstadoTurno } from '@/components/ui-otto/BloqueTurno';
+import { Cargando } from '@/components/ui-otto/Cargando';
+import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
-import { AGENDA, type Franja } from '../configuracion/agenda/agenda-mock';
+import { useDatos } from '@/components/api/useDatos';
+import { useEstadoTurno } from '@/components/api/useEstadoTurno';
+import type { AgendaDelDia, FilaTurno } from '@/lib/queries/turnos';
 import { aHora, aMinutos, describirFranjas, horaCorta } from '../configuracion/agenda/franjas';
-import { pideVacio, type BusquedaPagina } from '../vacio';
-import { DIA_INICIAL, DIAS_TURNOS, type DiaTurnos, type TurnoMock } from './turnos-mock';
+
+type Franja = AgendaDelDia['franjas'][number];
 
 const VACIO = { titulo: 'No hay turnos este día', texto: 'Cuando Lucía o el equipo agenden uno, aparece en su probador.' };
 const SIN_FRANJAS = { titulo: 'Este día no se dan turnos', texto: 'Las franjas de turnos se cambian en Configuración › Agenda.' };
+const SIN_CONECTAR = 'Todavía no conectado';
 
 // Geometría del diseño: 80 px por hora desde las 9:30, la apertura más temprana.
 const INICIO = 9 * 60 + 30;
@@ -31,21 +44,17 @@ const PASOS: { estado: EstadoTurno; label: string }[] = [
   { estado: 'devolvio', label: 'Devolvió' },
 ];
 
-const CHIP_ESTADO: Record<EstadoTurno, { bg: string; fg: string }> = {
-  'sin-confirmar': { bg: '#F7EFDD', fg: '#B8862B' },
-  confirmado: { bg: '#E7EFE7', fg: '#5E7F62' },
-  alquilo: { bg: '#F1E6D9', fg: '#A8703F' },
-  retiro: { bg: '#EEF1F5', fg: '#1F2A3C' },
-  devolvio: { bg: '#EFEDE8', fg: '#5C6068' },
-  cancelado: { bg: '#EFEDE8', fg: '#5C6068' },
-  'no-vino': { bg: '#EFEDE8', fg: '#5C6068' },
-};
+const inicioMin = (t: FilaTurno) => aMinutos(t.h) ?? INICIO;
+const finMin = (t: FilaTurno) => inicioMin(t) + t.duracion_min;
+const duracionCorta = (minutos: number) => (minutos < 60 ? `${minutos}’` : aHora(minutos));
 
-const DIA_CORTO = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
-const FLECHA = 'flex h-10 w-10 flex-none items-center justify-center rounded-otto border border-borde bg-lino text-[18px] leading-none text-grafito md:h-8 md:w-8';
-
-const inicio = (t: TurnoMock) => aMinutos(t.desde) ?? INICIO;
-const duracion = (minutos: number) => (minutos < 60 ? `${minutos}’` : aHora(minutos));
+/** 'AAAA-MM-DD' → el día siguiente o anterior, como fecha calendario (sin huso: se compara
+ * contra lo que ya devolvió la API, no se calcula "hoy" del lado del cliente). */
+function sumarDiaISO(fecha: string, delta: number): string {
+  const d = new Date(`${fecha}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
 
 // Tramos de un probador fuera de toda franja: en una franja con P probadores toman
 // turnos del 1 al P (supuesto #22), así que el sábado a la tarde el 3 queda gris.
@@ -65,92 +74,163 @@ function tramosSinTurnos(franjas: Franja[], probador: number) {
 }
 
 // ‹ fecha ›: la fecha va entre las dos flechas.
-function Flechas({ indice, vacia, children }: { indice: number; vacia: boolean; children: React.ReactNode }) {
-  const destino = (i: number) => {
-    const d = DIAS_TURNOS[i];
-    return d ? `/turnos?dia=${d.fecha}${vacia ? '&vacio=1' : ''}` : null;
-  };
-  const anterior = destino(indice - 1);
-  const siguiente = destino(indice + 1);
+function Flechas({ fecha, children }: { fecha: string; children: React.ReactNode }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
-      {anterior ? (
-        <Link href={anterior} aria-label="Día anterior" className={FLECHA}>
-          ‹
-        </Link>
-      ) : (
-        <span aria-hidden className={`${FLECHA} opacity-40`}>
-          ‹
-        </span>
-      )}
+      <Link href={`/turnos?dia=${sumarDiaISO(fecha, -1)}`} aria-label="Día anterior" className="flex h-10 w-10 flex-none items-center justify-center rounded-otto border border-borde bg-lino text-[18px] leading-none text-grafito md:h-8 md:w-8">
+        ‹
+      </Link>
       {children}
-      {siguiente ? (
-        <Link href={siguiente} aria-label="Día siguiente" className={FLECHA}>
-          ›
-        </Link>
-      ) : (
-        <span aria-hidden className={`${FLECHA} opacity-40`}>
-          ›
-        </span>
-      )}
+      <Link href={`/turnos?dia=${sumarDiaISO(fecha, 1)}`} aria-label="Día siguiente" className="flex h-10 w-10 flex-none items-center justify-center rounded-otto border border-borde bg-lino text-[18px] leading-none text-grafito md:h-8 md:w-8">
+        ›
+      </Link>
     </span>
   );
 }
 
-function Popover({ turno, diaSemana }: { turno: TurnoMock; diaSemana: number }) {
+// Próximo estado posible desde el actual (lib/edicion/entidades.ts, `turnos`, espejo de las
+// transiciones que valida el servidor). sin-confirmar y confirmado se tratan igual: las dos
+// pueden pasar a alquiló, no vino o cancelado.
+const SIGUIENTES: Record<string, { estado: string; label: string }[]> = {
+  'sin-confirmar': [
+    { estado: 'alquilo', label: 'Marcar alquiló' },
+    { estado: 'no-vino', label: 'No vino' },
+  ],
+  confirmado: [
+    { estado: 'alquilo', label: 'Marcar alquiló' },
+    { estado: 'no-vino', label: 'No vino' },
+  ],
+  alquilo: [{ estado: 'retiro', label: 'Marcar retiró' }],
+  retiro: [{ estado: 'devolvio', label: 'Marcar devolvió' }],
+};
+const PUEDE_CANCELAR = new Set(['sin-confirmar', 'confirmado', 'alquilo', 'retiro']);
+
+function AccionesTurno({ turno, compacto = false, onCambio }: { turno: FilaTurno; compacto?: boolean; onCambio: () => void }) {
+  const { enviando, error, cambiarEstado } = useEstadoTurno(turno, onCambio);
+  const [cancelando, setCancelando] = useState(false);
+  const [motivo, setMotivo] = useState('');
+
+  const boton = compacto
+    ? 'flex-1 rounded-otto border border-borde bg-lino py-2 text-[14px] font-medium md:text-[13px] disabled:opacity-50'
+    : 'flex-1 rounded-otto border border-borde bg-lino py-3 text-sm font-medium disabled:opacity-50';
+
+  const siguientes = SIGUIENTES[turno.estado] ?? [];
+  const puedeCancelar = PUEDE_CANCELAR.has(turno.estado);
+  if (siguientes.length === 0 && !puedeCancelar) return null; // estado final: nada para hacer acá
+
+  if (cancelando) {
+    return (
+      <div className="flex flex-col gap-2">
+        <input
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder="Motivo de la cancelación"
+          disabled={enviando}
+          className="w-full rounded-otto border border-borde bg-lino px-3 py-2.5 text-sm outline-none focus:border-cobre disabled:bg-hueso"
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setCancelando(false);
+              setMotivo('');
+            }}
+            disabled={enviando}
+            className={boton}
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (await cambiarEstado('cancelado', motivo.trim())) {
+                setCancelando(false);
+                setMotivo('');
+              }
+            }}
+            disabled={enviando || !motivo.trim()}
+            className="flex-1 rounded-otto bg-ladrillo py-3 text-sm font-medium text-lino disabled:opacity-50"
+          >
+            Confirmar cancelación
+          </button>
+        </div>
+        {error && <div className="text-center text-[14px] text-ladrillo md:text-xs">{error}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled title={SIN_CONECTAR} className={`${boton} text-[#8A8578]`}>
+          Mover
+        </button>
+        {siguientes.map((s) => (
+          <button key={s.estado} type="button" onClick={() => cambiarEstado(s.estado)} disabled={enviando} className={boton}>
+            {s.label}
+          </button>
+        ))}
+        {puedeCancelar && (
+          <button type="button" onClick={() => setCancelando(true)} disabled={enviando} className={boton}>
+            Cancelar
+          </button>
+        )}
+      </div>
+      {error && <div className="mt-1 text-center text-[14px] text-ladrillo md:text-xs">{error}</div>}
+    </>
+  );
+}
+
+function Popover({ turno, onCerrar, onCambio }: { turno: FilaTurno; onCerrar: () => void; onCambio: () => void }) {
   const actual = PASOS.findIndex((p) => p.estado === turno.estado);
   return (
     <div
       className="absolute z-10 w-[300px] rounded-otto border border-borde bg-lino p-4 shadow-otto-pop"
-      style={{ left: `calc(56px + (100% - 56px) * ${(turno.probador - 1) / 3} + 34px)`, top: y(inicio(turno)) + 72 }}
+      style={{ left: `calc(56px + (100% - 56px) * ${(turno.probador - 1) / 3} + 34px)`, top: y(inicioMin(turno)) + 72 }}
     >
-      <div className="font-serif text-lg font-semibold">{turno.nombre}</div>
+      <div className="flex items-baseline gap-2">
+        <span className="flex-1 font-serif text-lg font-semibold">{turno.n}</span>
+        <button type="button" onClick={onCerrar} aria-label="Cerrar" className="text-lg leading-none text-grafito">
+          ×
+        </button>
+      </div>
       <div className="mt-0.5 text-[14px] leading-[1.5] text-grafito md:text-[13px]">
-        {turno.tipo}
-        {turno.ficha && ` · ${turno.ficha.evento}`}
+        {turno.t}
         <br />
-        {turno.ficha && `${turno.ficha.telefono} · `}
-        {DIA_CORTO[diaSemana]} {turno.desde} · Probador {turno.probador}
+        {turno.h} · {turno.p}
       </div>
       <div className="my-3.5 flex flex-wrap items-center gap-1 text-[14px] font-medium md:text-[11.5px]">
         {PASOS.map((paso, i) => (
           <span key={paso.estado} className="contents">
             {i > 0 && <span className="text-[#C9C4B9]">→</span>}
-            <span
-              className={
-                i === actual
-                  ? 'rounded-pill bg-salvia-suave px-2.5 py-1 text-salvia'
-                  : 'rounded-pill border border-dashed border-[#D8D2C6] px-2.5 py-1 text-grafito'
-              }
-            >
-              {paso.label}
-            </span>
+            <span className={i === actual ? 'rounded-pill bg-salvia-suave px-2.5 py-1 text-salvia' : 'rounded-pill border border-dashed border-[#D8D2C6] px-2.5 py-1 text-grafito'}>{paso.label}</span>
           </span>
         ))}
       </div>
-      <button type="button" className="mb-2 w-full rounded-otto border border-cobre bg-lino py-2.5 text-[14px] font-medium text-cobre md:text-[13px]">
+      {turno.aviso && <div className="mb-2.5 text-[14px] font-medium text-ambar md:text-[13px]">↻ {turno.aviso}</div>}
+      <button type="button" disabled title={SIN_CONECTAR} className="mb-2 w-full rounded-otto border border-cobre bg-lino py-2.5 text-[14px] font-medium text-cobre/60 md:text-[13px]">
         Abrir la charla de WhatsApp
       </button>
-      <div className="flex gap-2">
-        <button type="button" className="flex-1 rounded-otto border border-borde bg-lino py-2 text-[14px] font-medium md:text-[13px]">
-          Mover
-        </button>
-        <button type="button" className="flex-1 rounded-otto border border-borde bg-lino py-2 text-[14px] font-medium text-ladrillo md:text-[13px]">
-          Cancelar
-        </button>
-        <button type="button" className="flex-1 rounded-otto bg-cobre py-2 text-[14px] font-medium text-lino md:text-[13px]">
-          Marcar alquiló
-        </button>
-      </div>
+      <AccionesTurno turno={turno} onCambio={onCambio} />
     </div>
   );
 }
 
-function Grilla({ dia, franjas }: { dia: DiaTurnos; franjas: Franja[] }) {
-  const probadores = Array.from({ length: AGENDA.probadores }, (_, i) => i + 1);
+function Grilla({
+  agenda,
+  abiertoId,
+  onAbrir,
+  onCambio,
+}: {
+  agenda: AgendaDelDia;
+  abiertoId: string | null;
+  onAbrir: (id: string | null) => void;
+  onCambio: () => void;
+}) {
+  const probadores = Array.from({ length: agenda.probadores ?? 1 }, (_, i) => i + 1);
   // El rótulo «SIN TURNOS» va una sola vez por tramo: en el primer probador que lo tiene.
   const rotulados = new Set<string>();
-  const abierto = dia.turnos.find((t) => t.nombre === dia.abierto);
+  const abierto = agenda.turnos.find((t) => t.id === abiertoId);
 
   return (
     <>
@@ -175,7 +255,7 @@ function Grilla({ dia, franjas }: { dia: DiaTurnos; franjas: Franja[] }) {
 
           {probadores.map((p) => (
             <div key={p} className="relative flex-1 border-l border-[#EFEBE2]">
-              {tramosSinTurnos(franjas, p).map((t) => {
+              {tramosSinTurnos(agenda.franjas, p).map((t) => {
                 const clave = `${t.desde}-${t.hasta}`;
                 const rotulo = !rotulados.has(clave) && y(t.hasta) - y(t.desde) >= 30;
                 rotulados.add(clave);
@@ -189,57 +269,89 @@ function Grilla({ dia, franjas }: { dia: DiaTurnos; franjas: Franja[] }) {
                   </div>
                 );
               })}
-              {dia.turnos
+              {agenda.turnos
                 .filter((t) => t.probador === p)
                 .map((t) =>
-                  t.minutos >= 30 ? (
-                    <div key={t.nombre} className="absolute inset-x-1.5" style={{ top: y(inicio(t)) }}>
-                      <BloqueTurno
-                        nombre={t.nombre}
-                        detalle={`${t.tipo} · ${duracion(t.minutos)} · ${ETIQUETA_ESTADO[t.estado]}`}
-                        estado={t.estado}
-                        aviso={t.aviso}
-                      />
-                    </div>
+                  t.duracion_min >= 30 ? (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onAbrir(abiertoId === t.id ? null : t.id)}
+                      className="absolute inset-x-1.5 text-left"
+                      style={{ top: y(inicioMin(t)) }}
+                    >
+                      <BloqueTurno nombre={t.n} detalle={`${t.t} · ${t.e}`} estado={t.estado as EstadoTurno} aviso={t.aviso ?? undefined} />
+                    </button>
                   ) : (
-                    <div
-                      key={t.nombre}
-                      className="absolute inset-x-1.5 flex items-center gap-2 overflow-hidden rounded-bloque border border-borde bg-lino px-2.5"
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onAbrir(abiertoId === t.id ? null : t.id)}
+                      className="absolute inset-x-1.5 flex items-center gap-2 overflow-hidden rounded-bloque border border-borde bg-lino px-2.5 text-left"
                       style={{
-                        top: y(inicio(t)),
-                        height: Math.max(22, y(inicio(t) + t.minutos) - y(inicio(t))),
-                        borderLeft: `3px solid ${BORDE_ESTADO[t.estado]}`,
+                        top: y(inicioMin(t)),
+                        height: Math.max(22, y(finMin(t)) - y(inicioMin(t))),
+                        borderLeft: `3px solid ${BORDE_ESTADO[t.estado as EstadoTurno]}`,
                       }}
                     >
-                      <span className="font-serif text-[14px] font-semibold md:text-[12.5px]">{t.nombre}</span>
-                      <span className="text-[14px] text-grafito md:text-[11px]">
-                        {t.tipo} · {duracion(t.minutos)}
-                      </span>
-                    </div>
+                      <span className="font-serif text-[14px] font-semibold md:text-[12.5px]">{t.n}</span>
+                      <span className="text-[14px] text-grafito md:text-[11px]">{t.t}</span>
+                    </button>
                   ),
                 )}
             </div>
           ))}
         </div>
 
-        {/* Turno abierto — fijo como en el diseño */}
-        {abierto && <Popover turno={abierto} diaSemana={dia.diaSemana} />}
+        {abierto && <Popover turno={abierto} onCerrar={() => onAbrir(null)} onCambio={onCambio} />}
       </div>
     </>
   );
 }
 
-export default async function TurnosPage({ searchParams }: { searchParams: BusquedaPagina }) {
-  const vacia = await pideVacio(searchParams);
-  const { dia: pedido } = await searchParams;
-  const indice = Math.max(0, DIAS_TURNOS.findIndex((d) => d.fecha === (typeof pedido === 'string' ? pedido : DIA_INICIAL)));
-  const dia = DIAS_TURNOS[indice];
-  const franjas = AGENDA.dias.find((d) => d.diaSemana === dia.diaSemana)?.franjas ?? [];
-  const resumen = franjas.length ? `Turnos ${describirFranjas(franjas)}` : 'Sin turnos';
-  const vacio = franjas.length === 0 ? SIN_FRANJAS : vacia ? VACIO : null;
-  const turnos = [...dia.turnos].sort((a, b) => inicio(a) - inicio(b));
-  const abierto = dia.turnos.find((t) => t.nombre === dia.abierto);
-  const chip = !vacio && dia.sinConfirmarManana;
+function HojaTurno({ turno, onCerrar, onCambio }: { turno: FilaTurno; onCerrar: () => void; onCambio: () => void }) {
+  const estilo = { background: turno.eb, color: turno.ef };
+  return (
+    <div role="dialog" aria-label={`Turno de ${turno.n}`} className="fixed inset-0 z-50 flex flex-col justify-end">
+      <div className="flex-1 bg-tinta/[.32]" onClick={onCerrar} />
+      <div className="rounded-t-2xl bg-lino px-[18px] pb-[30px] pt-5 shadow-otto-pop">
+        <div className="mx-auto mb-4 h-1 w-9 rounded-pill bg-borde" />
+        <div className="flex items-baseline gap-2.5">
+          <span className="flex-1 font-serif text-xl font-semibold">{turno.n}</span>
+          <span className="rounded-pill px-2.5 py-[3px] text-[14px] font-medium" style={estilo}>
+            {turno.e}
+          </span>
+        </div>
+        <div className="mt-1 text-[14px] leading-[1.5] text-grafito">
+          {turno.t}
+          <br />
+          {turno.h} · {turno.p}
+        </div>
+        {turno.aviso && <div className="mt-1 text-[14px] font-medium text-ambar">↻ {turno.aviso}</div>}
+        <div className="mt-4.5 flex flex-col gap-2">
+          <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto border border-cobre bg-lino py-3 text-sm font-medium text-cobre/60">
+            Abrir la charla
+          </button>
+          <AccionesTurno turno={turno} compacto onCambio={onCambio} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function TurnosPage() {
+  const fechaPedida = useSearchParams().get('dia');
+  const { datos: agenda, cargando, error, recargar } = useDatos<AgendaDelDia>(`/api/turnos${fechaPedida ? `?fecha=${fechaPedida}` : ''}`);
+  const [abiertoId, setAbiertoId] = useState<string | null>(null);
+
+  if (cargando && !agenda) return <Cargando />;
+  if (error) return <EstadoError mensaje={error} onReintentar={recargar} />;
+  if (!agenda) return null;
+
+  const resumen = agenda.franjas.length ? `Turnos ${describirFranjas(agenda.franjas)}` : 'Sin turnos';
+  const vacio = agenda.franjas.length === 0 ? SIN_FRANJAS : agenda.turnos.length === 0 ? VACIO : null;
+  const turnos = [...agenda.turnos].sort((a, b) => inicioMin(a) - inicioMin(b));
+  const abierto = agenda.turnos.find((t) => t.id === abiertoId) ?? null;
 
   return (
     <>
@@ -247,20 +359,21 @@ export default async function TurnosPage({ searchParams }: { searchParams: Busqu
       <div className="hidden flex-1 flex-col px-6 pt-5.5 md:flex">
         <div className="mb-1.5 flex items-center gap-3.5">
           <h1 className="font-serif text-[22px] font-semibold">Turnos</h1>
-          <Flechas indice={indice} vacia={vacia}>
-            <div className="min-w-[180px] text-center text-sm text-grafito">{dia.titulo}</div>
+          <Flechas fecha={agenda.fecha}>
+            <div className="min-w-[180px] text-center text-sm text-grafito">{agenda.titulo}</div>
           </Flechas>
           <div className="flex overflow-hidden rounded-otto border border-borde text-[14px] font-medium md:text-[13px]">
             <span className="bg-cobre px-4 py-[7px] text-lino">Día</span>
             <span className="bg-lino px-4 py-[7px] text-grafito">Semana</span>
           </div>
-          {chip && (
-            <span className="rounded-pill border border-[#EEDFC0] bg-ambar-suave px-3 py-1.5 text-[14px] font-medium text-ambar md:text-[12.5px]">
-              Sin confirmar para mañana · {chip}
-            </span>
+          {!vacio && agenda.sin_confirmar_manana > 0 && (
+            <span className="rounded-pill border border-[#EEDFC0] bg-ambar-suave px-3 py-1.5 text-[14px] font-medium text-ambar md:text-[12.5px]">Sin confirmar para mañana · {agenda.sin_confirmar_manana}</span>
           )}
+          <button type="button" onClick={recargar} className="text-[14px] text-tinta underline-offset-2 hover:underline md:text-[13px]">
+            ↻ Actualizar
+          </button>
           <div className="flex-1" />
-          <button type="button" className="rounded-otto bg-cobre px-4.5 py-2.5 text-sm font-medium text-lino">
+          <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto bg-cobre/50 px-4.5 py-2.5 text-sm font-medium text-lino">
             Nuevo turno
           </button>
         </div>
@@ -271,33 +384,32 @@ export default async function TurnosPage({ searchParams }: { searchParams: Busqu
             <EstadoVacio titulo={vacio.titulo} texto={vacio.texto} />
           </div>
         ) : (
-          <Grilla dia={dia} franjas={franjas} />
+          <Grilla agenda={agenda} abiertoId={abiertoId} onAbrir={setAbiertoId} onCambio={recargar} />
         )}
       </div>
 
-      {/* Mobile — lista del día + hoja del turno abierto */}
+      {/* Mobile — lista del día + hoja del turno tocado */}
       <div className="flex flex-1 flex-col md:hidden">
         <div className="px-4 pb-3 pt-[18px]">
           <div className="flex items-center">
             <div className="flex-1 font-serif text-[22px] font-semibold">Turnos</div>
-            <button type="button" className="rounded-otto bg-cobre px-3.5 py-2.5 text-[14px] font-medium text-lino">
+            <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto bg-cobre/50 px-3.5 py-2.5 text-[14px] font-medium text-lino">
               Nuevo turno
             </button>
           </div>
           <div className="mt-2.5">
-            <Flechas indice={indice} vacia={vacia}>
-              <div className="min-w-0 flex-1 text-center text-[15px] font-medium">{dia.titulo}</div>
+            <Flechas fecha={agenda.fecha}>
+              <div className="min-w-0 flex-1 text-center text-[15px] font-medium">{agenda.titulo}</div>
             </Flechas>
           </div>
           <div className="mt-2 text-[14px] leading-[1.45] text-grafito">{resumen}</div>
           {!vacio && (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              {chip && (
-                <span className="rounded-pill border border-[#EEDFC0] bg-ambar-suave px-3 py-1.5 text-[14px] font-medium text-ambar">
-                  Sin confirmar mañana · {chip}
-                </span>
-              )}
+              {agenda.sin_confirmar_manana > 0 && <span className="rounded-pill border border-[#EEDFC0] bg-ambar-suave px-3 py-1.5 text-[14px] font-medium text-ambar">Sin confirmar mañana · {agenda.sin_confirmar_manana}</span>}
               <span className="rounded-pill border border-borde px-3 py-1.5 text-[14px] font-medium text-grafito">Semana</span>
+              <button type="button" onClick={recargar} className="text-[14px] text-tinta underline-offset-2">
+                ↻ Actualizar
+              </button>
             </div>
           )}
         </div>
@@ -307,73 +419,36 @@ export default async function TurnosPage({ searchParams }: { searchParams: Busqu
             <EstadoVacio titulo={vacio.titulo} texto={vacio.texto} />
           </div>
         ) : (
-          <>
-            <div className="flex flex-1 flex-col gap-2.5 px-4 pb-4">
-              {turnos.map((t) => (
-                <div
-                  key={t.nombre}
-                  className="flex items-center gap-3 rounded-otto border border-borde bg-lino px-3.5 py-[13px]"
-                  style={{ borderLeft: `3px solid ${BORDE_ESTADO[t.estado]}` }}
-                >
-                  <span className="w-[46px] flex-none font-serif text-[15px] font-semibold tabular-nums">{t.desde}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-serif text-[15px] font-semibold">{t.nombre}</div>
-                    <div className="text-[14px] text-grafito">
-                      {t.tipo} · {duracion(t.minutos)} · Probador{'\u00a0'}{t.probador}
-                    </div>
-                    {t.aviso && <div className="mt-0.5 text-[14px] font-medium text-ambar">↻ {t.aviso}</div>}
+          <div className="flex flex-1 flex-col gap-2.5 px-4 pb-4">
+            {turnos.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setAbiertoId(t.id)}
+                className="flex items-center gap-3 rounded-otto border border-borde bg-lino px-3.5 py-[13px] text-left"
+                style={{ borderLeft: `3px solid ${BORDE_ESTADO[t.estado as EstadoTurno]}` }}
+              >
+                <span className="w-[46px] flex-none font-serif text-[15px] font-semibold tabular-nums">{t.h}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-serif text-[15px] font-semibold">{t.n}</div>
+                  <div className="text-[14px] text-grafito">
+                    {t.t} · {t.p}
                   </div>
-                  <span
-                    className="flex-none rounded-pill px-[9px] py-[3px] text-[14px] font-medium"
-                    style={{ background: CHIP_ESTADO[t.estado].bg, color: CHIP_ESTADO[t.estado].fg }}
-                  >
-                    {ETIQUETA_ESTADO[t.estado]}
-                  </span>
+                  {t.aviso && <div className="mt-0.5 text-[14px] font-medium text-ambar">↻ {t.aviso}</div>}
                 </div>
-              ))}
-            </div>
-
-            {/* Hoja del turno abierto, siempre visible acá para mostrar el patrón "marcar con una mano" */}
-            {abierto && (
-              <div className="rounded-t-2xl bg-lino px-[18px] pb-[30px] pt-5 shadow-otto-pop">
-                <div className="mx-auto mb-4 h-1 w-9 rounded-pill bg-borde" />
-                <div className="flex items-baseline gap-2.5">
-                  <span className="flex-1 font-serif text-xl font-semibold">{abierto.nombre}</span>
-                  <span
-                    className="rounded-pill px-2.5 py-[3px] text-[14px] font-medium"
-                    style={{ background: CHIP_ESTADO[abierto.estado].bg, color: CHIP_ESTADO[abierto.estado].fg }}
-                  >
-                    {ETIQUETA_ESTADO[abierto.estado]}
-                  </span>
-                </div>
-                <div className="mt-1 text-[14px] leading-[1.5] text-grafito">
-                  {abierto.tipo}
-                  {abierto.ficha && ` · ${abierto.ficha.evento}`}
-                  <br />
-                  {DIA_CORTO[dia.diaSemana]} {abierto.desde} · {duracion(abierto.minutos)} · Probador {abierto.probador}
-                  {abierto.ficha && ` · ${abierto.ficha.telefono}`}
-                </div>
-                <div className="mt-4.5 flex flex-col gap-2">
-                  <button type="button" className="rounded-otto bg-cobre py-3 text-[15px] font-medium text-lino">
-                    Marcar alquiló
-                  </button>
-                  <button type="button" className="rounded-otto border border-cobre bg-lino py-3 text-sm font-medium text-cobre">
-                    Abrir la charla
-                  </button>
-                  <div className="flex gap-2">
-                    <button type="button" className="flex-1 rounded-otto border border-borde bg-lino py-3 text-sm font-medium">
-                      Mover
-                    </button>
-                    <button type="button" className="flex-1 rounded-otto border border-borde bg-lino py-3 text-sm font-medium text-ladrillo">
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
+                <span className="flex-none rounded-pill px-[9px] py-[3px] text-[14px] font-medium" style={{ background: t.eb, color: t.ef }}>
+                  {t.e}
+                </span>
+              </button>
+            ))}
+          </div>
         )}
       </div>
+      {abierto && (
+        <div className="md:hidden">
+          <HojaTurno turno={abierto} onCerrar={() => setAbiertoId(null)} onCambio={recargar} />
+        </div>
+      )}
     </>
   );
 }

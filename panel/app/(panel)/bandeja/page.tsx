@@ -1,30 +1,26 @@
-// Bandeja — bitácora plegable, etiquetas por charla y adjuntos. Puerto de
-// d-bandeja.html (escritorio: lista + hilo lado a lado) y m-bandeja.html
-// (mobile: solo la lista; el hilo vive en /bandeja/charla).
+'use client';
 
-import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
-import { pideVacio, type BusquedaPagina } from '../vacio';
+// Bandeja — conectada a GET /api/bandeja (H1.8, paneles). Puerto de d-bandeja.html
+// (escritorio: lista + hilo lado a lado) y m-bandeja.html (mobile: solo la lista; el hilo vive
+// en /bandeja/charla). Un solo pedido para las dos ramas (BandejaSplit lo usa en escritorio,
+// ConversationList en mobile): conviven en el DOM aunque solo una se vea, según el ancho.
+
+import { useDatos } from '@/components/api/useDatos';
+import type { FilaBandeja } from '@/lib/queries/bandeja';
+import { BandejaSplit } from './BandejaSplit';
 import { ConversationList } from './ConversationList';
-import { VACIO_BANDEJA } from './vacio-bandeja';
-import { ChatThread } from './ChatThread';
 
-export default async function BandejaPage({ searchParams }: { searchParams: BusquedaPagina }) {
-  const vacia = await pideVacio(searchParams);
+export default function BandejaPage() {
+  const { datos, cargando, error, recargar } = useDatos<{ conversaciones: FilaBandeja[] }>('/api/bandeja');
+  const conversaciones = datos?.conversaciones ?? [];
 
   return (
     <>
       <div className="hidden flex-1 md:flex">
-        <ConversationList variante="desktop" vacia={vacia} />
-        {vacia ? (
-          <div className="flex flex-1 items-center justify-center bg-hueso">
-            <EstadoVacio titulo={VACIO_BANDEJA.titulo} texto={VACIO_BANDEJA.texto} />
-          </div>
-        ) : (
-          <ChatThread variante="desktop" />
-        )}
+        <BandejaSplit conversaciones={conversaciones} cargando={cargando} error={error} onReintentar={recargar} />
       </div>
       <div className="flex flex-1 md:hidden">
-        <ConversationList variante="mobile" vacia={vacia} />
+        <ConversationList variante="mobile" conversaciones={conversaciones} cargando={cargando} error={error} onReintentar={recargar} />
       </div>
     </>
   );

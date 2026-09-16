@@ -1,169 +1,210 @@
 'use client';
 
-// Conocimiento — buscador de prueba, aviso de propuestas y secciones plegables.
-// Puerto de d-conocimiento.html y m-conocimiento.html, en un solo layout
-// responsive. El buscador es una aproximación local por palabras para que la
-// pantalla se pueda probar; el de verdad es buscar_informacion (Fase 2).
+// Conocimiento — buscador real y secciones plegables con los fragmentos reales (H1.8,
+// paneles). El buscador consume GET /api/conocimiento/buscar: una aproximación provisoria de
+// buscar_informacion (texto completo en español, sin tildes), no la búsqueda que usa Lucía —
+// eso es de agente (Fase 2). Activar/desactivar un fragmento guarda de verdad.
+//
+// El aviso de Propuestas que había acá se sacó: esa pantalla (bitacora/propuestas) todavía no
+// tiene datos reales (no existe el analista nocturno de PROCESOS.md § 6), así que no hay de
+// dónde traer un número real para avisar.
 
-import Link from 'next/link';
 import { useState } from 'react';
 import { Switch } from '@/components/ui-otto/Switch';
-import { PROPUESTAS_PENDIENTES } from '../bitacora/propuestas/propuestas-mock';
-import { SECCIONES, type Fragmento } from './fragmentos-mock';
+import { PanelHistorial } from '@/components/api/PanelHistorial';
+import { enviar, obtener, ErrorApi } from '@/components/api/cliente';
+import { useEdicion } from '@/components/api/useEdicion';
+import type { FilaFragmento, ResultadoBusqueda, SeccionConocimiento } from '@/lib/queries/conocimiento';
 
-const normalizar = (s: string) =>
-  s
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9ñ ]/g, ' ');
-
-const PALABRAS_VACIAS = new Set(['de', 'la', 'el', 'que', 'se', 'un', 'una', 'los', 'las', 'y', 'a', 'en', 'es', 'por', 'para', 'con', 'lo', 'me', 'si', 'cuanto', 'como']);
-
-// Algunas palabras de cliente que no aparecen en los textos (AGENTE.md § 8, «se dispara con»).
-const SINONIMOS: Record<string, string> = { sena: 'reservarlo paga', garantia: 'garantia tarjeta', retiro: 'retira', devuelvo: 'devuelve' };
-
-function buscar(consulta: string): { seccion: string; fragmento: Fragmento } | null {
-  const palabras = normalizar(consulta)
-    .split(/\s+/)
-    .flatMap((p) => (SINONIMOS[p] ? SINONIMOS[p].split(' ') : [p]))
-    .filter((p) => p.length > 2 && !PALABRAS_VACIAS.has(p));
-  let mejor: { seccion: string; fragmento: Fragmento; puntos: number } | null = null;
-  for (const s of SECCIONES) {
-    for (const f of s.fragmentos) {
-      if (!f.activo) continue;
-      const texto = normalizar(`${f.titulo} ${f.texto}`);
-      const puntos = palabras.filter((p) => texto.includes(p)).length;
-      if (puntos > 0 && (!mejor || puntos > mejor.puntos)) mejor = { seccion: s.titulo, fragmento: f, puntos };
-    }
-  }
-  return mejor;
-}
+const SIN_CONECTAR = 'Todavía no conectado';
 
 function Buscador() {
   const [consulta, setConsulta] = useState('cuanto se paga de seña');
-  const [resultado, setResultado] = useState(() => buscar('cuanto se paga de seña'));
+  const [resultados, setResultados] = useState<ResultadoBusqueda[] | null>(null);
+  const [buscando, setBuscando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function buscar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!consulta.trim()) return;
+    setBuscando(true);
+    setError(null);
+    try {
+      const r = await obtener<{ resultados: ResultadoBusqueda[] }>(`/api/conocimiento/buscar?q=${encodeURIComponent(consulta)}`);
+      setResultados(r.resultados ?? []);
+    } catch (e) {
+      setError(e instanceof ErrorApi ? e.message : 'No se pudo buscar');
+    } finally {
+      setBuscando(false);
+    }
+  }
+
+  const encontrado = resultados?.find((r) => r.activo) ?? null;
 
   return (
     <div className="rounded-otto border border-borde bg-lino p-3.5 md:p-4">
       <label htmlFor="probar-busqueda" className="mb-2 block text-[14px] font-medium text-grafito md:text-[13px]">
         Probá cómo lo encontraría un cliente
       </label>
-      <form
-        className="flex gap-2.5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setResultado(buscar(consulta));
-        }}
-      >
+      <form className="flex gap-2.5" onSubmit={buscar}>
         <input
           id="probar-busqueda"
           value={consulta}
           onChange={(e) => setConsulta(e.target.value)}
           className="min-w-0 flex-1 rounded-otto border border-borde bg-hueso px-3 py-2.5 text-[14.5px] outline-none"
         />
-        <button type="submit" className="flex-none rounded-otto border border-cobre bg-lino px-4 py-2.5 text-[14px] font-medium text-cobre md:text-[13.5px]">
-          Probar
+        <button type="submit" disabled={buscando} className="flex-none rounded-otto border border-cobre bg-lino px-4 py-2.5 text-[14px] font-medium text-cobre disabled:opacity-50 md:text-[13.5px]">
+          {buscando ? 'Buscando…' : 'Probar'}
         </button>
       </form>
-      <div className="mt-3 flex items-baseline gap-2.5 border-t border-borde-suave pt-3 text-sm leading-[1.5]">
-        {resultado ? (
-          <>
-            <span className="flex-none rounded-pill bg-salvia-suave px-2.5 py-0.5 text-[14px] font-medium text-salvia md:text-[11.5px]">
-              Encontrado
-            </span>
-            <span className="min-w-0">
-              <span className="font-serif text-[14px] font-semibold">{resultado.fragmento.titulo}</span> — «{resultado.fragmento.texto}»
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="flex-none rounded-pill bg-ladrillo-suave px-2.5 py-0.5 text-[14px] font-medium text-ladrillo md:text-[11.5px]">
-              No encontrado
-            </span>
-            <span className="text-grafito">Lucía no tendría qué contestar: falta un fragmento para esto.</span>
-          </>
-        )}
-      </div>
+      {error ? (
+        <div className="mt-3 border-t border-borde-suave pt-3 text-sm text-ladrillo">{error}</div>
+      ) : resultados !== null ? (
+        <div className="mt-3 flex items-baseline gap-2.5 border-t border-borde-suave pt-3 text-sm leading-[1.5]">
+          {encontrado ? (
+            <>
+              <span className="flex-none rounded-pill bg-salvia-suave px-2.5 py-0.5 text-[14px] font-medium text-salvia md:text-[11.5px]">Encontrado</span>
+              <span className="min-w-0">
+                <span className="font-serif text-[14px] font-semibold">{encontrado.titulo}</span> — «{encontrado.extracto}»
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="flex-none rounded-pill bg-ladrillo-suave px-2.5 py-0.5 text-[14px] font-medium text-ladrillo md:text-[11.5px]">No encontrado</span>
+              <span className="text-grafito">Lucía no tendría qué contestar: falta un fragmento para esto{resultados.length > 0 ? ' activo' : ''}.</span>
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function AvisoPropuestas() {
-  return (
-    <Link
-      href="/bitacora/propuestas"
-      className="flex items-center gap-3 rounded-otto border border-cobre bg-lino px-3.5 py-3 text-[14px] md:px-4"
-    >
-      <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-pill bg-noche font-serif text-[14px] font-semibold text-hueso">
-        L
-      </span>
-      <span className="min-w-0 flex-1 truncate">
-        <span className="font-serif font-semibold">Propuestas de Lucía</span>
-        <span className="text-grafito"> · {PROPUESTAS_PENDIENTES} pendientes</span>
-      </span>
-      <span className="flex-none font-medium text-cobre">
-        <span className="hidden md:inline">Revisar en Bitácora </span>›
-      </span>
-    </Link>
-  );
-}
+type Editable = { version: number; titulo: string; texto: string; activo: boolean };
 
-function FragmentoCard({ f }: { f: Fragmento }) {
-  const [activo, setActivo] = useState(f.activo);
+function FragmentoCard({ f, onGuardado }: { f: FilaFragmento; onGuardado: () => void }) {
+  const [editando, setEditando] = useState(false);
+  const [historialAbierto, setHistorialAbierto] = useState(false);
+  const [guardandoSwitch, setGuardandoSwitch] = useState(false);
+  const [errorSwitch, setErrorSwitch] = useState<string | null>(null);
+  // Una sola versión en juego para el switch y el editor de texto: si cada uno llevara la suya
+  // por separado, tocar el switch y después Guardar el texto (o al revés) chocaría con un 409
+  // porque el segundo mandaría una versión que la base ya dejó atrás.
+  const edicion = useEdicion<Editable>({ version: f.version, titulo: f.t, texto: f.txt, activo: f.on });
+  const { toast, mostrar } = useToastLocal();
+
+  async function alternar(nuevo: boolean) {
+    setErrorSwitch(null);
+    setGuardandoSwitch(true);
+    // Solo `activo` viaja: si había un título o un texto sin guardar en el editor, tocar el
+    // switch no los pisa (la base no los toca porque no se los manda).
+    const err = await edicion.guardar(`/api/conocimiento/fragmentos/${f.id}`, { activo: nuevo });
+    if (err) setErrorSwitch(err);
+    else onGuardado();
+    setGuardandoSwitch(false);
+  }
+
+  async function guardar() {
+    const err = await edicion.guardar(`/api/conocimiento/fragmentos/${f.id}`, { titulo: edicion.valor.titulo, texto: edicion.valor.texto, activo: edicion.valor.activo });
+    if (err) mostrar(err, true);
+    else {
+      mostrar('Guardado', false);
+      setEditando(false);
+      onGuardado();
+    }
+  }
+
+  const activo = edicion.valor.activo;
   return (
     <div className={`rounded-otto border border-borde p-3.5 ${activo ? 'bg-lino' : 'bg-[#FBFAF7]'}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className={`min-w-0 flex-1 basis-full font-serif text-[15px] font-semibold md:basis-auto ${activo ? '' : 'text-grafito'}`}>
-          {f.titulo}
+        <span className={`min-w-0 flex-1 basis-full font-serif text-[15px] font-semibold md:basis-auto ${activo ? '' : 'text-grafito'}`}>{f.t}</span>
+        <span className="text-[14px] tabular-nums text-grafito md:text-[11.5px]">{f.v}</span>
+        <span className="inline-flex items-center gap-1.5 text-[14px] font-medium text-grafito md:text-xs" title={errorSwitch ?? undefined}>
+          {errorSwitch ? <span className="text-ladrillo">No se pudo guardar</span> : guardandoSwitch ? 'Guardando…' : activo ? 'Activo' : 'Inactivo'}
+          <Switch checked={activo} onChange={alternar} ariaLabel={`${f.t} activo`} />
         </span>
-        <span className="text-[14px] tabular-nums text-grafito md:text-[11.5px]">{f.version}</span>
-        <span className="inline-flex items-center gap-1.5 text-[14px] font-medium text-grafito md:text-xs">
-          {activo ? 'Activo' : 'Inactivo'}
-          <Switch defaultChecked={f.activo} onChange={setActivo} />
-        </span>
-        <button type="button" className="ml-auto rounded-[7px] border border-borde bg-lino px-3 py-1.5 text-[14px] font-medium text-cobre md:ml-0 md:text-[12.5px]">
-          Editar
+        <button type="button" onClick={() => setEditando((e) => !e)} className="ml-auto rounded-[7px] border border-borde bg-lino px-3 py-1.5 text-[14px] font-medium text-cobre md:ml-0 md:text-[12.5px]">
+          {editando ? 'Cerrar' : 'Editar'}
         </button>
       </div>
-      <div className="mt-2 text-sm leading-[1.55] text-grafito">{f.texto}</div>
+      {editando ? (
+        <div className="mt-2.5 flex flex-col gap-2.5 border-t border-borde-suave pt-2.5">
+          <label className="flex flex-col gap-1 text-[14px] font-medium text-grafito md:text-[11.5px]">
+            Título
+            <input value={edicion.valor.titulo} onChange={(e) => edicion.setValor({ ...edicion.valor, titulo: e.target.value })} className="w-full rounded-otto border border-borde px-2.5 py-2 text-sm outline-none focus:border-cobre" />
+          </label>
+          <label className="flex flex-col gap-1 text-[14px] font-medium text-grafito md:text-[11.5px]">
+            Texto (lo que lee Lucía)
+            <textarea
+              value={edicion.valor.texto}
+              onChange={(e) => edicion.setValor({ ...edicion.valor, texto: e.target.value })}
+              className="min-h-24 w-full resize-none rounded-otto border border-borde px-2.5 py-2 text-sm leading-[1.5] outline-none focus:border-cobre"
+            />
+          </label>
+          <div className="flex items-center gap-2.5">
+            <button type="button" onClick={guardar} disabled={edicion.guardando} className="rounded-otto bg-cobre px-4 py-2 text-[14px] font-medium text-lino disabled:opacity-60">
+              {edicion.guardando ? 'Guardando…' : 'Guardar'}
+            </button>
+            <button type="button" onClick={edicion.deshacer} disabled={!edicion.sucio || edicion.guardando} className="rounded-otto border border-borde bg-lino px-3.5 py-2 text-[14px] font-medium text-grafito disabled:opacity-50">
+              Deshacer
+            </button>
+            <button type="button" onClick={() => setHistorialAbierto(true)} className="ml-auto text-[14px] underline-offset-2 hover:underline">
+              Ver versión anterior
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 text-sm leading-[1.55] text-grafito">{edicion.valor.texto}</div>
+      )}
+      {toast}
+      {historialAbierto && <PanelHistorial tabla="fragmentos" id={f.id} versionActual={edicion.guardado.version} onCerrar={() => setHistorialAbierto(false)} onRestaurado={onGuardado} />}
     </div>
   );
 }
 
-function Secciones() {
-  const [abiertas, setAbiertas] = useState(() => new Set(SECCIONES.filter((s) => s.abierta).map((s) => s.titulo)));
-  const alternar = (titulo: string) =>
+// Un toast mínimo, en el lugar (no flotante): esta tarjeta ya tiene su propio layout y no hace
+// falta el patrón fijo de ToastFlotante para un mensaje de una línea.
+function useToastLocal() {
+  const [msj, setMsj] = useState<{ texto: string; error: boolean } | null>(null);
+  function mostrar(texto: string, error: boolean) {
+    setMsj({ texto, error });
+    setTimeout(() => setMsj(null), 4000);
+  }
+  const toast = msj && <div className={`mt-2 text-[14px] ${msj.error ? 'text-ladrillo' : 'text-salvia'}`}>{msj.texto}</div>;
+  return { toast, mostrar };
+}
+
+function Secciones({ secciones, onGuardado }: { secciones: SeccionConocimiento[]; onGuardado: () => void }) {
+  const [abiertas, setAbiertas] = useState(() => new Set(secciones.filter((s) => s.n > 0).map((s) => s.tema)));
+  const alternar = (tema: string) =>
     setAbiertas((prev) => {
       const sig = new Set(prev);
-      if (sig.has(titulo)) sig.delete(titulo);
-      else sig.add(titulo);
+      if (sig.has(tema)) sig.delete(tema);
+      else sig.add(tema);
       return sig;
     });
 
   return (
     <div className="overflow-hidden rounded-otto border border-borde bg-lino">
-      {SECCIONES.map((s) => {
-        const abierta = abiertas.has(s.titulo);
+      {secciones.map((s) => {
+        const abierta = abiertas.has(s.tema);
         return (
-          <div key={s.titulo} className="border-b border-borde-suave last:border-b-0">
-            <button
-              type="button"
-              onClick={() => alternar(s.titulo)}
-              aria-expanded={abierta}
-              className={`flex w-full items-center gap-2.5 px-3.5 py-3.5 text-left text-[14.5px] font-medium md:px-4.5 ${abierta ? 'bg-[#FBFAF7]' : ''}`}
-            >
+          <div key={s.tema} className="border-b border-borde-suave last:border-b-0">
+            <button type="button" onClick={() => alternar(s.tema)} aria-expanded={abierta} className={`flex w-full items-center gap-2.5 px-3.5 py-3.5 text-left text-[14.5px] font-medium md:px-4.5 ${abierta ? 'bg-[#FBFAF7]' : ''}`}>
               <span className={abierta ? 'text-cobre' : 'text-grafito'} aria-hidden>
                 {abierta ? '▾' : '▸'}
               </span>
               {s.titulo}
-              <span className="ml-auto text-[14px] tabular-nums text-grafito md:text-xs">{s.fragmentos.length}</span>
+              <span className="ml-auto text-[14px] tabular-nums text-grafito md:text-xs">{s.n}</span>
             </button>
             {abierta && (
               <div className="flex flex-col gap-2.5 px-3.5 pb-4 pt-1 md:pl-9.5 md:pr-4.5">
-                {s.fragmentos.map((f) => (
-                  <FragmentoCard key={f.titulo} f={f} />
-                ))}
+                {s.fragmentos.length === 0 ? (
+                  <div className="text-[14px] text-grafito md:text-[13px]">Sin fragmentos cargados para este tema.</div>
+                ) : (
+                  s.fragmentos.map((f) => <FragmentoCard key={f.id} f={f} onGuardado={onGuardado} />)
+                )}
               </div>
             )}
           </div>
@@ -173,12 +214,11 @@ function Secciones() {
   );
 }
 
-export function Conocimiento() {
+export function Conocimiento({ secciones, onGuardado }: { secciones: SeccionConocimiento[]; onGuardado: () => void }) {
   return (
     <>
       <Buscador />
-      <AvisoPropuestas />
-      <Secciones />
+      <Secciones secciones={secciones} onGuardado={onGuardado} />
     </>
   );
 }
