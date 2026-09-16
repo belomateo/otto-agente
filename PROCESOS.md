@@ -88,7 +88,8 @@ clasificador aunque no diga "reclamo" ni nombre nada roto — pedido de Mateo, 1
 `prenda_danada`, `corporativo`, `turno_urgente_sin_hueco`,
 `evento_inminente` (evento hoy o mañana: deriva siempre, decisión #8 del 14/9),
 `descuento`, `dato_no_encontrado`, `pide_persona`, `barandilla_doble`, `sin_respuesta`,
-`timeout`.
+`timeout`, `fallo_tecnico` (se agotaron los 2 intentos de un trabajo de la cola, o un mensaje
+quedó en duda al mandarlo por Meta — logica, 0044, 16/9).
 
 ---
 
