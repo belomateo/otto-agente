@@ -27,6 +27,9 @@ export type FilaTurno = TurnoDelDia & {
   /** OK del cartel del turno (0031, decisión #10); null = nadie lo dio. */
   aviso_ok_at: string | null;
   aviso_ok_por: string | null;
+  /** El cliente con el evento más cercano: le tocó el turno más próximo de la agenda (0046,
+   *  decisión de Mateo). Lo pone logica desde el cálculo de huecos. */
+  urgencia: boolean;
 };
 
 export type AgendaDelDia = {
@@ -57,7 +60,7 @@ export async function turnosDelDia(
   let q = db
     .from('turnos')
     .select(
-      'id, version, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado, aviso, confirmado_por, aviso_ok_at, aviso_ok_por, clientes(nombre, telefono)'
+      'id, version, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado, aviso, confirmado_por, aviso_ok_at, aviso_ok_por, urgencia, clientes(nombre, telefono)'
     )
     .gte('inicio', desde)
     .lt('inicio', hasta)
@@ -123,6 +126,7 @@ export async function turnosDelDia(
         confirmado_por: t.confirmado_por,
         aviso_ok_at: t.aviso_ok_at,
         aviso_ok_por: t.aviso_ok_por,
+        urgencia: t.urgencia,
         h: hora(t.inicio),
         n: nombreDe(t.clientes),
         t: `${ETIQUETA_TIPO_TURNO[t.tipo] ?? t.tipo} · ${t.duracion_min}’`,

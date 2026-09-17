@@ -45,6 +45,9 @@ export const ESTILO_ESTADO_TURNO: Record<string, { etiqueta: string; borde: stri
 export const ESTILO_MOTIVO: Record<string, { etiqueta: string; cb: string; cf: string; urgente: boolean }> = {
   turno_urgente_sin_hueco: { etiqueta: 'Turno urgente', cb: '#F6E3DF', cf: '#A6473A', urgente: true },
   reclamo: { etiqueta: 'Reclamo', cb: '#F6E3DF', cf: '#A6473A', urgente: true },
+  cliente_enojado: { etiqueta: 'Cliente enojado', cb: '#F6E3DF', cf: '#A6473A', urgente: true },
+  evento_inminente: { etiqueta: 'Evento inminente', cb: '#F6E3DF', cf: '#A6473A', urgente: true },
+  fallo_tecnico: { etiqueta: 'Falló el envío', cb: '#F6E3DF', cf: '#A6473A', urgente: true },
   prenda_danada: { etiqueta: 'Prenda dañada', cb: '#F6E3DF', cf: '#A6473A', urgente: true },
   corporativo: { etiqueta: 'Corporativo', cb: '#EEF1F5', cf: '#1F2A3C', urgente: false },
   descuento: { etiqueta: 'Descuento', cb: '#F1E6D9', cf: '#A8703F', urgente: false },

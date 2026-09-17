@@ -51,3 +51,13 @@ export async function listarSolicitudes(sesion: Sesion, estado: EstadoSolicitud)
 export async function resolverSolicitud(sesion: Sesion, id: string, aprobar: boolean, rol: 'admin' | 'equipo') {
   return sesion.supabase.rpc('resolver_solicitud', { p_solicitud: id, p_aprobar: aprobar, p_rol: rol });
 }
+
+/**
+ * Sacar el acceso de alguien del equipo (decisión de Mateo, 16/9): reusa perfiles.estado =
+ * 'rechazado', el mismo que deja sin acceso a quien nunca se aprobó (es_usuario_aprobado() y
+ * es_admin() solo pasan con 'aprobado'). Nadie puede tocar su propio perfil (0007/0010, base):
+ * eso da 42501, no hace falta chequearlo acá.
+ */
+export async function quitarAcceso(sesion: Sesion, perfilId: string) {
+  return sesion.supabase.from('perfiles').update({ estado: 'rechazado' }).eq('id', perfilId).select('id, nombre, rol, estado').maybeSingle();
+}

@@ -5,7 +5,10 @@
 // tipadas a mano). Excepción puntual (16/9): mensajes.no_enviado_motivo (0042 de logica) se
 // sumó a mano porque el CLI (`gen types --db-url`) falla acá por Docker Desktop inalcanzable,
 // no por la base; verificado contra el esquema real (information_schema, pg_constraint) antes
-// de escribirlo. Se reemplaza solo con regenerar de verdad en cuanto Docker ande.
+// de escribirlo. Se reemplaza solo con regenerar de verdad en cuanto Docker ande. Mismo motivo,
+// mismo día: catalogo_alquiler.orden (0044), turnos.urgencia (0046) y la función
+// mostrador_enviar_foto (0028-bis de logica, todavía sin aplicar cuando se escribió esto: la
+// firma es la que avisó por chat, no está verificada contra la base todavía).
 
 export type Json =
   | string
@@ -61,6 +64,7 @@ export type Database = {
           fotos: string[]
           id: string
           modelo: string
+          orden: number
           precio_base: number
           talles: string[]
           version: number
@@ -74,6 +78,7 @@ export type Database = {
           fotos?: string[]
           id?: string
           modelo: string
+          orden: number
           precio_base: number
           talles?: string[]
           version?: number
@@ -87,6 +92,7 @@ export type Database = {
           fotos?: string[]
           id?: string
           modelo?: string
+          orden?: number
           precio_base?: number
           talles?: string[]
           version?: number
@@ -979,6 +985,7 @@ export type Database = {
           probador: number
           recordatorio_enviado_at: string | null
           tipo: string
+          urgencia: boolean
           version: number
         }
         Insert: {
@@ -1004,6 +1011,7 @@ export type Database = {
           probador: number
           recordatorio_enviado_at?: string | null
           tipo: string
+          urgencia?: boolean
           version?: number
         }
         Update: {
@@ -1029,6 +1037,7 @@ export type Database = {
           probador?: number
           recordatorio_enviado_at?: string | null
           tipo?: string
+          urgencia?: boolean
           version?: number
         }
         Relationships: [
@@ -1066,6 +1075,7 @@ export type Database = {
           probador: number | null
           recordatorio_enviado_at: string | null
           tipo: string | null
+          urgencia: boolean | null
           version: number | null
         }
         Relationships: [
@@ -1153,6 +1163,10 @@ export type Database = {
       immutable_unaccent: { Args: { "": string }; Returns: string }
       mostrador_enviar: {
         Args: { p_conversacion: string; p_texto: string }
+        Returns: Json
+      }
+      mostrador_enviar_foto: {
+        Args: { p_conversacion: string; p_epigrafe?: string | null; p_storage_path: string }
         Returns: Json
       }
       registrar_mensaje_entrante: {

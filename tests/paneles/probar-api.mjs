@@ -171,6 +171,10 @@ async function crearUsuario(etiqueta) {
 
 const creados = { filas: [], storage: [] };
 let cli, conv, turnoId;
+// Para el chequeo de residuo de historial (verificarLimpieza): solo cuenta lo que esta misma
+// corrida haya dejado. Historial de paneles.%@example.com de ANTES de este momento es de un
+// incidente ya cerrado (ver docs/incidentes o el aviso de logica del 16/9) — no un residuo nuevo.
+const INICIO_CORRIDA = new Date();
 async function sembrar() {
   await q("delete from turnos where cliente_id in (select id from clientes where telefono = $1)", [TEL]);
   await q("delete from clientes where telefono = $1", [TEL]);
@@ -209,8 +213,12 @@ const REALES = {
   horarios: "dia_semana = 1",
   duraciones_turno: "tipo = 'novio'",
   configuracion_agenda: "true",
+  prompt_base: "true",
 };
 const fotos = {};
+// Tablas donde restaurarReales encontró una edición ajena y no restauró (para no pisarla):
+// verificarLimpieza no las cuenta como una falla, es un aviso, no un bug del código.
+const saltadosRestaurar = new Set();
 async function fotografiar() {
   for (const [tabla, where] of Object.entries(REALES)) {
     const fila = (await q(`select * from ${tabla} where ${where} limit 1`))[0];
@@ -221,21 +229,51 @@ async function fotografiar() {
 }
 async function restaurarReales() {
   for (const [tabla, { fila, hist }] of Object.entries(fotos)) {
-    await db.query("begin");
-    try {
-      // Sin trigger de historial solo dentro de esta transacción: nadie más lo ve apagado.
-      await db.query(`alter table ${tabla} disable trigger trg_historial`);
-      const cols = Object.keys(fila).filter((c) => c !== "id");
-      await db.query(`update ${tabla} set ${cols.map((c, i) => `${c} = $${i + 2}`).join(", ")} where id = $1`, [
-        fila.id,
-        ...cols.map((c) => fila[c]),
-      ]);
-      await db.query(`alter table ${tabla} enable trigger trg_historial`);
-      await db.query("delete from historial_ediciones where fila_id = $1 and not (id = any($2::uuid[]))", [fila.id, hist]);
-      await db.query("commit");
-    } catch (e) {
-      await db.query("rollback");
-      throw e;
+    // La base es la real y esta fila la puede estar editando Mateo/front al mismo tiempo: si
+    // alguien que no es un admin de prueba (de esta corrida o de una anterior que tampoco
+    // pudo restaurar) la tocó durante la corrida, no se restaura (se pisaría un cambio real de
+    // negocio, no de prueba) — se avisa y se sigue con las demás.
+    const ajeno = await q(
+      "select distinct editado_por from historial_ediciones where fila_id = $1 and not (id = any($2::uuid[])) and editado_por is not null and editado_por not like 'paneles%'",
+      [fila.id, hist]
+    );
+    if (ajeno.length) {
+      saltadosRestaurar.add(tabla);
+      console.error(
+        `  ⚠️  ${tabla} (id ${fila.id}) lo editó alguien más durante la corrida (${ajeno.map((r) => r.editado_por ?? "sin editado_por").join(", ")}): no se restaura para no pisarle el cambio real. Revisalo a mano.`
+      );
+      continue;
+    }
+    // Reintenta ante un deadlock (40P01): con Mateo/front editando la misma fila en vivo, mi
+    // update puede cruzarse con el suyo. Un par de reintentos alcanza; si sigue, se avisa y se
+    // sigue con las demás en vez de tirar abajo toda la limpieza.
+    for (let intento = 1; ; intento++) {
+      try {
+        await db.query("begin");
+        // Sin trigger de historial solo dentro de esta transacción: nadie más lo ve apagado.
+        await db.query(`alter table ${tabla} disable trigger trg_historial`);
+        const cols = Object.keys(fila).filter((c) => c !== "id");
+        await db.query(`update ${tabla} set ${cols.map((c, i) => `${c} = $${i + 2}`).join(", ")} where id = $1`, [
+          fila.id,
+          ...cols.map((c) => fila[c]),
+        ]);
+        await db.query(`alter table ${tabla} enable trigger trg_historial`);
+        await db.query("delete from historial_ediciones where fila_id = $1 and not (id = any($2::uuid[]))", [fila.id, hist]);
+        await db.query("commit");
+        break;
+      } catch (e) {
+        await db.query("rollback").catch(() => {});
+        if (e.code === "40P01" && intento < 3) {
+          await new Promise((r) => setTimeout(r, 200 * intento));
+          continue;
+        }
+        if (e.code === "40P01") {
+          console.error(`  ⚠️  ${tabla} (id ${fila.id}): deadlock tras ${intento} intentos, no se restauró. Revisalo a mano.`);
+          saltadosRestaurar.add(tabla);
+          break;
+        }
+        throw e;
+      }
     }
   }
 }
@@ -266,6 +304,11 @@ async function limpiar() {
   }
 }
 async function verificarLimpieza() {
+  // Las REALES que no se restauraron (edición ajena durante la corrida) se quedan con
+  // historial de la prueba a propósito: no se cuenta como residuo, ya está avisado aparte.
+  const excluirFilaIds = Object.entries(fotos)
+    .filter(([tabla]) => saltadosRestaurar.has(tabla))
+    .map(([, { fila }]) => fila.id);
   const r = (await q(
     `select
       (select count(*) from clientes where telefono = $1)::int clientes,
@@ -275,19 +318,20 @@ async function verificarLimpieza() {
       (select count(*) from reglas_agente where texto like 'PRUEBA paneles%')::int reglas,
       (select count(*) from notas_dueno where texto like 'PRUEBA paneles%')::int notas,
       (select count(*) from enlaces where nombre like 'PRUEBA paneles%')::int enlaces,
-      (select count(*) from prompt_base)::int prompt_base,
       (select count(*) from franjas_turnos where dia_semana = 0)::int franjas_domingo,
       (select count(*) from historial_ediciones where tabla = 'franjas_turnos' and datos_anteriores->>'borrado_por' like 'paneles.%@example.com')::int franjas_borradas,
       (select count(*) from consumo_llm where modelo = 'prueba-paneles')::int consumo,
-      (select count(*) from historial_ediciones where editado_por like 'paneles.%@example.com')::int historial,
+      (select count(*) from historial_ediciones where editado_por like 'paneles.%@example.com' and not (fila_id = any($2::uuid[])) and editado_at >= $3)::int historial,
       (select count(*) from perfiles where nombre like 'PRUEBA paneles%')::int perfiles,
       (select count(*) from auth.users where email like 'paneles.%@example.com')::int usuarios`,
-    [TEL]
+    [TEL, excluirFilaIds, INICIO_CORRIDA]
   ))[0];
   const restos = Object.entries(r).filter(([, n]) => n > 0);
   ok(restos.length === 0, `no quedó nada de la prueba en la base (${restos.map(([k, n]) => `${k}: ${n}`).join(", ") || "todo en 0"})`);
+  // No un conteo fijo: Mateo carga franjas reales desde el panel con el tiempo. El invariante
+  // es que ninguna quedó tocada por la prueba (todas siguen en v1), no cuántas hay.
   const reales = (await q("select count(*)::int n, count(*) filter (where version = 1)::int v1 from franjas_turnos"))[0];
-  ok(reales.n === 7 && reales.v1 === 7, `las 7 franjas reales siguen en su v1 (${reales.n}, ${reales.v1} en v1)`);
+  ok(reales.n === reales.v1, `las franjas reales siguen todas en su v1 (${reales.n}, ${reales.v1} en v1)`);
   if (turnosExtra.length) {
     const t = (await q(
       `select (select count(*) from turnos where id = any($1::uuid[]))::int turnos,
@@ -301,6 +345,10 @@ async function verificarLimpieza() {
     ok(n === 0, `no quedaron los clientes sueltos de Atención humana (${n})`);
   }
   for (const [tabla, { fila }] of Object.entries(fotos)) {
+    if (saltadosRestaurar.has(tabla)) {
+      console.log(`  ℹ️  ${tabla}: no se restauró a propósito (edición real ajena durante la corrida, ya avisado arriba)`);
+      continue;
+    }
     const ahora = (await q(`select version, editado_por, editado_at from ${tabla} where id = $1`, [fila.id]))[0];
     ok(
       ahora.version === fila.version && ahora.editado_por === fila.editado_por && +ahora.editado_at === +fila.editado_at,
@@ -357,10 +405,14 @@ try {
   const A = await crearUsuario("admin");
   const N = await crearUsuario("nuevo");
   const T = await crearUsuario("tercero");
+  const Q = await crearUsuario("cuarto");
   // La solicitud del admin de prueba queda pendiente a propósito: prueba que nadie resuelve la suya.
   await q("update perfiles set rol = 'admin', estado = 'aprobado' where id = $1", [A.id]);
+  // Q queda aprobado como 'equipo' desde ya: es solo para el test de "quitar acceso" (no se usa
+  // en el resto del arnés como sn/st, así que revocarlo ahí no afecta nada más).
+  await q("update perfiles set rol = 'equipo', estado = 'aprobado' where id = $1", [Q.id]);
   await sembrar();
-  ok(true, "3 usuarios temporales, datos de prueba sembrados y filas reales fotografiadas");
+  ok(true, "4 usuarios temporales, datos de prueba sembrados y filas reales fotografiadas");
 
   // Sin generador a propósito: con las ramas juntas, scripts/armar-prompt.mjs existe y el panel
   // lo encontraría solo. Apuntarlo a un archivo que no existe prueba el 503 igual en la rama de
@@ -370,6 +422,7 @@ try {
   const sa = await iniciarSesion(A.email, A.password);
   const sn = await iniciarSesion(N.email, N.password);
   const st = await iniciarSesion(T.email, T.password);
+  const sq = await iniciarSesion(Q.email, Q.password);
 
   const GETS = [
     "/api/bandeja", `/api/bandeja/${conv}`, "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/clientes",
@@ -453,11 +506,11 @@ try {
     ok(x.status === 403, `un usuario 'equipo' en /api/accesos → 403 (${x.status})`);
     const y = await api(sn, "POST", `/api/accesos/${solA}`, { accion: "aprobar" });
     ok(y.status === 403, `un 'equipo' no aprueba a nadie → 403 (${y.status})`);
-    const z = await api(sn, "GET", "/api/clientes");
-    ok(z.status === 200 && z.datos.clientes.some((c) => c.n === MARCA), `aprobada, la cuenta nueva ve datos (${z.status})`);
+    const z = await api(sn, "GET", "/api/bandeja");
+    ok(z.status === 200 && z.datos.conversaciones.some((c) => c.n === MARCA), `aprobada, la cuenta nueva ve datos (${z.status})`);
     const w = await api(sn, "GET", "/bandeja");
     ok(w.status === 200, `aprobada, entra a /bandeja (${w.status})`);
-    const v = await api(st, "GET", "/api/clientes");
+    const v = await api(st, "GET", "/api/bandeja");
     const u = await api(st, "GET", "/bandeja");
     ok(v.status === 403 && u.location.includes("/esperando"), `rechazada: 403 en la API y /esperando en el panel (${v.status}, ${u.status})`);
   }
@@ -660,11 +713,41 @@ try {
     );
     const versionEnBase = (await q("select version from turnos where id = $1", [turnoId]))[0].version;
     ok(t?.version === versionEnBase, `GET /api/turnos trae version (sin esto, el PATCH de estado no tiene qué mandar): ${t?.version} vs. ${versionEnBase} en la base`);
-    ok(x.datos.horario?.apertura === "10:00" && x.datos.horario?.corte_desde === "14:00" && x.datos.probadores === 3, `el día trae horario y probadores de las tablas (${JSON.stringify(x.datos.horario)}, ${x.datos.probadores})`);
-    ok(JSON.stringify(x.datos.franjas) === JSON.stringify([{ desde: "13:00", hasta: "19:00", probadores: 3 }]), `un miércoles trae su franja de turnos (0030): ${JSON.stringify(x.datos.franjas)}`);
+    // Contra la base real, no valores fijos: Mateo edita horarios y configuracion_agenda desde
+    // el panel (ya le sacó el corte del mediodía al lunes-viernes, 16/9).
+    const horarioReal = (
+      await q(
+        "select hora_apertura::text apertura, hora_cierre::text cierre, corte_desde::text corte_desde, corte_hasta::text corte_hasta from horarios where dia_semana = extract(dow from '2031-01-15'::date)"
+      )
+    )[0];
+    const probadoresReal = (await q("select cantidad_probadores from configuracion_agenda"))[0].cantidad_probadores;
+    ok(
+      x.datos.horario?.apertura === horarioReal.apertura.slice(0, 5) &&
+        x.datos.horario?.corte_desde === (horarioReal.corte_desde?.slice(0, 5) ?? null) &&
+        x.datos.probadores === probadoresReal,
+      `el día trae horario y probadores de las tablas (${JSON.stringify(x.datos.horario)}, ${x.datos.probadores})`
+    );
+    // Contra la base real, no un valor fijo: Mateo carga franjas reales desde el panel y esto
+    // dejaría de ser cierto en cuanto las cambie (ya pasó una vez, 16/9).
+    const franjasDe = async (fecha) =>
+      (
+        await q(
+          "select desde, hasta, probadores from franjas_turnos where dia_semana = extract(dow from $1::date) order by desde",
+          [fecha]
+        )
+      ).map((f) => ({ desde: f.desde.slice(0, 5), hasta: f.hasta.slice(0, 5), probadores: f.probadores }));
+    const franjasMiercoles = await franjasDe("2031-01-15");
+    ok(
+      JSON.stringify(x.datos.franjas) === JSON.stringify(franjasMiercoles),
+      `un miércoles trae sus franjas de turnos, iguales a las de la base (0030): ${JSON.stringify(x.datos.franjas)}`
+    );
     const sab = await api(sa, "GET", "/api/turnos?fecha=2031-01-18");
     const dom = await api(sa, "GET", "/api/turnos?fecha=2031-01-19");
-    ok(sab.datos.franjas?.map((f) => `${f.desde}-${f.hasta}x${f.probadores}`).join(" ") === "09:30-12:00x3 13:30-18:30x2" && JSON.stringify(dom.datos.franjas) === "[]", `sábado con dos franjas y domingo sin ninguna (${sab.datos.franjas?.length}, ${dom.datos.franjas?.length})`);
+    const [franjasSabado, franjasDomingo] = await Promise.all([franjasDe("2031-01-18"), franjasDe("2031-01-19")]);
+    ok(
+      JSON.stringify(sab.datos.franjas) === JSON.stringify(franjasSabado) && JSON.stringify(dom.datos.franjas) === JSON.stringify(franjasDomingo),
+      `sábado y domingo traen las franjas de la base (${sab.datos.franjas?.length}, ${dom.datos.franjas?.length})`
+    );
     const y = await api(sa, "GET", "/api/turnos?fecha=15-01-2031");
     ok(y.status === 400, `Turnos › fecha mal formada → 400 (${y.status})`);
   }
@@ -752,13 +835,76 @@ try {
     ok(y.status === 400, `historial de una tabla fuera de la lista blanca → 400 (${y.status})`);
   }
 
+  seccion("Permisos (decisión de Mateo, 16/9): el equipo ve solo lo que necesita para atender");
+  {
+    const bloqueadas = await Promise.all(
+      [
+        "/api/clientes",
+        `/api/clientes/${cli}`,
+        "/api/catalogo",
+        "/api/conocimiento",
+        "/api/conocimiento/buscar?q=talle",
+        "/api/bitacora",
+        "/api/configuracion",
+      ].map((r) => api(sn, "GET", r))
+    );
+    ok(
+      bloqueadas.every((x) => x.status === 403),
+      `un 'equipo' no ve Clientes, Catálogo, Conocimiento, Bitácora ni Configuración (${bloqueadas.map((x) => x.status).join(",")})`
+    );
+    const siguen = await Promise.all(["/api/bandeja", "/api/atencion", "/api/turnos?fecha=2031-01-15"].map((r) => api(sn, "GET", r)));
+    ok(
+      siguen.every((x) => x.status === 200),
+      `pero sigue viendo Bandeja, Atención humana y Turnos, su trabajo diario (${siguen.map((x) => x.status).join(",")})`
+    );
+    const ficha = await api(sn, "GET", `/api/bandeja/${conv}`);
+    ok(
+      ficha.status === 200 && ficha.datos.cliente?.nombre === MARCA && ficha.datos.cliente?.telefono === TEL,
+      `y la ficha chica del cliente sigue viniendo adentro de la charla (${ficha.status}, ${ficha.datos.cliente?.nombre})`
+    );
+
+    // Historial: un 'equipo' tampoco ve el de las tablas que ya no puede leer directamente
+    // (aunque no exista esa fila puntual, el bloqueo es antes de buscarla).
+    const histBloqueado = await api(sn, "GET", `/api/historial?tabla=catalogo_alquiler&id=${cli}`);
+    ok(histBloqueado.status === 403, `historial de Catálogo, bloqueado para un 'equipo' (${histBloqueado.status})`);
+    const histAbierto = await api(sn, "GET", `/api/historial?tabla=clientes&id=${cli}`);
+    ok(histAbierto.status === 200, `pero el de Clientes (que sí edita) sigue abierto (${histAbierto.status})`);
+
+    // Por la API de Supabase, sin pasar por mi ruta: la RLS tiene que frenarlo igual, no solo
+    // el route handler.
+    const directoBloqueado = await Promise.all([
+      sn.directo.from("catalogo_alquiler").select("id"),
+      sn.directo.from("fragmentos").select("id"),
+    ]);
+    const directoPermitido = await sa.directo.from("catalogo_alquiler").select("id");
+    ok(
+      directoBloqueado.every((r) => (r.data ?? []).length === 0) && !directoPermitido.error,
+      `sin pasar por mi ruta: un 'equipo' no lee catalogo_alquiler ni fragmentos (RLS, 0045), un admin sí (${directoBloqueado.map((r) => (r.data ?? []).length).join(",")})`
+    );
+  }
+
   seccion("H1.9 — edición del dueño con versión e historial");
   let modelo;
   {
     const x = await api(sa, "POST", "/api/catalogo/modelos", { modelo: `${MARCA} ambo`, precio_base: 150000, colores: [{ nombre: "azul noche", hex: "#1F2A3C" }], talles: ["44", "46", "48"], activo: false });
     modelo = x.datos.fila;
     if (modelo) creados.filas.push({ tabla: "catalogo_alquiler", id: modelo.id });
-    ok(x.status === 201 && modelo.version === 1 && modelo.editado_por === A.email, `Catálogo › alta de modelo (${x.status}), editado_por = el admin`);
+    ok(x.status === 201 && modelo.version === 1 && modelo.editado_por === A.email && typeof modelo.orden === "number", `Catálogo › alta de modelo (${x.status}), editado_por = el admin, orden ${modelo?.orden}`);
+
+    // orden (decisión de Mateo, 16/9): se asigna solo, el siguiente libre, como reglas.numero.
+    const x2do = await api(sa, "POST", "/api/catalogo/modelos", { modelo: `${MARCA} chaquet`, precio_base: 200000 });
+    const modelo2 = x2do.datos.fila;
+    if (modelo2) creados.filas.push({ tabla: "catalogo_alquiler", id: modelo2.id });
+    ok(x2do.status === 201 && modelo2.orden === modelo.orden + 1, `el siguiente modelo se lleva el orden siguiente (${modelo?.orden} → ${modelo2?.orden})`);
+    const nuevoOrden = modelo2.orden + 50;
+    const reordenado = await api(sa, "PATCH", `/api/catalogo/modelos/${modelo2.id}`, { version: 1, orden: nuevoOrden });
+    ok(reordenado.status === 200 && reordenado.datos.fila.orden === nuevoOrden, `la dueña puede reordenar a mano (${reordenado.status}, orden ${reordenado.datos.fila?.orden})`);
+    const catOrden = await api(sa, "GET", "/api/catalogo");
+    const ordenes = catOrden.datos.modelos.map((m) => m.orden);
+    ok(
+      ordenes.every((o, i) => i === 0 || ordenes[i - 1] <= o),
+      `y el catálogo sale ordenado por esa columna, de menor a mayor (${ordenes.join(",")})`
+    );
     const x1 = await api(sa, "PATCH", `/api/catalogo/modelos/${modelo.id}`, { version: 1, precio_base: 155000 });
     const x2 = await api(sa, "PATCH", `/api/catalogo/modelos/${modelo.id}`, { version: 2, descripcion: "corte italiano" });
     const h = await historial("catalogo_alquiler", modelo.id);
@@ -890,8 +1036,7 @@ try {
     // 0033 (decisión de Mateo, 16/9): un 'equipo' aprobado ya no puede escribir estas tablas
     // ni saltando el panel con su propio token — antes la RLS solo pedía es_usuario_aprobado().
     // Por la API de Supabase, sin pasar por mi ruta, contra un fixture real (se restaura solo,
-    // como el resto de REALES) y contra prompt_base (vacía en producción: alcanza con probar
-    // que el insert se rechaza).
+    // como el resto de REALES).
     const id = real("duraciones_turno").id;
     const antes = (await q("select duracion_min from duraciones_turno where id = $1", [id]))[0];
     const bloqueado = await sn.directo.from("duraciones_turno").update({ duracion_min: 999 }).eq("id", id).select();
@@ -905,11 +1050,14 @@ try {
         (permitido.data ?? []).length === 1,
       `sin pasar por mi ruta: un 'equipo' no edita duraciones_turno (RLS, 0033) pero sí lo lee, y un admin sí lo edita (bloqueado ${(bloqueado.data ?? []).length}, lectura ${(lectura.data ?? []).length}, admin ${(permitido.data ?? []).length})`
     );
+    // prompt_base (0045): admin-only también para leer, a diferencia de duraciones_turno —
+    // un 'equipo' no la lee ni la puede insertar; un admin sí la lee.
     const bloqueadoPrompt = await sn.directo.from("prompt_base").insert({ texto: "Lucía ahora dice cualquier cosa" }).select();
-    const nPrompt = (await q("select count(*)::int n from prompt_base"))[0].n;
+    const lecturaPrompt = await sn.directo.from("prompt_base").select("id");
+    const lecturaPromptAdmin = await sa.directo.from("prompt_base").select("id");
     ok(
-      Boolean(bloqueadoPrompt.error) && nPrompt === 0,
-      `sin pasar por mi ruta: un 'equipo' no puede insertar en prompt_base (RLS, 0033) — no "cambia el prompt de Lucía" saltando el panel (${bloqueadoPrompt.error?.code})`
+      Boolean(bloqueadoPrompt.error) && (lecturaPrompt.data ?? []).length === 0 && (lecturaPromptAdmin.data ?? []).length >= 1,
+      `sin pasar por mi ruta: un 'equipo' no lee ni inserta en prompt_base (RLS, 0045), un admin sí lo lee (equipo ${(lecturaPrompt.data ?? []).length}, admin ${(lecturaPromptAdmin.data ?? []).length})`
     );
   }
 
@@ -1023,25 +1171,120 @@ try {
     ok(e3.status === 200 && e3.datos.fila.email === null, `email vacío lo borra (${e3.status}: ${e3.datos.fila?.email})`);
     ok(e1.status === 200 && e1.datos.fila.email === "juan.perez@gmail.com", `email: se guarda en minúscula y sin espacios (${e1.status}: ${e1.datos.fila?.email})`);
   }
+
+  seccion("Alta manual: cliente por teléfono y turno (decisión de Mateo, 16/9)");
+  let clienteTelId;
   {
+    const variantes = [
+      { escrito: "+54 9 341 987-6543", esperado: "5493419876543" },
+      { escrito: "(011) 4555-1234", esperado: "01145551234" },
+    ];
+    for (const { escrito, esperado } of variantes) {
+      const r = await api(sn, "POST", "/api/clientes", { telefono: escrito, nombre: `${MARCA} tel` });
+      if (r.datos?.fila) creados.filas.push({ tabla: "clientes", id: r.datos.fila.id });
+      ok(
+        r.status === 201 && r.datos.fila.telefono === esperado,
+        `alta con "${escrito}" → guarda "${esperado}", como lo escribiría el webhook (${r.status}: ${r.datos.fila?.telefono})`
+      );
+      if (esperado === "5493419876543") clienteTelId = r.datos.fila.id;
+    }
+    const dup = await api(sn, "POST", "/api/clientes", { telefono: "54 9 3419876543" });
+    ok(dup.status === 409, `el mismo teléfono escrito distinto → 409, ya existe (${dup.status})`);
+    const sinTelefono = await api(sa, "POST", "/api/clientes", { nombre: "sin teléfono" });
+    ok(sinTelefono.status === 400, `alta sin teléfono → 400 (${sinTelefono.status})`);
+  }
+  {
+    const inicio = "2031-03-01T13:00:00Z";
+    const alta = await api(sn, "POST", "/api/turnos", { cliente_id: clienteTelId, tipo: "invitado", probador: 1, inicio });
+    if (alta.datos?.fila) turnosExtra.push(alta.datos.fila.id);
+    const guardado = alta.datos?.fila
+      ? (await q("select tipo, duracion_min, probador, estado, inicio, fin from turnos where id = $1", [alta.datos.fila.id]))[0]
+      : null;
+    ok(
+      alta.status === 201 &&
+        guardado?.estado === "sin-confirmar" &&
+        guardado?.duracion_min === 45 &&
+        new Date(guardado.fin).getTime() - new Date(guardado.inicio).getTime() === 45 * 60_000,
+      `alta manual de turno: arranca 'sin-confirmar', la duración sale de duraciones_turno y el fin se calcula (${alta.status}, ${guardado?.duracion_min}min, estado ${guardado?.estado})`
+    );
+    const pisa = await api(sn, "POST", "/api/turnos", { cliente_id: clienteTelId, tipo: "invitado", probador: 1, inicio });
+    ok(pisa.status === 409, `otro turno del mismo probador a la misma hora → 409 (${pisa.status})`);
+    const tipoFeo = await api(sn, "POST", "/api/turnos", { cliente_id: clienteTelId, tipo: "no-existe", probador: 1, inicio: "2031-03-01T15:00:00Z" });
+    ok(tipoFeo.status === 400, `tipo fuera del enum → 400 (${tipoFeo.status})`);
+    const sinCliente = await api(sn, "POST", "/api/turnos", {
+      cliente_id: "11111111-1111-1111-1111-111111111111",
+      tipo: "invitado",
+      probador: 1,
+      inicio: "2031-03-01T16:00:00Z",
+    });
+    ok(sinCliente.status === 409, `un cliente que no existe → 409, referencia inválida (${sinCliente.status})`);
+    // Se borra ahora, no al final: turnos.cliente_id es ON DELETE RESTRICT, y el cliente de
+    // este turno se borra más tarde junto con creados.filas.
+    if (alta.datos?.fila) {
+      turnosExtra.splice(turnosExtra.indexOf(alta.datos.fila.id), 1);
+      await q("delete from turnos where id = $1", [alta.datos.fila.id]);
+    }
+  }
+
+  seccion("Quitar acceso a alguien del equipo (decisión de Mateo, 16/9)");
+  {
+    const bloqueado = await api(sn, "DELETE", `/api/accesos/usuarios/${Q.id}`);
+    ok(bloqueado.status === 403, `un 'equipo' no puede sacarle el acceso a nadie (${bloqueado.status})`);
+    const propio = await api(sa, "DELETE", `/api/accesos/usuarios/${A.id}`);
+    ok(propio.status === 403, `un admin no puede sacarse el acceso a sí mismo (${propio.status})`);
+    const quitado = await api(sa, "DELETE", `/api/accesos/usuarios/${Q.id}`);
+    ok(
+      quitado.status === 200 && quitado.datos.perfil?.estado === "rechazado",
+      `un admin le saca el acceso a alguien del equipo, reusando 'rechazado' (${quitado.status}, estado ${quitado.datos.perfil?.estado})`
+    );
+    const yaSinAcceso = await api(sq, "GET", "/api/bandeja");
+    ok(yaSinAcceso.status === 403, `esa persona ya no entra a nada (${yaSinAcceso.status})`);
+    const noExiste = await api(sa, "DELETE", "/api/accesos/usuarios/11111111-1111-1111-1111-111111111111");
+    ok(noExiste.status === 404, `un id que no existe → 404 (${noExiste.status})`);
+  }
+  {
+    // prompt_base ya no arranca vacía (0 de logica, 16/9: la sembró paneles con la plantilla
+    // real para que la dueña la edite) — es una REALES más, se fotografía y se restaura.
+    const f = real("prompt_base");
     const g = await api(sa, "GET", "/api/configuracion/prompt-base");
-    ok(g.status === 200 && g.datos.prompt === null && g.datos.generador_disponible === false, `Prompt base: sin cargar y sin generador (${g.status})`);
-    const x = await api(sa, "PUT", "/api/configuracion/prompt-base", { texto: "Sos Lucía, asistente de Mr. Otto." });
-    ok(x.status === 503 && (await q("select count(*)::int n from prompt_base"))[0].n === 0, `sin el generador de agente no se guarda nada (${x.status}: ${x.datos.error})`);
+    ok(
+      g.status === 200 && g.datos.prompt?.version === f.version && g.datos.prompt?.texto === f.texto && g.datos.generador_disponible === false,
+      `Prompt base: trae el vigente y sin generador (${g.status}, v${g.datos.prompt?.version})`
+    );
+    const x = await api(sa, "PUT", "/api/configuracion/prompt-base", { version: f.version, texto: "Sos Lucía, asistente de Mr. Otto." });
+    const sigue = (await q("select version, texto from prompt_base where id = $1", [f.id]))[0];
+    ok(
+      x.status === 503 && sigue.version === f.version && sigue.texto === f.texto,
+      `sin el generador de agente no se guarda nada (${x.status}: ${x.datos.error})`
+    );
     const y = await api(sn, "GET", "/api/configuracion/prompt-base");
     ok(y.status === 403, `un 'equipo' no ve el prompt base (${y.status})`);
   }
 
   seccion("H1.16 — aviso de turno antes de que empiece (decisión #10)");
   {
-    // Turnos del cliente de prueba alrededor de ahora, en probadores que no se pisan.
-    const nuevo = async (desdeMin, probador, estado = "sin-confirmar", confirmadoPor = null) =>
-      (await q(
-        `insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin, estado, confirmado, confirmado_por)
-         values ($1, 'invitado', 45, $2, now() + make_interval(mins => $3::int), now() + make_interval(mins => $3::int + 45), $4, $5, $6)
-         returning id`,
-        [cli, probador, desdeMin, estado, confirmadoPor !== null, confirmadoPor]
-      ))[0].id;
+    // Turnos del cliente de prueba alrededor de ahora. El probador pedido es solo un punto de
+    // partida: con producción en vivo (16/9) puede haber un turno real ahí mismo, así que ante
+    // un choque (23P01, turnos_sin_solapamiento) se prueba con los demás probadores de la
+    // agenda antes de rendirse — a estas pruebas no les importa CUÁL probador termina usando.
+    const cantidadProbadores = (await q("select cantidad_probadores from configuracion_agenda"))[0].cantidad_probadores;
+    const nuevo = async (desdeMin, probador, estado = "sin-confirmar", confirmadoPor = null) => {
+      for (let intento = 0; intento < cantidadProbadores; intento++) {
+        const p = ((probador - 1 + intento) % cantidadProbadores) + 1;
+        try {
+          return (
+            await q(
+              `insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin, estado, confirmado, confirmado_por)
+               values ($1, 'invitado', 45, $2, now() + make_interval(mins => $3::int), now() + make_interval(mins => $3::int + 45), $4, $5, $6)
+               returning id`,
+              [cli, p, desdeMin, estado, confirmadoPor !== null, confirmadoPor]
+            )
+          )[0].id;
+        } catch (e) {
+          if (e.code !== "23P01" || intento === cantidadProbadores - 1) throw e;
+        }
+      }
+    };
     const tA = await nuevo(10, 1); // empieza en 10': sale
     const tB = await nuevo(120, 1); // en 2 h: no sale
     const tC = await nuevo(-20, 2, "confirmado", "cliente"); // empezó hace 20' y sigue: sale
@@ -1060,9 +1303,12 @@ try {
     const a = nuestros.find((t) => t.id === tA);
     const ficha = (await q("select nombre, telefono, email, fecha_evento::text fecha_evento, talle_aprox, color_preferido, notas_libres from clientes where id = $1", [cli]))[0];
     ok(
-      a?.cliente.nombre === ficha.nombre && a.cliente.telefono === ficha.telefono && a.cliente.email === ficha.email && a.cliente.fecha_evento === ficha.fecha_evento && a.cliente.talle_aprox === ficha.talle_aprox && a.cliente.color_preferido === ficha.color_preferido && a.cliente.notas === ficha.notas_libres && Boolean(a.cliente.evento) && Boolean(a.cliente.rol) && /^\d\d:\d\d$/.test(a.desde) && /^\d\d:\d\d$/.test(a.hasta) && a.t === "Invitado · 45’" && a.p === "Probador 1" && a.cliente_confirmo === false && a.enlaces.charla === `/bandeja/charla?id=${conv}` && a.enlaces.ficha === `/clientes?id=${cli}`,
+      a?.cliente.nombre === ficha.nombre && a.cliente.telefono === ficha.telefono && a.cliente.email === ficha.email && a.cliente.fecha_evento === ficha.fecha_evento && a.cliente.talle_aprox === ficha.talle_aprox && a.cliente.color_preferido === ficha.color_preferido && a.cliente.notas === ficha.notas_libres && Boolean(a.cliente.evento) && Boolean(a.cliente.rol) && /^\d\d:\d\d$/.test(a.desde) && /^\d\d:\d\d$/.test(a.hasta) && a.t === "Invitado · 45’" && a.p === "Probador 1" && a.cliente_confirmo === false && a.enlaces.charla === `/bandeja/charla?id=${conv}` && a.enlaces.ficha === null,
       `el cartel trae el turno, la ficha (con el mail, 2.4) y los links (${a?.desde}–${a?.hasta}, ${a?.t}, ${a?.cliente.nombre}, ${a?.cliente.email}, ${a?.cliente.evento} ${a?.cliente.fecha_evento_corta}, ${a?.cliente.rol}, talle ${a?.cliente.talle_aprox}, ${a?.cliente.color_preferido})`
     );
+    const gAdmin = await api(sa, "GET", "/api/turnos/avisos");
+    const aAdmin = (gAdmin.datos.turnos ?? []).find((t) => t.id === tA);
+    ok(aAdmin?.enlaces.ficha === `/clientes?id=${cli}`, `un admin sí ve el link a la ficha (${aAdmin?.enlaces.ficha})`);
     ok(ficha.email === "juan.perez@gmail.com", `(control del propio test) el mail sigue puesto y normalizado antes del aviso: ${ficha.email}`);
     const c = nuestros.find((t) => t.id === tC);
     ok(c?.cliente_confirmo === true && c.confirmado_por === "cliente", "el que confirmó el cliente sale marcado como confirmado por WhatsApp");
@@ -1120,23 +1366,20 @@ try {
   }
   await frenarPanel(panel);
 
-  seccion("H1.9 control 4 — prompt base con un DOBLE del generador (contrato de lib/edicion/prompt.ts)");
-  panel = arrancarPanel({ ARMAR_PROMPT_SCRIPT: AQUI + "generador-doble.mjs" });
-  await esperarPanel(panel);
-  {
-    const x = await api(sa, "PUT", "/api/configuracion/prompt-base", { texto: "Sos Lucía, asistente de {{negocio}}." });
-    ok(x.status === 422 && x.datos.error.includes("{{") && (await q("select count(*)::int n from prompt_base"))[0].n === 0, `prompt con {{ → ${x.status} con el motivo: ${x.datos.error}`);
-    const y = await api(sa, "PUT", "/api/configuracion/prompt-base", { texto: "Sos Lucía, asistente de Mr. Otto.\n1. Regla uno." });
-    if (y.datos.fila) creados.filas.push({ tabla: "prompt_base", id: y.datos.fila.id });
-    ok(y.status === 201 && y.datos.fila.version === 1, `prompt que pasa → se guarda (${y.status})`);
-    const z = await api(sa, "PUT", "/api/configuracion/prompt-base", { version: 1, texto: "Sos Lucía, asistente de Mr. Otto.\n1. Regla uno, v2." });
-    const w = await api(sa, "PUT", "/api/configuracion/prompt-base", { version: 2, texto: "La primera línea no la nombra." });
-    const vigente = (await q("select version, texto from prompt_base"))[0];
-    ok(z.status === 200 && w.status === 422 && vigente.version === 2 && vigente.texto.endsWith("v2."), `si el generador rechaza, sigue activa la anterior (${z.status}, ${w.status}, vigente v${vigente.version})`);
-    const h = await historial("prompt_base", y.datos.fila.id);
-    const r = await api(sa, "POST", `/api/historial/${h[0].id}/restaurar`, { version: 2 });
-    ok(r.status === 200 && r.datos.fila.texto === "Sos Lucía, asistente de Mr. Otto.\n1. Regla uno.", `volver a la v1 del prompt pasa por el generador y se aplica (${r.status})`);
-  }
+  // H1.9 control 4 — prompt base con un DOBLE del generador (contrato de lib/edicion/prompt.ts):
+  // SE SACÓ (16/9, aviso de logica). prompt_base es único (unica boolean unique) y hoy es
+  // producción real: prompt_vigente() (0050, logica) lo lee en vivo con caché de 1 minuto para
+  // armarle el prompt a Lucía. Este control escribía de verdad sobre esa fila por HTTP (el panel
+  // corre en su propio proceso, con su propia conexión: no hay forma de envolver esas escrituras
+  // en una transacción con rollback desde acá) y se apoyaba en restaurarReales() para dejarla
+  // como estaba al final. Eso alcanza mientras nadie más toque la fila durante la corrida — pero
+  // cuando SÍ pasó (logica restauró un pisado viejo del historial mientras esta sección corría),
+  // el propio control terminó pisando esa restauración real, y Lucía quedó respondiendo vacío en
+  // producción con un prompt de 47 caracteres. El resto de prompt_base (que no escribe: el 503
+  // sin generador, el 403 de un 'equipo', RLS) se sigue probando en "H1.9 — edición del dueño" más
+  // arriba. Si hace falta volver a probar el contrato completo del generador, hacerlo contra las
+  // funciones de panel/lib/edicion/prompt.ts en un test que no dependa de la fila real, no contra
+  // el endpoint HTTP.
 } catch (e) {
   fallas++;
   console.error("\n💥", e?.stack || e);

@@ -45,8 +45,12 @@ export type AvisoTurno = {
   /** Ya confirmó por WhatsApp, con el botón de la plantilla (confirmado_por = 'cliente'). */
   cliente_confirmo: boolean;
   confirmado_por: string | null;
-  /** Links de las pantallas del panel; front los conecta en 1.17. */
-  enlaces: { charla: string | null; ficha: string };
+  /** El cliente con el evento más cercano: le tocó el turno más próximo (0046, decisión de
+   *  Mateo). Lo pone logica desde el cálculo de huecos. */
+  urgencia: boolean;
+  /** Links de las pantallas del panel; front los conecta en 1.17. `ficha` solo para admin
+   *  (/api/clientes/[id] es admin-only, 0045): un 'equipo' se queda con el link a la charla. */
+  enlaces: { charla: string | null; ficha: string | null };
 };
 
 export type AvisosDeTurno = {
@@ -55,11 +59,11 @@ export type AvisosDeTurno = {
   turnos: AvisoTurno[];
 };
 
-export async function turnosPorAvisar(db: ClienteDb): Promise<AvisosDeTurno> {
+export async function turnosPorAvisar(db: ClienteDb, esAdmin: boolean): Promise<AvisosDeTurno> {
   const [turnos, config] = await Promise.all([
     db
       .from('turnos_por_avisar')
-      .select('id, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado_por')
+      .select('id, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado_por, urgencia')
       .order('inicio', { ascending: true })
       .order('probador', { ascending: true }),
     db.from('configuracion_agenda').select('aviso_turno_min').maybeSingle(),
@@ -78,6 +82,7 @@ export async function turnosPorAvisar(db: ClienteDb): Promise<AvisosDeTurno> {
     inicio: t.inicio as string,
     fin: t.fin as string,
     duracion_min: t.duracion_min as number,
+    urgencia: t.urgencia as boolean,
   }));
   const idsClientes = [...new Set(filas.map((t) => t.cliente_id))];
   if (idsClientes.length === 0) return { aviso_turno_min: config.data?.aviso_turno_min ?? null, turnos: [] };
@@ -133,9 +138,10 @@ export async function turnosPorAvisar(db: ClienteDb): Promise<AvisosDeTurno> {
         },
         cliente_confirmo: t.confirmado_por === 'cliente',
         confirmado_por: t.confirmado_por ?? null,
+        urgencia: t.urgencia,
         enlaces: {
           charla: conversacion ? `/bandeja/charla?id=${conversacion}` : null,
-          ficha: `/clientes?id=${t.cliente_id}`,
+          ficha: esAdmin ? `/clientes?id=${t.cliente_id}` : null,
         },
       };
     }),
