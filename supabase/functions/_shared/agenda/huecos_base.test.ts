@@ -112,8 +112,14 @@ prueba("lee franjas, escalonado, reserva y duración de la base", async (_sql, d
   const lunes = invitado.huecos.filter((h) => h.inicio < local("2030-06-04", "00:00").toISOString());
   assertEquals(horas(lunes)[0], "13:00");
   assertEquals(lunes.length, 22);
+  // Con el evento el domingo y 2 días de confección (Mateo), el último día de prueba es el
+  // viernes: el sábado ya no se ofrece, porque no llegarían a hacer el arreglo.
   const sabado = horas(invitado.huecos.filter((h) => h.inicio >= local(SABADO, "00:00").toISOString()));
-  assertEquals([sabado[0], sabado.find((h) => h >= "12:00")], ["09:30", "13:30"]);
+  assertEquals(sabado, []);
+  // La prueba final sí puede ir el día antes: a esa altura ya no se arregla nada.
+  const final = await agenda.huecos({ desde: LUNES, hasta: DOMINGO, tipo: "prueba_final", ahora: AHORA, fechaEvento: DOMINGO });
+  const sabadoFinal = horas(final.huecos.filter((h) => h.inicio >= local(SABADO, "00:00").toISOString()));
+  assertEquals([sabadoFinal[0], sabadoFinal.find((h) => h >= "12:00")], ["09:30", "13:30"]);
   const doble = await agenda.huecos({ desde: LUNES, hasta: LUNES, tipo: "doble", ahora: AHORA, fechaEvento: SABADO });
   assertEquals(horas(doble.huecos).at(-1), "17:30");
   const lejano = await agenda.huecos({ desde: LUNES, hasta: "2030-06-12", tipo: "invitado", ahora: AHORA, fechaEvento: EVENTO_LEJANO });

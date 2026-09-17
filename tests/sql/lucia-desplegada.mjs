@@ -159,7 +159,9 @@ try {
     assert(turno.estado === "sin-confirmar" && turno.tipo === "invitado", `sin confirmar y de invitado (${turno.estado}, ${turno.tipo})`);
     const [franja] = await filas(
       `select f.desde, f.hasta from franjas_turnos f
-        where f.dia_semana = extract(isodow from ($1::timestamptz at time zone $3))::int
+        -- dow (domingo = 0), igual que la base (el check es 0..6) y que partesLocales en el
+        -- código de la agenda. Con isodow el domingo sería 7 y nunca encontraría su franja.
+        where f.dia_semana = extract(dow from ($1::timestamptz at time zone $3))::int
           and ($1::timestamptz at time zone $3)::time >= f.desde and ($2::timestamptz at time zone $3)::time <= f.hasta`,
       [turno.inicio, turno.fin, TZ],
     );
@@ -169,7 +171,14 @@ try {
       [turno.inicio, TZ],
     );
     assert(Boolean(franja), `cae adentro de una franja de turnos real (${dia} ${hora}, probador ${turno.probador})`);
-    assert(dias >= 7 && dia < EN_2_MESES, `respeta la reserva de urgencia y la fecha del evento: a ${dias} días, antes del ${EN_2_MESES}`);
+    // La reserva de urgencia se lee de la base, no se escribe acá: la dueña la cambia desde el
+    // panel y el control tiene que seguirla (el 16/9 pasó de 7 días a 3).
+    const [cfg] = await filas("select dias_reserva_urgencia as d from configuracion_agenda");
+    const reserva = Number(cfg?.d ?? 0);
+    assert(
+      dias >= reserva && dia < EN_2_MESES,
+      `respeta la reserva de urgencia (${reserva} días) y la fecha del evento: a ${dias} días, antes del ${EN_2_MESES}`,
+    );
     const herramientas = (await filas(
       "select distinct detalle->>'herramienta' as h from eventos_agente where conversacion_id = $1 and tipo = 'herramienta'",
       [conv],
