@@ -286,8 +286,10 @@ async function verificarLimpieza() {
   ))[0];
   const restos = Object.entries(r).filter(([, n]) => n > 0);
   ok(restos.length === 0, `no quedó nada de la prueba en la base (${restos.map(([k, n]) => `${k}: ${n}`).join(", ") || "todo en 0"})`);
+  // No un conteo fijo: Mateo carga franjas reales desde el panel con el tiempo. El invariante
+  // es que ninguna quedó tocada por la prueba (todas siguen en v1), no cuántas hay.
   const reales = (await q("select count(*)::int n, count(*) filter (where version = 1)::int v1 from franjas_turnos"))[0];
-  ok(reales.n === 7 && reales.v1 === 7, `las 7 franjas reales siguen en su v1 (${reales.n}, ${reales.v1} en v1)`);
+  ok(reales.n === reales.v1, `las franjas reales siguen todas en su v1 (${reales.n}, ${reales.v1} en v1)`);
   if (turnosExtra.length) {
     const t = (await q(
       `select (select count(*) from turnos where id = any($1::uuid[]))::int turnos,
@@ -357,10 +359,14 @@ try {
   const A = await crearUsuario("admin");
   const N = await crearUsuario("nuevo");
   const T = await crearUsuario("tercero");
+  const Q = await crearUsuario("cuarto");
   // La solicitud del admin de prueba queda pendiente a propósito: prueba que nadie resuelve la suya.
   await q("update perfiles set rol = 'admin', estado = 'aprobado' where id = $1", [A.id]);
+  // Q queda aprobado como 'equipo' desde ya: es solo para el test de "quitar acceso" (no se usa
+  // en el resto del arnés como sn/st, así que revocarlo ahí no afecta nada más).
+  await q("update perfiles set rol = 'equipo', estado = 'aprobado' where id = $1", [Q.id]);
   await sembrar();
-  ok(true, "3 usuarios temporales, datos de prueba sembrados y filas reales fotografiadas");
+  ok(true, "4 usuarios temporales, datos de prueba sembrados y filas reales fotografiadas");
 
   // Sin generador a propósito: con las ramas juntas, scripts/armar-prompt.mjs existe y el panel
   // lo encontraría solo. Apuntarlo a un archivo que no existe prueba el 503 igual en la rama de
@@ -370,6 +376,7 @@ try {
   const sa = await iniciarSesion(A.email, A.password);
   const sn = await iniciarSesion(N.email, N.password);
   const st = await iniciarSesion(T.email, T.password);
+  const sq = await iniciarSesion(Q.email, Q.password);
 
   const GETS = [
     "/api/bandeja", `/api/bandeja/${conv}`, "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/clientes",
@@ -453,11 +460,11 @@ try {
     ok(x.status === 403, `un usuario 'equipo' en /api/accesos → 403 (${x.status})`);
     const y = await api(sn, "POST", `/api/accesos/${solA}`, { accion: "aprobar" });
     ok(y.status === 403, `un 'equipo' no aprueba a nadie → 403 (${y.status})`);
-    const z = await api(sn, "GET", "/api/clientes");
-    ok(z.status === 200 && z.datos.clientes.some((c) => c.n === MARCA), `aprobada, la cuenta nueva ve datos (${z.status})`);
+    const z = await api(sn, "GET", "/api/bandeja");
+    ok(z.status === 200 && z.datos.conversaciones.some((c) => c.n === MARCA), `aprobada, la cuenta nueva ve datos (${z.status})`);
     const w = await api(sn, "GET", "/bandeja");
     ok(w.status === 200, `aprobada, entra a /bandeja (${w.status})`);
-    const v = await api(st, "GET", "/api/clientes");
+    const v = await api(st, "GET", "/api/bandeja");
     const u = await api(st, "GET", "/bandeja");
     ok(v.status === 403 && u.location.includes("/esperando"), `rechazada: 403 en la API y /esperando en el panel (${v.status}, ${u.status})`);
   }
@@ -661,10 +668,27 @@ try {
     const versionEnBase = (await q("select version from turnos where id = $1", [turnoId]))[0].version;
     ok(t?.version === versionEnBase, `GET /api/turnos trae version (sin esto, el PATCH de estado no tiene qué mandar): ${t?.version} vs. ${versionEnBase} en la base`);
     ok(x.datos.horario?.apertura === "10:00" && x.datos.horario?.corte_desde === "14:00" && x.datos.probadores === 3, `el día trae horario y probadores de las tablas (${JSON.stringify(x.datos.horario)}, ${x.datos.probadores})`);
-    ok(JSON.stringify(x.datos.franjas) === JSON.stringify([{ desde: "13:00", hasta: "19:00", probadores: 3 }]), `un miércoles trae su franja de turnos (0030): ${JSON.stringify(x.datos.franjas)}`);
+    // Contra la base real, no un valor fijo: Mateo carga franjas reales desde el panel y esto
+    // dejaría de ser cierto en cuanto las cambie (ya pasó una vez, 16/9).
+    const franjasDe = async (fecha) =>
+      (
+        await q(
+          "select desde, hasta, probadores from franjas_turnos where dia_semana = extract(dow from $1::date) order by desde",
+          [fecha]
+        )
+      ).map((f) => ({ desde: f.desde.slice(0, 5), hasta: f.hasta.slice(0, 5), probadores: f.probadores }));
+    const franjasMiercoles = await franjasDe("2031-01-15");
+    ok(
+      JSON.stringify(x.datos.franjas) === JSON.stringify(franjasMiercoles),
+      `un miércoles trae sus franjas de turnos, iguales a las de la base (0030): ${JSON.stringify(x.datos.franjas)}`
+    );
     const sab = await api(sa, "GET", "/api/turnos?fecha=2031-01-18");
     const dom = await api(sa, "GET", "/api/turnos?fecha=2031-01-19");
-    ok(sab.datos.franjas?.map((f) => `${f.desde}-${f.hasta}x${f.probadores}`).join(" ") === "09:30-12:00x3 13:30-18:30x2" && JSON.stringify(dom.datos.franjas) === "[]", `sábado con dos franjas y domingo sin ninguna (${sab.datos.franjas?.length}, ${dom.datos.franjas?.length})`);
+    const [franjasSabado, franjasDomingo] = await Promise.all([franjasDe("2031-01-18"), franjasDe("2031-01-19")]);
+    ok(
+      JSON.stringify(sab.datos.franjas) === JSON.stringify(franjasSabado) && JSON.stringify(dom.datos.franjas) === JSON.stringify(franjasDomingo),
+      `sábado y domingo traen las franjas de la base (${sab.datos.franjas?.length}, ${dom.datos.franjas?.length})`
+    );
     const y = await api(sa, "GET", "/api/turnos?fecha=15-01-2031");
     ok(y.status === 400, `Turnos › fecha mal formada → 400 (${y.status})`);
   }
@@ -752,13 +776,76 @@ try {
     ok(y.status === 400, `historial de una tabla fuera de la lista blanca → 400 (${y.status})`);
   }
 
+  seccion("Permisos (decisión de Mateo, 16/9): el equipo ve solo lo que necesita para atender");
+  {
+    const bloqueadas = await Promise.all(
+      [
+        "/api/clientes",
+        `/api/clientes/${cli}`,
+        "/api/catalogo",
+        "/api/conocimiento",
+        "/api/conocimiento/buscar?q=talle",
+        "/api/bitacora",
+        "/api/configuracion",
+      ].map((r) => api(sn, "GET", r))
+    );
+    ok(
+      bloqueadas.every((x) => x.status === 403),
+      `un 'equipo' no ve Clientes, Catálogo, Conocimiento, Bitácora ni Configuración (${bloqueadas.map((x) => x.status).join(",")})`
+    );
+    const siguen = await Promise.all(["/api/bandeja", "/api/atencion", "/api/turnos?fecha=2031-01-15"].map((r) => api(sn, "GET", r)));
+    ok(
+      siguen.every((x) => x.status === 200),
+      `pero sigue viendo Bandeja, Atención humana y Turnos, su trabajo diario (${siguen.map((x) => x.status).join(",")})`
+    );
+    const ficha = await api(sn, "GET", `/api/bandeja/${conv}`);
+    ok(
+      ficha.status === 200 && ficha.datos.cliente?.nombre === MARCA && ficha.datos.cliente?.telefono === TEL,
+      `y la ficha chica del cliente sigue viniendo adentro de la charla (${ficha.status}, ${ficha.datos.cliente?.nombre})`
+    );
+
+    // Historial: un 'equipo' tampoco ve el de las tablas que ya no puede leer directamente
+    // (aunque no exista esa fila puntual, el bloqueo es antes de buscarla).
+    const histBloqueado = await api(sn, "GET", `/api/historial?tabla=catalogo_alquiler&id=${cli}`);
+    ok(histBloqueado.status === 403, `historial de Catálogo, bloqueado para un 'equipo' (${histBloqueado.status})`);
+    const histAbierto = await api(sn, "GET", `/api/historial?tabla=clientes&id=${cli}`);
+    ok(histAbierto.status === 200, `pero el de Clientes (que sí edita) sigue abierto (${histAbierto.status})`);
+
+    // Por la API de Supabase, sin pasar por mi ruta: la RLS tiene que frenarlo igual, no solo
+    // el route handler.
+    const directoBloqueado = await Promise.all([
+      sn.directo.from("catalogo_alquiler").select("id"),
+      sn.directo.from("fragmentos").select("id"),
+    ]);
+    const directoPermitido = await sa.directo.from("catalogo_alquiler").select("id");
+    ok(
+      directoBloqueado.every((r) => (r.data ?? []).length === 0) && !directoPermitido.error,
+      `sin pasar por mi ruta: un 'equipo' no lee catalogo_alquiler ni fragmentos (RLS, 0045), un admin sí (${directoBloqueado.map((r) => (r.data ?? []).length).join(",")})`
+    );
+  }
+
   seccion("H1.9 — edición del dueño con versión e historial");
   let modelo;
   {
     const x = await api(sa, "POST", "/api/catalogo/modelos", { modelo: `${MARCA} ambo`, precio_base: 150000, colores: [{ nombre: "azul noche", hex: "#1F2A3C" }], talles: ["44", "46", "48"], activo: false });
     modelo = x.datos.fila;
     if (modelo) creados.filas.push({ tabla: "catalogo_alquiler", id: modelo.id });
-    ok(x.status === 201 && modelo.version === 1 && modelo.editado_por === A.email, `Catálogo › alta de modelo (${x.status}), editado_por = el admin`);
+    ok(x.status === 201 && modelo.version === 1 && modelo.editado_por === A.email && typeof modelo.orden === "number", `Catálogo › alta de modelo (${x.status}), editado_por = el admin, orden ${modelo?.orden}`);
+
+    // orden (decisión de Mateo, 16/9): se asigna solo, el siguiente libre, como reglas.numero.
+    const x2do = await api(sa, "POST", "/api/catalogo/modelos", { modelo: `${MARCA} chaquet`, precio_base: 200000 });
+    const modelo2 = x2do.datos.fila;
+    if (modelo2) creados.filas.push({ tabla: "catalogo_alquiler", id: modelo2.id });
+    ok(x2do.status === 201 && modelo2.orden === modelo.orden + 1, `el siguiente modelo se lleva el orden siguiente (${modelo?.orden} → ${modelo2?.orden})`);
+    const nuevoOrden = modelo2.orden + 50;
+    const reordenado = await api(sa, "PATCH", `/api/catalogo/modelos/${modelo2.id}`, { version: 1, orden: nuevoOrden });
+    ok(reordenado.status === 200 && reordenado.datos.fila.orden === nuevoOrden, `la dueña puede reordenar a mano (${reordenado.status}, orden ${reordenado.datos.fila?.orden})`);
+    const catOrden = await api(sa, "GET", "/api/catalogo");
+    const ordenes = catOrden.datos.modelos.map((m) => m.orden);
+    ok(
+      ordenes.every((o, i) => i === 0 || ordenes[i - 1] <= o),
+      `y el catálogo sale ordenado por esa columna, de menor a mayor (${ordenes.join(",")})`
+    );
     const x1 = await api(sa, "PATCH", `/api/catalogo/modelos/${modelo.id}`, { version: 1, precio_base: 155000 });
     const x2 = await api(sa, "PATCH", `/api/catalogo/modelos/${modelo.id}`, { version: 2, descripcion: "corte italiano" });
     const h = await historial("catalogo_alquiler", modelo.id);
@@ -1022,6 +1109,77 @@ try {
     ok(e2.status === 400 && e2.datos.detalle?.some((d) => d.campo === "email"), `email inválido → 400 con el motivo (${e2.status}: ${JSON.stringify(e2.datos.detalle)})`);
     ok(e3.status === 200 && e3.datos.fila.email === null, `email vacío lo borra (${e3.status}: ${e3.datos.fila?.email})`);
     ok(e1.status === 200 && e1.datos.fila.email === "juan.perez@gmail.com", `email: se guarda en minúscula y sin espacios (${e1.status}: ${e1.datos.fila?.email})`);
+  }
+
+  seccion("Alta manual: cliente por teléfono y turno (decisión de Mateo, 16/9)");
+  let clienteTelId;
+  {
+    const variantes = [
+      { escrito: "+54 9 341 987-6543", esperado: "5493419876543" },
+      { escrito: "(011) 4555-1234", esperado: "01145551234" },
+    ];
+    for (const { escrito, esperado } of variantes) {
+      const r = await api(sn, "POST", "/api/clientes", { telefono: escrito, nombre: `${MARCA} tel` });
+      if (r.datos?.fila) creados.filas.push({ tabla: "clientes", id: r.datos.fila.id });
+      ok(
+        r.status === 201 && r.datos.fila.telefono === esperado,
+        `alta con "${escrito}" → guarda "${esperado}", como lo escribiría el webhook (${r.status}: ${r.datos.fila?.telefono})`
+      );
+      if (esperado === "5493419876543") clienteTelId = r.datos.fila.id;
+    }
+    const dup = await api(sn, "POST", "/api/clientes", { telefono: "54 9 3419876543" });
+    ok(dup.status === 409, `el mismo teléfono escrito distinto → 409, ya existe (${dup.status})`);
+    const sinTelefono = await api(sa, "POST", "/api/clientes", { nombre: "sin teléfono" });
+    ok(sinTelefono.status === 400, `alta sin teléfono → 400 (${sinTelefono.status})`);
+  }
+  {
+    const inicio = "2031-03-01T13:00:00Z";
+    const alta = await api(sn, "POST", "/api/turnos", { cliente_id: clienteTelId, tipo: "invitado", probador: 1, inicio });
+    if (alta.datos?.fila) turnosExtra.push(alta.datos.fila.id);
+    const guardado = alta.datos?.fila
+      ? (await q("select tipo, duracion_min, probador, estado, inicio, fin from turnos where id = $1", [alta.datos.fila.id]))[0]
+      : null;
+    ok(
+      alta.status === 201 &&
+        guardado?.estado === "sin-confirmar" &&
+        guardado?.duracion_min === 45 &&
+        new Date(guardado.fin).getTime() - new Date(guardado.inicio).getTime() === 45 * 60_000,
+      `alta manual de turno: arranca 'sin-confirmar', la duración sale de duraciones_turno y el fin se calcula (${alta.status}, ${guardado?.duracion_min}min, estado ${guardado?.estado})`
+    );
+    const pisa = await api(sn, "POST", "/api/turnos", { cliente_id: clienteTelId, tipo: "invitado", probador: 1, inicio });
+    ok(pisa.status === 409, `otro turno del mismo probador a la misma hora → 409 (${pisa.status})`);
+    const tipoFeo = await api(sn, "POST", "/api/turnos", { cliente_id: clienteTelId, tipo: "no-existe", probador: 1, inicio: "2031-03-01T15:00:00Z" });
+    ok(tipoFeo.status === 400, `tipo fuera del enum → 400 (${tipoFeo.status})`);
+    const sinCliente = await api(sn, "POST", "/api/turnos", {
+      cliente_id: "11111111-1111-1111-1111-111111111111",
+      tipo: "invitado",
+      probador: 1,
+      inicio: "2031-03-01T16:00:00Z",
+    });
+    ok(sinCliente.status === 409, `un cliente que no existe → 409, referencia inválida (${sinCliente.status})`);
+    // Se borra ahora, no al final: turnos.cliente_id es ON DELETE RESTRICT, y el cliente de
+    // este turno se borra más tarde junto con creados.filas.
+    if (alta.datos?.fila) {
+      turnosExtra.splice(turnosExtra.indexOf(alta.datos.fila.id), 1);
+      await q("delete from turnos where id = $1", [alta.datos.fila.id]);
+    }
+  }
+
+  seccion("Quitar acceso a alguien del equipo (decisión de Mateo, 16/9)");
+  {
+    const bloqueado = await api(sn, "DELETE", `/api/accesos/usuarios/${Q.id}`);
+    ok(bloqueado.status === 403, `un 'equipo' no puede sacarle el acceso a nadie (${bloqueado.status})`);
+    const propio = await api(sa, "DELETE", `/api/accesos/usuarios/${A.id}`);
+    ok(propio.status === 403, `un admin no puede sacarse el acceso a sí mismo (${propio.status})`);
+    const quitado = await api(sa, "DELETE", `/api/accesos/usuarios/${Q.id}`);
+    ok(
+      quitado.status === 200 && quitado.datos.perfil?.estado === "rechazado",
+      `un admin le saca el acceso a alguien del equipo, reusando 'rechazado' (${quitado.status}, estado ${quitado.datos.perfil?.estado})`
+    );
+    const yaSinAcceso = await api(sq, "GET", "/api/bandeja");
+    ok(yaSinAcceso.status === 403, `esa persona ya no entra a nada (${yaSinAcceso.status})`);
+    const noExiste = await api(sa, "DELETE", "/api/accesos/usuarios/11111111-1111-1111-1111-111111111111");
+    ok(noExiste.status === 404, `un id que no existe → 404 (${noExiste.status})`);
   }
   {
     const g = await api(sa, "GET", "/api/configuracion/prompt-base");

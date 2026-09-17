@@ -12,9 +12,9 @@ function fallaDeConsulta(e: unknown) {
   return error(500, 'Error inesperado');
 }
 
-export function rutaConsulta(fn: (s: Sesion, request: NextRequest) => Promise<unknown>) {
+export function rutaConsulta(fn: (s: Sesion, request: NextRequest) => Promise<unknown>, o: { admin?: boolean } = {}) {
   return async function GET(request: NextRequest) {
-    const s = await requerirSesion();
+    const s = await requerirSesion({ admin: o.admin });
     if (s instanceof Response) return s;
     try {
       const r = await fn(s, request);
@@ -25,9 +25,12 @@ export function rutaConsulta(fn: (s: Sesion, request: NextRequest) => Promise<un
   };
 }
 
-export function rutaConsultaConId(fn: (s: Sesion, id: string, request: NextRequest) => Promise<unknown>) {
+export function rutaConsultaConId(
+  fn: (s: Sesion, id: string, request: NextRequest) => Promise<unknown>,
+  o: { admin?: boolean } = {}
+) {
   return async function GET(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-    const s = await requerirSesion();
+    const s = await requerirSesion({ admin: o.admin });
     if (s instanceof Response) return s;
     const { id } = await ctx.params;
     if (!esUuid(id)) return error(400, 'Identificador inválido');
