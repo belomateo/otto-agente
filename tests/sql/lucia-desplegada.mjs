@@ -159,7 +159,9 @@ try {
     assert(turno.estado === "sin-confirmar" && turno.tipo === "invitado", `sin confirmar y de invitado (${turno.estado}, ${turno.tipo})`);
     const [franja] = await filas(
       `select f.desde, f.hasta from franjas_turnos f
-        where f.dia_semana = extract(isodow from ($1::timestamptz at time zone $3))::int
+        -- dow (domingo = 0), igual que la base (el check es 0..6) y que partesLocales en el
+        -- código de la agenda. Con isodow el domingo sería 7 y nunca encontraría su franja.
+        where f.dia_semana = extract(dow from ($1::timestamptz at time zone $3))::int
           and ($1::timestamptz at time zone $3)::time >= f.desde and ($2::timestamptz at time zone $3)::time <= f.hasta`,
       [turno.inicio, turno.fin, TZ],
     );
