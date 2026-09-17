@@ -601,9 +601,11 @@ async function testEnviosProgramados() {
     assert(!(await pendientes("recordatorio_18h")).includes(t1), "correr el cron otra vez no lo vuelve a mandar");
 
     // Reintentos: con Meta caída reintenta hasta 3 veces y después no más.
-    const LUEGO = "2030-06-05T23:00:00-03:00"; // el de las 16 de mañana ya entró en las 18 hs
+    // El de las 16:00 entra en las 18 hs a las 22:00, que cae afuera de la franja decente (0047):
+    // el envío espera a las 9 de la mañana siguiente, que es el día del turno.
+    const LUEGO = "2030-06-06T09:15:00-03:00";
     const b = (await q("select cliente_id from turnos where id = $1", [t2]))[0].cliente_id;
-    assert((await pendientes("recordatorio_18h", LUEGO)).includes(t2), "más tarde, el de las 16 de mañana ya entra en las 18 hs");
+    assert((await pendientes("recordatorio_18h", LUEGO)).includes(t2), "el de las 16 entra a la mañana siguiente, no a las 22 (0047: no se escribe de madrugada)");
     for (let i = 1; i <= 3; i++) {
       const id = (await q("select envio_reservar('recordatorio_18h', $1, $2, 'recordatorio_turno_18h') as id", [t2, b]))[0].id;
       if (id) await q("select envio_terminar($1, false, null, 'texto', 'Meta respondió 500')", [id]);

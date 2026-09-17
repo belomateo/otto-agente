@@ -206,18 +206,24 @@ async function mandarBurbujas(db: Db, d: Dependencias, conversacionId: string, t
 // a una persona, que ve el hilo y decide. Mejor que falte un mensaje a que el cliente lo reciba
 // dos veces.
 async function retomarEnvio(db: Db, d: Dependencias, t: Trabajo, telefono: string) {
+  // Solo lo que dejó Lucía: si en el medio alguien del local escribió desde el panel, ese mensaje
+  // es del mostrador y lo manda enviarDelMostrador con su propio trabajo — acá saldría con la
+  // marca «[mostrador] » puesta, que es interna y el cliente no tiene que ver (hallazgo de la
+  // auditoría del 16/9).
   const pendientes = await db.consulta<{ id: string; contenido: string | null; tipo: string; enviando_at: Date | string | null }>(
     `select id::text as id, contenido, tipo, enviando_at from mensajes
       where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null and no_enviado_motivo is null
+        and contenido not like $2
       order by enviado_at`,
-    [t.conversacion_id],
+    [t.conversacion_id, `${MARCA_MOSTRADOR}%`],
   );
   const enDuda = pendientes.filter((m) => m.enviando_at);
   if (enDuda.length) {
     await db.consulta(
       `update mensajes set no_enviado_motivo = 'error_al_enviar'
-        where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null and no_enviado_motivo is null`,
-      [t.conversacion_id],
+        where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null
+          and no_enviado_motivo is null and contenido not like $2`,
+      [t.conversacion_id, `${MARCA_MOSTRADOR}%`],
     );
     await db.consulta("select cola_derivar_por_fallo($1::uuid, $2)", [
       t.conversacion_id,
