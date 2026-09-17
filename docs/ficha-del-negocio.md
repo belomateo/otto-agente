@@ -1,7 +1,8 @@
 # Ficha del negocio — Mr Otto / Otto Su Misura
 
 Respondida por Mr Otto (8/9/2026), completada con Mateo (12/9/2026) y corregida con
-las notas de Otto España que pasó Sofía (14/9/2026). Es DATO: se carga en tablas y
+las notas de Otto España que pasó Sofía (14/9/2026) y sus respuestas del 17/9/2026
+(pagos, cancelación, prueba final, retiro y cambios). Es DATO: se carga en tablas y
 fragmentos, no en el prompt. Lo marcado ➜ son respuestas posteriores que completan o
 corrigen la ficha original.
 
@@ -52,6 +53,27 @@ corrigen la ficha original.
 - Reserva y garantía: el alquiler se paga 100% al reservarlo. Tarjeta de crédito
   como garantía el día de la prueba final. Hay tabla de daños por grado ➜ **el
   agente no la comparte: deriva siempre.**
+- Medios de pago del alquiler (➜ Sofía, 17/9): efectivo, transferencia, tarjeta de
+  débito y **crédito en 1 pago**. **Crédito en 3 pagos con 10% de recargo.** ➜ Ojo: no
+  confundir con las 3 cuotas sin interés de la VENTA online (más abajo), que es otra cosa.
+- Cancelación del alquiler (➜ Sofía, 17/9), penalidad sobre el total:
+  **30%** si cancela dentro de los 5 días hábiles de la celebración del contrato;
+  **70%** desde ahí y hasta 10 días antes del uso de la prenda;
+  **sin devolución** desde los 9 días antes del uso. ➜ Lucía explica la política si le
+  preguntan, pero **una cancelación concreta la deriva**: el monto depende de las fechas
+  del contrato, que ella no tiene, y no tiene herramienta para cancelar un alquiler
+  (cancelar_turno cancela el turno, no el contrato).
+- Si en la prueba final el traje no queda bien (➜ Sofía, 17/9): lo arreglan **los sastres
+  en el momento**, entre **1 y 2 horas** según el arreglo. No hay que volver otro día.
+- Retiro anticipado (➜ Sofía, 17/9): si el cliente viaja, se puede coordinar **uno o dos
+  días antes** de la fecha pactada. Depende de la cantidad de días ➜ se coordina, no se promete.
+- Cambio de modelo después de pagar (➜ Sofía, 17/9): **se puede, sujeto a disponibilidad**
+  de los trajes.
+- Devolución fuera de plazo (➜ Sofía, 17/9): **nunca pasó**; por contrato están obligados a
+  entregarlo. ➜ Interno: Lucía no habla de esto, si aparece deriva como reclamo.
+- Sin turno (➜ Sofía, 17/9): **se puede ir al local sin turno** a mirar, y si en ese
+  momento hay lugar **también medirse y reservar**. El turno sigue siendo lo recomendado
+  (el asesor le dedica el tiempo), pero no es excluyente para entrar.
 - Solo retiro en el local: España 764, Rosario. No se envía.
 - Niños: hay trajes desde el talle 4.
 
@@ -88,6 +110,7 @@ corrigen la ficha original.
 - Número nuevo de WhatsApp. Hoy responden desde el teléfono directamente, sin
   Chatwoot ni Meta Business Suite.
 - Fotos: de la web ➜ links cargados en las fichas del catálogo.
+- **Quién carga el catálogo** (fotos, modelos, precios): **Sofía o Claudio** ➜ Sofía, 17/9.
 - Nunca compartir: costos internos, proveedores, precios sin consultar, tablas de
   talles no chequeadas.
 
