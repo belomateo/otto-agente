@@ -47,7 +47,7 @@ function apiKey(): string {
   return k;
 }
 
-async function unaLlamada(body: PeticionChat, fetcher: typeof fetch): Promise<RespuestaChat> {
+async function unaLlamada(body: PeticionChat, fetcher: typeof fetch, clave: string): Promise<RespuestaChat> {
   const t0 = performance.now();
   const controlador = new AbortController();
   const corte = setTimeout(() => controlador.abort(), TIMEOUT_MS);
@@ -55,7 +55,7 @@ async function unaLlamada(body: PeticionChat, fetcher: typeof fetch): Promise<Re
   try {
     r = await fetcher(URL_CHAT, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey()}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${clave}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: controlador.signal,
     });
@@ -84,15 +84,20 @@ async function unaLlamada(body: PeticionChat, fetcher: typeof fetch): Promise<Re
   };
 }
 
-// null = falló la llamada y ya reintentó una vez. Nunca lanza por un error de red/HTTP; sí puede
-// lanzar por un error de programación (OPENAI_API_KEY ausente): eso no se recupera reintentando.
+// null = falló la llamada y ya reintentó una vez. Nunca lanza por un error de red/HTTP; sí lanza
+// por un error de programación (OPENAI_API_KEY ausente) — eso no se recupera reintentando, y
+// antes SÍ se lo comía este mismo try/catch (hallazgo de la auditoría, 17/9: la falta de la
+// clave se veía en la bitácora igual que un problema de red, dos reintentos gastados de más
+// incluidos). apiKey() corre ANTES del try: si falta, tira acá mismo, sin reintentar, y sube sin
+// que nada la atrape hasta el nivel del worker — bien distinto de un `null` silencioso.
 export async function llamarChat(body: PeticionChat, fetcher: typeof fetch = fetch): Promise<RespuestaChat | null> {
+  const clave = apiKey();
   try {
-    return await unaLlamada(body, fetcher);
+    return await unaLlamada(body, fetcher, clave);
   } catch (primerError) {
     await new Promise((r) => setTimeout(r, ESPERA_ENTRE_REINTENTOS_MS));
     try {
-      return await unaLlamada(body, fetcher);
+      return await unaLlamada(body, fetcher, clave);
     } catch (segundoError) {
       console.error(`llamarChat(${body.model}): falló dos veces.`, primerError, segundoError);
       return null;

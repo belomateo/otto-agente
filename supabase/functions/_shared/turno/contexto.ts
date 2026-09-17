@@ -30,51 +30,62 @@ async function libretaTexto(db: Db, clienteId: string): Promise<string> {
   return "Esto es lo que ya sabés de este cliente (no se lo vuelvas a preguntar):\n" + partes.join("\n");
 }
 
-async function turnosActivosTexto(db: Db, clienteId: string, ahora: Date, tz: string): Promise<string> {
+async function turnosActivosTexto(db: Db, clienteId: string, ahora: Date, tz: string): Promise<{ texto: string; horas: string[] }> {
   const filas = await db.consulta<{ id: string; tipo: string; inicio: string; estado: string; confirmado: boolean }>(
     `select id::text as id, tipo, inicio, estado, confirmado from turnos
       where cliente_id = $1 and fin > $2::timestamptz and not (estado = any($3::text[]))
       order by inicio`,
     [clienteId, ahora.toISOString(), [...ESTADOS_QUE_LIBERAN]],
   );
-  if (filas.length === 0) return "No tiene ningún turno activo.";
-  return filas
+  if (filas.length === 0) return { texto: "No tiene ningún turno activo.", horas: [] };
+  const horas: string[] = [];
+  const texto = filas
     .map((f) => {
       const inicio = new Date(f.inicio);
-      return `- turno_id ${f.id}: ${f.tipo}, ${fechaLarga(inicio, tz)} a las ${horaLocal(inicio, tz)}, ${f.estado}${f.confirmado ? " (confirmado)" : ""}`;
+      const h = horaLocal(inicio, tz);
+      horas.push(h);
+      return `- turno_id ${f.id}: ${f.tipo}, ${fechaLarga(inicio, tz)} a las ${h}, ${f.estado}${f.confirmado ? " (confirmado)" : ""}`;
     })
     .join("\n");
+  return { texto, horas };
 }
 
-async function horarioDeHoyTexto(db: Db, ahora: Date, tz: string): Promise<string> {
+async function horarioDeHoyTexto(db: Db, ahora: Date, tz: string): Promise<{ texto: string; horas: string[] }> {
   const [local, { franjas }] = await Promise.all([leerHorarioDelLocal(db), leerFranjas(db)]);
   const dia = partesLocales(ahora, tz).diaSemana;
-  const { local: textoLocal, turnos: textoTurnos } = describirHorarios(
+  const { local: textoLocal, turnos: textoTurnos, horas } = describirHorarios(
     local.filter((h) => h.diaSemana === dia),
     franjas.filter((f) => f.diaSemana === dia),
   );
-  return `Local hoy: ${textoLocal} Turnos hoy: ${textoTurnos}`;
+  return { texto: `Local hoy: ${textoLocal} Turnos hoy: ${textoTurnos}`, horas };
 }
 
 export async function armarContextoDelTurno(
   db: Db,
   p: { clienteId: string; ahora: Date; tz: string },
-): Promise<string> {
+): Promise<{ texto: string; horas: string[] }> {
   const [libreta, turnos, horarioHoy] = await Promise.all([
     libretaTexto(db, p.clienteId),
     turnosActivosTexto(db, p.clienteId, p.ahora, p.tz),
     horarioDeHoyTexto(db, p.ahora, p.tz),
   ]);
-  return [
+  const texto = [
     "CONTEXTO DE ESTE TURNO (no es parte de lo que sabés de memoria; usalo, no lo repitas al cliente tal cual).",
     "",
     "TU LIBRETA",
     libreta,
     "",
     "SUS TURNOS",
-    turnos,
+    turnos.texto,
     "",
     `HORA ACTUAL: ${fechaLarga(p.ahora, p.tz)}, ${horaLocal(p.ahora, p.tz)} (hora de Argentina).`,
-    horarioHoy,
+    horarioHoy.texto,
   ].join("\n");
+  // Hallazgo de la auditoría, 17/9: horario_sin_herramienta y traza.ts prometen que estas horas
+  // (los turnos activos del cliente, y las del horario de hoy) quedan sembradas en
+  // traza.horasDevueltas — pero nadie las agarraba de acá para pasárselas al turno. El cliente
+  // preguntando por su propio turno ("¿a qué hora era?") hacía saltar la barandilla dos veces y
+  // terminaba en barandilla_doble, mudo (MOTIVOS_DERIVAN_EN_SILENCIO).
+  const horas = [...new Set([...turnos.horas, ...horarioHoy.horas])];
+  return { texto, horas };
 }

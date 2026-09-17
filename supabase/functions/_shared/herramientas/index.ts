@@ -60,10 +60,6 @@ function definicion(h: Herramienta, descripcion: string): DefinicionParaModelo {
   return { type: "function", name: h.nombre, description: descripcion, parameters: h.parametros, strict: true };
 }
 
-export function definicionesPorDefecto(): DefinicionParaModelo[] {
-  return HERRAMIENTAS.map((h) => definicion(h, h.descripcion));
-}
-
 export async function definicionesParaElModelo(db: Db): Promise<DefinicionParaModelo[]> {
   const filas = await db.consulta("select nombre, activa, descripcion from herramientas_agente");
   const porNombre = new Map(filas.map((f) => [String(f.nombre), f]));

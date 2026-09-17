@@ -21,6 +21,7 @@ import type { Calendario } from "../herramientas/tipos.ts";
 import { clasificar } from "../llm/clasificador.ts";
 import { extraer } from "../llm/extractor.ts";
 import { correrPrincipal, type LlamadaLlm, type MensajeLlm, type ResultadoPrincipal } from "../llm/principal.ts";
+import { trazaNueva } from "../traza.ts";
 import { contextoDeHerramientas } from "./contexto_herramientas.ts";
 import { armarContextoDelTurno } from "./contexto.ts";
 import { derivacionDuraPorEventoInminente, derivacionDuraPorPalabraClave } from "./derivacion_dura.ts";
@@ -154,20 +155,24 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     }
 
     // Paso 5 — armar contexto, y paso 6 — el principal con herramientas.
-    const [contextoTexto, prompt, herramientas] = await Promise.all([
+    const [contexto, prompt, herramientas] = await Promise.all([
       armarContextoDelTurno(db, { clienteId: p.clienteId, ahora: p.ahora, tz: p.tz }),
       p.prompt ?? leerPrompt(),
       definicionesParaElModelo(db),
     ]);
     const mensajesLlm: MensajeLlm[] = [
       { role: "system", content: prompt },
-      { role: "system", content: contextoTexto },
+      { role: "system", content: contexto.texto },
       ...historial,
       { role: "user", content: mensaje },
     ];
+    // traza.ts y horario_sin_herramienta.ts prometen horasDevueltas sembrada con los turnos del
+    // cliente y el horario de hoy que ya le pasamos en el contexto: si el modelo repite una hora
+    // que ya leyó ahí (p.ej. contestando "¿a qué hora era mi turno?"), no es un horario inventado.
+    const traza = { ...trazaNueva(), horasDevueltas: contexto.horas };
     const ctxHerramientas = contextoDeHerramientas({
       db, tz: p.tz, cliente: { id: p.clienteId, telefono: p.telefono }, conversacionId: p.conversacionId,
-      ahora: p.ahora, calendario: p.calendario, derivacionTel: p.derivacionTel,
+      ahora: p.ahora, calendario: p.calendario, derivacionTel: p.derivacionTel, traza,
     });
 
     let r = await correrPrincipal({ mensajes: mensajesLlm, herramientas, ctxHerramientas, limiteMs, fetcher: p.fetcher });

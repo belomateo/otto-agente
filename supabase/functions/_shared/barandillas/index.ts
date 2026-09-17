@@ -71,14 +71,23 @@ export async function aplicarBarandillas(
   }
   const hay = (a: Accion) => saltos.some((s) => s.accion === a);
   const paraRehacer = saltos.filter((s) => s.accion === "rehacer");
+  // Hallazgo de la auditoría, 17/9: un "cortar" (confirmacion_doble, presentacion_repetida,
+  // sin_relleno) puede vaciar el mensaje entero si no tenía nada más que la parte que se sacó.
+  // Antes eso caía derecho a "enviar" con texto "": prepararParaEnviar lo descarta por vacío y
+  // el cliente se queda sin nada, sin que ni siquiera quede una derivación — mudo del todo, sin
+  // que nadie se entere. Un corte que deja el mensaje vacío cuenta como si hubiera que rehacerlo.
+  const quedoVacio = texto.trim() === "" && saltos.length > 0;
 
   if (hay("bloquear")) return { texto, decision: "bloquear", saltos };
   if (hay("ejecutar_derivacion")) return { texto, decision: "derivar", saltos, ejecutarDerivacion: true };
-  if (paraRehacer.length && (opciones.saltosPrevios ?? 0) >= 1) {
+  if ((paraRehacer.length || quedoVacio) && (opciones.saltosPrevios ?? 0) >= 1) {
     return { texto, decision: "derivar", saltos, motivoDerivacion: "barandilla_doble" };
   }
-  if (paraRehacer.length) {
-    const instruccion = "Reescribí tu respuesta corrigiendo esto: " + paraRehacer.map((s) => s.motivo).join("; ") + ".";
+  if (paraRehacer.length || quedoVacio) {
+    const motivos = paraRehacer.length
+      ? paraRehacer.map((s) => s.motivo)
+      : [...saltos.map((s) => s.motivo), "el mensaje quedó vacío después de cortarlo: escribí una respuesta con contenido de verdad, no solo la fórmula que se sacó"];
+    const instruccion = "Reescribí tu respuesta corrigiendo esto: " + motivos.join("; ") + ".";
     return { texto, decision: "rehacer", saltos, instruccion };
   }
   return { texto, decision: "enviar", saltos };

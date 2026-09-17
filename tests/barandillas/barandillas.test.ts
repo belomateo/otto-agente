@@ -18,7 +18,7 @@ import { sinMarkdown } from "../../supabase/functions/_shared/barandillas/sin_ma
 import { sinRelleno } from "../../supabase/functions/_shared/barandillas/sin_relleno.ts";
 import type { Barandilla, EntradaBarandilla, ResultadoBarandilla } from "../../supabase/functions/_shared/barandillas/tipos.ts";
 import { unaPregunta } from "../../supabase/functions/_shared/barandillas/una_pregunta.ts";
-import { AHORA, entrada, HORA_MS, revisorDoble, traza } from "./_ayuda.ts";
+import { AHORA, entrada, HORA_MS, traza } from "./_ayuda.ts";
 
 async function salta(b: Barandilla, e: EntradaBarandilla): Promise<Extract<ResultadoBarandilla, { salta: true }>> {
   const r = await b.evaluar(e);
@@ -145,6 +145,15 @@ Deno.test("sin_relleno salta con una fórmula de relleno al final y la corta", a
 
 Deno.test("sin_relleno no salta si la fórmula está en el medio y el mensaje cierra con otra cosa (caso parecido)", async () => {
   await noSalta(sinRelleno, entrada("Cualquier duda consultame antes de venir, así lo resolvemos. ¿Qué día te queda bien?"));
+});
+
+// Hallazgo de la auditoría, 17/9: "estimado/a" solo es relleno como encabezado formal
+// ("Estimado cliente,"), no como adjetivo en cualquier otra parte de la oración.
+Deno.test("sin_relleno no confunde \"estimado\" adjetivo con el saludo formal (hallazgo de la auditoría, 17/9)", async () => {
+  await noSalta(sinRelleno, entrada("Te dejo un presupuesto estimado."));
+  await noSalta(sinRelleno, entrada("El costo estimado ronda los 150."));
+  const r = await salta(sinRelleno, entrada("Hola. Estimado cliente, gracias por escribirnos."));
+  assertEquals(r.texto, "Hola.");
 });
 
 Deno.test("presentacion_repetida salta si vuelve a abrir con la presentación y no es el primer mensaje (hallazgo M2)", async () => {
@@ -330,6 +339,17 @@ Deno.test("precio_sin_herramienta no confunde una fecha ni una hora de turno con
   }
 });
 
+// Hallazgo de la auditoría, 17/9: "se abona el 100%" hacía saltar la barandilla (100 como si
+// fuera un precio) y la charla terminaba derivando en silencio con el fragmento que-incluye,
+// que habla justo de porcentajes de seña, sembrado.
+Deno.test("precio_sin_herramienta no confunde un porcentaje con un precio (hallazgo de la auditoría, 17/9)", async () => {
+  for (const frase of ["se abona el 100% al confirmar", "la seña es del 50 por ciento", "dejás el 30% de seña"]) {
+    assertEquals(montos(frase), [], `"${frase}" no tendría que reconocer ningún monto`);
+  }
+  await noSalta(precioSinHerramienta, entrada("Se abona el 100% al confirmar el turno."));
+  await noSalta(precioSinHerramienta, entrada("La seña es del 50 por ciento."));
+});
+
 Deno.test("horario_sin_herramienta salta con una hora ofrecida sin buscar_horarios", async () => {
   await salta(horarioSinHerramienta, entrada("Tengo lugar el jueves a las 16:15."));
   await salta(horarioSinHerramienta, entrada("Te espero a las 16 hs."));
@@ -408,29 +428,23 @@ Deno.test("anuncia_sin_derivar no salta si derivó de verdad, ni con «el equipo
   await noSalta(anunciaSinDerivar, entrada("Para verlo puesto, te reservo un turno y el equipo te asesora con el calce."));
 });
 
-Deno.test("no_a_secas salta con una negativa sola, sin preguntarle al revisor", async () => {
-  const revisor = revisorDoble({ ok: true, motivo: "" });
-  await salta(noASecas, entrada("No, no hacemos envíos.", { revisor }));
-  await salta(noASecas, entrada("Lamentablemente no tenemos ese color.", { revisor }));
-  assertEquals(revisor.llamadas, 0);
+Deno.test("no_a_secas salta con una negativa sola", async () => {
+  await salta(noASecas, entrada("No, no hacemos envíos."));
+  await salta(noASecas, entrada("Lamentablemente no tenemos ese color."));
 });
 
 Deno.test("no_a_secas no salta con «no te preocupes» ni con una respuesta que no niega (caso parecido)", async () => {
-  const revisor = revisorDoble({ ok: false, motivo: "no debería llamarse" });
-  await noSalta(noASecas, entrada("No te preocupes, pensalo tranquilo.", { revisor }));
-  await noSalta(noASecas, entrada("¡Claro! Tenemos talles del 4 al 68.", { revisor }));
-  assertEquals(revisor.llamadas, 0);
+  await noSalta(noASecas, entrada("No te preocupes, pensalo tranquilo."));
+  await noSalta(noASecas, entrada("¡Claro! Tenemos talles del 4 al 68."));
 });
 
-Deno.test("no_a_secas le pregunta al revisor solo en el caso dudoso", async () => {
+// Hasta el 17/9 el caso dudoso (arranca negando pero es largo u ofrece algo) le preguntaba a un
+// "revisor" LLM que turno.ts nunca pasaba — la rama no corría nunca en producción (hallazgo de
+// la auditoría, 17/9). Se sacó: en el caso dudoso, no salta (mejor un falso negativo ocasional
+// que frenar un mensaje que sí ofrece algo).
+Deno.test("no_a_secas no salta en el caso dudoso: arranca negando pero ofrece algo (caso parecido)", async () => {
   const dudoso = "No hacemos envíos a otras ciudades, pero te lo dejamos listo en el local de España 764 para que lo retires.";
-  const aprueba = revisorDoble({ ok: true, motivo: "ofrece retirarlo en el local" });
-  await noSalta(noASecas, entrada(dudoso, { revisor: aprueba }));
-  assertEquals(aprueba.llamadas, 1);
-  const rechaza = revisorDoble({ ok: false, motivo: "no ofrece nada concreto" });
-  const r = await salta(noASecas, entrada(dudoso, { revisor: rechaza }));
-  assertMatch(r.motivo, /revisor/);
-  await noSalta(noASecas, entrada(dudoso)); // sin revisor, en la duda no salta
+  await noSalta(noASecas, entrada(dudoso));
 });
 
 Deno.test("menciona_ia salta cuando cuenta cómo funciona por dentro", async () => {

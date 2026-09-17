@@ -27,9 +27,18 @@ export const FORMULAS_DE_RELLENO = [
   "saludos cordiales",
 ];
 
+// "estimado"/"estimada" es relleno solo como encabezado formal, al principio de la oración
+// ("Estimado cliente,", "Estimada Sra. Pérez,") — no como adjetivo en cualquier otra parte
+// ("un presupuesto estimado", hallazgo de la auditoría, 17/9: contieneFrase lo encontraba en
+// cualquier posición y cortaba la última oración entera).
+const SOLO_AL_PRINCIPIO = new Set(["estimado", "estimada"]);
+
 const esRelleno = (oracion: string) => {
   const n = normalizar(oracion);
-  return FORMULAS_DE_RELLENO.find((f) => contieneFrase(n, f)) ?? null;
+  for (const f of FORMULAS_DE_RELLENO) {
+    if (SOLO_AL_PRINCIPIO.has(f) ? new RegExp(`^${f}\\b`).test(n) : contieneFrase(n, f)) return f;
+  }
+  return null;
 };
 
 export const sinRelleno: Barandilla = {
