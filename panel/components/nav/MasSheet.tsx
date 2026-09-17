@@ -6,7 +6,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { NAV_ICONS } from './icons';
-import { NAV_ITEMS, NAV_MOBILE_PRINCIPALES } from './nav-items';
+import { NAV_MOBILE_PRINCIPALES, navVisibles } from './nav-items';
 import { crearClienteNavegador } from '@/lib/supabase/client';
 
 type Usuario = { nombre: string; rol: string };
@@ -22,7 +22,7 @@ export function MasSheet({
 }) {
   const router = useRouter();
   if (!abierto) return null;
-  const items = NAV_ITEMS.filter((i) => !NAV_MOBILE_PRINCIPALES.includes(i.key));
+  const items = navVisibles(usuario?.rol).filter((i) => !NAV_MOBILE_PRINCIPALES.includes(i.key));
 
   async function salir() {
     await crearClienteNavegador().auth.signOut();
