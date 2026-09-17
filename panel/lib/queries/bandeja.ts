@@ -34,7 +34,8 @@ export async function listarConversaciones(
     .order('ultimo_mensaje_at', { ascending: false, nullsFirst: false })
     .order('enviado_at', { referencedTable: 'mensajes', ascending: false })
     .limit(1, { referencedTable: 'mensajes' })
-    .limit(LIMITE);
+    .limit(LIMITE)
+    .neq('canal', 'prueba');
   if (o.filtro === 'lucia') q = q.eq('estado', 'activa');
   if (o.filtro === 'persona') q = q.eq('estado', 'derivada');
   const { data, error } = await q;

@@ -89,9 +89,13 @@ function Enlaces({ turno }: { turno: AvisoTurno }) {
       ) : (
         <span className="flex-1 rounded-otto border border-borde bg-lino py-2 text-center text-[14px] font-medium text-[#8A8578] md:text-[13px]">Sin charla</span>
       )}
-      <Link href={turno.enlaces.ficha} className="flex-1 rounded-otto border border-borde bg-lino py-2 text-center text-[14px] font-medium text-grafito md:text-[13px]">
-        Ver ficha
-      </Link>
+      {turno.enlaces.ficha ? (
+        <Link href={turno.enlaces.ficha} className="flex-1 rounded-otto border border-borde bg-lino py-2 text-center text-[14px] font-medium text-grafito md:text-[13px]">
+          Ver ficha
+        </Link>
+      ) : (
+        <span className="flex-1 rounded-otto border border-borde bg-lino py-2 text-center text-[14px] font-medium text-[#8A8578] md:text-[13px]">Ficha: solo admin</span>
+      )}
     </>
   );
 }

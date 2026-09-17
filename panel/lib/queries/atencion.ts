@@ -36,15 +36,24 @@ export async function listarDerivaciones(
     db
       .from('derivaciones')
       .select(
-        'id, conversacion_id, motivo, estado, creado_at, atendida_at, atendida_por, conversaciones(cliente_id, clientes(nombre, telefono), mensajes(contenido, direccion, tipo, enviado_at))'
+        'id, conversacion_id, motivo, estado, creado_at, atendida_at, atendida_por, conversaciones!inner(cliente_id, clientes(nombre, telefono), mensajes(contenido, direccion, tipo, enviado_at))'
       )
       .eq('estado', estado)
+      .neq('conversaciones.canal', 'prueba')
       .order('creado_at', { ascending: false })
       .order('enviado_at', { referencedTable: 'conversaciones.mensajes', ascending: false })
       .limit(ULTIMOS, { referencedTable: 'conversaciones.mensajes' })
       .limit(200),
-    db.from('derivaciones').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente'),
-    db.from('derivaciones').select('id', { count: 'exact', head: true }).eq('estado', 'atendida'),
+    db
+      .from('derivaciones')
+      .select('id, conversaciones!inner(canal)', { count: 'exact', head: true })
+      .eq('estado', 'pendiente')
+      .neq('conversaciones.canal', 'prueba'),
+    db
+      .from('derivaciones')
+      .select('id, conversaciones!inner(canal)', { count: 'exact', head: true })
+      .eq('estado', 'atendida')
+      .neq('conversaciones.canal', 'prueba'),
   ]);
   if (lista.error) throw lista.error;
   if (pendientes.error) throw pendientes.error;
