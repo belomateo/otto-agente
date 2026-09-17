@@ -201,18 +201,25 @@ function HojaDetalle({ turno, onCerrar, onOk }: { turno: AvisoTurno; onCerrar: (
 }
 
 export function CartelTurno() {
-  const { turnos, marcarOk } = useTurnosPorAvisar();
+  const { turnos, error, marcarOk } = useTurnosPorAvisar();
   const [listaAbierta, setListaAbierta] = useState(false);
   const [detalleId, setDetalleId] = useState<string | null>(null);
   const detalle = turnos.find((t) => t.id === detalleId) ?? null;
 
-  if (turnos.length === 0) return null;
+  // El aviso de "no se pudo registrar" tiene que verse aunque el turno que falló haya sido el
+  // único de la lista (se optimistic-oculta al toque, antes de saber si el POST funcionó).
+  if (turnos.length === 0 && !error) return null;
   const ordenados = [...turnos].sort((a, b) => new Date(a.inicio).getTime() - new Date(b.inicio).getTime());
 
   return (
     <>
       {/* Escritorio: una tarjeta completa por turno, siempre a la vista. */}
       <div role="region" aria-label="Turnos por avisar" className="pointer-events-none fixed right-7 top-5 z-[60] hidden flex-col gap-2.5 md:flex">
+        {error && (
+          <div className="pointer-events-auto w-[380px] rounded-otto border border-ladrillo bg-lino px-3.5 py-2.5 text-[14px] font-medium text-ladrillo shadow-otto-pop md:text-[13px]">
+            {error}
+          </div>
+        )}
         {ordenados.map((t) => (
           <div key={t.id} className="pointer-events-auto">
             <TarjetaEscritorio turno={t} onOk={() => marcarOk(t.id)} />
@@ -222,14 +229,19 @@ export function CartelTurno() {
 
       {/* Celular: una sola fila siempre (nunca tapa más que eso), por debajo de la hoja
           "Más" (z-45 < z-50) para no robarle su fondo de cierre si las dos están abiertas. */}
-      <div role="region" aria-label="Turnos por avisar" className="pointer-events-none fixed inset-x-3 top-3 z-[45] md:hidden">
-        <div className="pointer-events-auto">
-          {ordenados.length === 1 ? (
-            <FilaCelular turno={ordenados[0]} onAbrir={() => setDetalleId(ordenados[0].id)} onOk={() => marcarOk(ordenados[0].id)} />
-          ) : (
-            <FilaResumen cantidad={ordenados.length} proximo={ordenados[0]} onAbrir={() => setListaAbierta(true)} />
-          )}
-        </div>
+      <div role="region" aria-label="Turnos por avisar" className="pointer-events-none fixed inset-x-3 top-3 z-[45] flex flex-col gap-2 md:hidden">
+        {error && (
+          <div className="pointer-events-auto rounded-otto border border-ladrillo bg-lino px-3.5 py-2 text-center text-[14px] font-medium text-ladrillo shadow-otto-pop">{error}</div>
+        )}
+        {ordenados.length > 0 && (
+          <div className="pointer-events-auto">
+            {ordenados.length === 1 ? (
+              <FilaCelular turno={ordenados[0]} onAbrir={() => setDetalleId(ordenados[0].id)} onOk={() => marcarOk(ordenados[0].id)} />
+            ) : (
+              <FilaResumen cantidad={ordenados.length} proximo={ordenados[0]} onAbrir={() => setListaAbierta(true)} />
+            )}
+          </div>
+        )}
       </div>
       {listaAbierta && (
         <div className="md:hidden">

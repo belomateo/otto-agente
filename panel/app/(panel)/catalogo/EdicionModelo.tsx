@@ -31,7 +31,10 @@ function Miniatura({ url }: { url: string }) {
   return <img src={url} alt="" className="h-[74px] w-14 flex-none rounded-[6px] border border-borde object-cover" onError={() => setRota(true)} />;
 }
 
-const TIPOS_FOTO_ACEPTADOS = 'image/jpeg,image/png,image/webp';
+// Sin webp: WhatsApp no lo acepta y las dos rutas de subida (acá y bandeja/ChatThread.tsx)
+// ya lo rechazan del lado del servidor — ofrecerlo en el picker solo hace que la persona elija
+// la foto y recién ahí se entere de que no sirve.
+const TIPOS_FOTO_ACEPTADOS = 'image/jpeg,image/png';
 
 // Sube al bucket `catalogo` (POST /api/catalogo/fotos, H1.9 control 8): misma ruta = reemplazo,
 // así que el link que Lucía ya mandó por WhatsApp pasa a mostrar la foto nueva sola.
@@ -253,7 +256,7 @@ function Interior({ modelo, onGuardado, onCerrar }: { modelo: FilaModelo; onGuar
         {edicion.sucio && <div className="basis-full text-[14px] text-cobre md:text-xs">Hay cambios sin guardar</div>}
       </div>
       <ToastFlotante toast={toast} onCerrar={cerrar} />
-      {historialAbierto && <PanelHistorial tabla="modelos" id={modelo.id} versionActual={edicion.guardado.version} onCerrar={() => setHistorialAbierto(false)} onRestaurado={onGuardado} />}
+      {historialAbierto && <PanelHistorial tabla="catalogo_alquiler" id={modelo.id} versionActual={edicion.guardado.version} onCerrar={() => setHistorialAbierto(false)} onRestaurado={onGuardado} />}
     </div>
   );
 }
