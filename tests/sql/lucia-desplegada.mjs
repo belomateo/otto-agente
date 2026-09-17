@@ -169,7 +169,14 @@ try {
       [turno.inicio, TZ],
     );
     assert(Boolean(franja), `cae adentro de una franja de turnos real (${dia} ${hora}, probador ${turno.probador})`);
-    assert(dias >= 7 && dia < EN_2_MESES, `respeta la reserva de urgencia y la fecha del evento: a ${dias} días, antes del ${EN_2_MESES}`);
+    // La reserva de urgencia se lee de la base, no se escribe acá: la dueña la cambia desde el
+    // panel y el control tiene que seguirla (el 16/9 pasó de 7 días a 3).
+    const [cfg] = await filas("select dias_reserva_urgencia as d from configuracion_agenda");
+    const reserva = Number(cfg?.d ?? 0);
+    assert(
+      dias >= reserva && dia < EN_2_MESES,
+      `respeta la reserva de urgencia (${reserva} días) y la fecha del evento: a ${dias} días, antes del ${EN_2_MESES}`,
+    );
     const herramientas = (await filas(
       "select distinct detalle->>'herramienta' as h from eventos_agente where conversacion_id = $1 and tipo = 'herramienta'",
       [conv],
