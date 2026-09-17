@@ -10,7 +10,8 @@ import type { Db } from "../_shared/db.ts";
 import type { Calendario } from "../_shared/herramientas/tipos.ts";
 import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts";
 import { botonDeTurno } from "../_shared/whatsapp/botones.ts";
-import { type ConfigWhatsapp, enviarImagen, enviarTexto } from "../_shared/whatsapp/enviar.ts";
+import { type ConfigWhatsapp, enviarImagen, enviarImagenPorId, enviarTexto, subirMedia } from "../_shared/whatsapp/enviar.ts";
+import { type Adjuntos, bajarAdjunto, nombreDeArchivo } from "./adjuntos.ts";
 import { prepararParaEnviar } from "../_shared/whatsapp/preparar.ts";
 import { puedeTextoLibre } from "../_shared/whatsapp/ventana.ts";
 
@@ -68,6 +69,7 @@ export type Dependencias = {
   tz: string;
   derivacionTel: string | null;
   baseFotos: string; // <SUPABASE_URL>/storage/v1/object/public/catalogo/
+  adjuntos: Adjuntos; // el bucket privado, para las fotos que manda el equipo desde el panel
   calendario: Calendario;
   turno: (db: Db, p: ParametrosTurno) => Promise<ResultadoTurno>;
   fetcher: typeof fetch; // Meta
@@ -367,6 +369,77 @@ async function enviarDelMostrador(db: Db, d: Dependencias, t: Trabajo, telefono:
   });
 }
 
+// Una foto del equipo desde el panel (0048). La foto vive en el bucket `adjuntos`, que es
+// privado: se baja con la clave de servicio, se sube a /media de WhatsApp y se manda por
+// media_id, así no hay que publicar la foto de un cliente en ninguna URL. El epígrafe, si lo
+// hay, sale detrás como un mensaje de texto aparte (una fila de `mensajes` por cada mensaje de
+// WhatsApp, y Lucía lo lee en el historial).
+// Si algo falla, el trabajo vuelve a la cola: lo que ya salió tiene wa_message_id y no se repite.
+async function enviarFotoDelMostrador(db: Db, d: Dependencias, t: Trabajo, telefono: string) {
+  const mensajeId = String(t.payload?.mensaje_id ?? "");
+  const epigrafeId = t.payload?.epigrafe_mensaje_id ? String(t.payload.epigrafe_mensaje_id) : null;
+  const ruta = String(t.payload?.storage_path ?? "");
+  const mime = String(t.payload?.mime ?? "image/jpeg");
+
+  const [foto] = await db.consulta<{ wa_message_id: string | null }>(
+    "select wa_message_id from mensajes where id = $1::uuid and conversacion_id = $2::uuid and direccion = 'saliente'",
+    [mensajeId, t.conversacion_id],
+  );
+  if (!foto) {
+    await evento(db, t.conversacion_id, "error", { etapa: "mostrador-foto", mensaje_id: mensajeId, error: "la foto no está en la charla" });
+    return;
+  }
+  const [epigrafe] = epigrafeId
+    ? await db.consulta<{ contenido: string | null; wa_message_id: string | null }>(
+      "select contenido, wa_message_id from mensajes where id = $1::uuid and conversacion_id = $2::uuid",
+      [epigrafeId, t.conversacion_id],
+    )
+    : [];
+  // Ya salió todo en un intento anterior.
+  if (foto.wa_message_id && (!epigrafeId || epigrafe?.wa_message_id)) return;
+
+  if (!puedeTextoLibre(await ultimoMensajeDelCliente(db, t.conversacion_id), d.ahora())) {
+    // Lo mandó una persona: se marca, no se borra (0042), igual que el texto del mostrador.
+    await db.consulta(
+      "update mensajes set no_enviado_motivo = 'ventana_cerrada' where id = any($1::uuid[]) and wa_message_id is null",
+      [[mensajeId, ...(epigrafeId ? [epigrafeId] : [])]],
+    );
+    await evento(db, t.conversacion_id, "error", {
+      etapa: "mostrador-foto",
+      mensaje_id: mensajeId,
+      error: "fuera de la ventana de 24 hs: solo se puede mandar una plantilla",
+      no_enviado_motivo: "ventana_cerrada",
+    });
+    return;
+  }
+
+  const simulado = esTelefonoFicticio(telefono);
+  let waFoto = foto.wa_message_id;
+  if (!waFoto && !simulado) {
+    const archivo = await conReintento(d, () => bajarAdjunto(d.adjuntos, ruta, mime, d.fetcher));
+    const mediaId = await conReintento(d, () => subirMedia(d.wa, archivo, nombreDeArchivo(ruta), d.fetcher));
+    waFoto = await conReintento(d, () => enviarImagenPorId(d.wa, telefono, mediaId, d.fetcher));
+    await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [mensajeId, waFoto]);
+  }
+
+  let waEpigrafe = epigrafe?.wa_message_id ?? null;
+  if (epigrafe?.contenido && !waEpigrafe && !simulado) {
+    const texto = epigrafe.contenido.startsWith(MARCA_MOSTRADOR) ? epigrafe.contenido.slice(MARCA_MOSTRADOR.length) : epigrafe.contenido;
+    waEpigrafe = await conReintento(d, () => enviarTexto(d.wa, telefono, texto, d.fetcher));
+    await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [epigrafeId, waEpigrafe]);
+  }
+
+  await evento(db, t.conversacion_id, "ok", {
+    etapa: "mostrador-foto",
+    mensaje_id: mensajeId,
+    foto: ruta,
+    autor: t.payload?.autor ?? null,
+    wa_message_id: waFoto,
+    ...(epigrafeId ? { epigrafe_wa_message_id: waEpigrafe } : {}),
+    ...(simulado ? { simulado: true } : {}),
+  });
+}
+
 async function estadoDeLaCharla(db: Db, conversacionId: string) {
   const [f] = await db.consulta<{ estado: string; cliente_id: string; telefono: string }>(
     `select c.estado, c.cliente_id::text as cliente_id, cl.telefono
@@ -382,6 +455,7 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   if (!conv) throw new Error(`conversación ${t.conversacion_id}: no existe`);
 
   if (t.payload?.tipo === "mostrador") return await enviarDelMostrador(db, d, t, conv.telefono);
+  if (t.payload?.tipo === "mostrador_foto") return await enviarFotoDelMostrador(db, d, t, conv.telefono);
 
   // El botón "Confirmo" lo resuelve el código, con la charla activa o derivada (1.14).
   const boton = botonDeTurno(t.payload?.mensaje);

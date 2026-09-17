@@ -21,6 +21,12 @@ const dependencias: Dependencias = {
   tz: Deno.env.get("NEGOCIO_TZ") || "America/Argentina/Cordoba",
   derivacionTel: Deno.env.get("DERIVACION_ALQUILER_TEL")?.trim() || null,
   baseFotos: `${Deno.env.get("SUPABASE_URL") ?? ""}/storage/v1/object/public/catalogo/`,
+  // El bucket de los adjuntos es privado: se lee con la clave de servicio, que Supabase le da a
+  // toda Edge Function. Nunca sale de acá: la foto va a Meta como archivo, no como link.
+  adjuntos: {
+    base: `${Deno.env.get("SUPABASE_URL") ?? ""}/storage/v1/object/adjuntos/`,
+    clave: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+  },
   calendario: calendarioPropio,
   turno: correrTurno,
   fetcher: fetch,

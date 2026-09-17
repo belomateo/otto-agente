@@ -4,6 +4,11 @@
 //    mensaje del cliente; ese chequeo lo hace quien llama (ventana.ts), no esta función.
 //  · enviarImagen: una foto por su link público (las del catálogo, bucket `catalogo`). Misma
 //    regla de la ventana que el texto libre.
+//  · subirMedia + enviarImagenPorId: una foto que NO es pública. Las que manda el equipo desde
+//    el panel (0048) viven en el bucket `adjuntos`, privado a propósito porque son fotos de
+//    clientes: hacerlas públicas para que Meta las baje por link sería publicarlas en una URL
+//    adivinable, para siempre. Se suben a /media y se mandan por media_id, que Meta guarda 30
+//    días y después borra solo. Misma regla de la ventana.
 //  · enviarPlantilla: una plantilla aprobada por Meta (hito 1.14). Sale siempre, con o sin
 //    ventana. Los botones de respuesta rápida llevan un payload propio por mensaje: así la
 //    respuesta dice a qué turno o charla se refiere (botones.ts).
@@ -73,4 +78,36 @@ export function enviarPlantilla(
     { to: para, type: "template", template: { name: p.nombre, language: { code: p.idioma }, components } },
     fetcher,
   );
+}
+
+// Sube una foto a /media y devuelve su media_id (vale 30 días). No pasa por `mandar`: /media va
+// como multipart, no como JSON, y contesta {id} en vez de {messages:[{id}]}.
+export async function subirMedia(
+  cfg: ConfigWhatsapp,
+  archivo: Blob,
+  nombre: string,
+  fetcher: typeof fetch = fetch,
+): Promise<string> {
+  const formulario = new FormData();
+  formulario.append("messaging_product", "whatsapp");
+  formulario.append("type", archivo.type);
+  formulario.append("file", archivo, nombre);
+  const url = `https://graph.facebook.com/${cfg.version ?? "v21.0"}/${cfg.phoneNumberId}/media`;
+  const res = await fetcher(url, { method: "POST", headers: { Authorization: `Bearer ${cfg.token}` }, body: formulario });
+  const datos = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(`Meta respondió ${res.status} al subir la foto: ${JSON.stringify(datos?.error ?? datos)}`);
+  }
+  const id = datos?.id;
+  if (typeof id !== "string") throw new Error("Meta no devolvió el id de la foto subida");
+  return id;
+}
+
+export function enviarImagenPorId(
+  cfg: ConfigWhatsapp,
+  para: string,
+  mediaId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<string> {
+  return mandar(cfg, { to: para, type: "image", image: { id: mediaId } }, fetcher);
 }
