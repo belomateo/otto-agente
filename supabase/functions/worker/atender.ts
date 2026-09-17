@@ -12,6 +12,7 @@ import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts"
 import { botonDeTurno } from "../_shared/whatsapp/botones.ts";
 import { type ConfigWhatsapp, enviarImagen, enviarImagenPorId, enviarTexto, subirMedia } from "../_shared/whatsapp/enviar.ts";
 import { type Adjuntos, bajarAdjunto, nombreDeArchivo } from "./adjuntos.ts";
+import { promptDeLucia } from "./prompt.ts";
 import { prepararParaEnviar } from "../_shared/whatsapp/preparar.ts";
 import { puedeTextoLibre } from "../_shared/whatsapp/ventana.ts";
 
@@ -499,6 +500,9 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   }
 
   const ahora = d.ahora();
+  // De la base, no del archivo que se publicó: lo que la dueña cambia en el panel tiene que estar
+  // en boca de Lucía en menos de un minuto (0050).
+  const prompt = await promptDeLucia(db, ahora);
   const resultado = await d.turno(db, {
     clienteId: conv.cliente_id,
     telefono: conv.telefono,
@@ -507,6 +511,7 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     tz: d.tz,
     calendario: d.calendario,
     derivacionTel: d.derivacionTel,
+    prompt: prompt.texto,
   });
   // El turno ya guardó sus mensajes (paso 9). Se marca ANTES de mandarlos: si se corta en el
   // medio del envío, el reintento retoma mandando en vez de pensar de nuevo (0044).
@@ -523,7 +528,7 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   } catch (e) {
     console.error("worker: cola_absorber falló", mensajeDeError(e));
   }
-  await evento(db, t.conversacion_id, "ok", { etapa: "worker-lucia", ...entrega, absorbidos });
+  await evento(db, t.conversacion_id, "ok", { etapa: "worker-lucia", ...entrega, absorbidos, prompt: prompt.origen });
 }
 
 export async function atenderCola(db: Db, d: Dependencias, worker: string): Promise<number> {
