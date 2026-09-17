@@ -6,21 +6,7 @@ import { requerirSesion } from '@/lib/api/sesion';
 import { desdeErrorDeBase, error, json } from '@/lib/api/respuestas';
 import { esUuid } from '@/lib/api/validar';
 import { ENTIDADES } from '@/lib/edicion/entidades';
-
-const EXTENSION: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
-const TAMANO_MAXIMO = 5 * 1024 * 1024;
-
-function nombreSeguro(original: string, extension: string): string {
-  const base = original
-    .replace(/\.[^.]*$/, '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-  return `${base || 'foto'}.${extension}`;
-}
+import { EXTENSION_FOTO, TAMANO_MAXIMO_FOTO, nombreSeguroFoto } from '@/lib/storage-fotos';
 
 export async function POST(request: Request) {
   const s = await requerirSesion({ admin: true });
@@ -36,9 +22,9 @@ export async function POST(request: Request) {
   const archivo = form.get('archivo');
   if (!esUuid(modeloId)) return error(400, 'Falta modelo_id o no es válido');
   if (!(archivo instanceof File) || archivo.size === 0) return error(400, 'Falta el archivo');
-  const extension = EXTENSION[archivo.type];
+  const extension = EXTENSION_FOTO[archivo.type];
   if (!extension) return error(400, 'Solo fotos JPG, PNG o WebP');
-  if (archivo.size > TAMANO_MAXIMO) return error(400, 'La foto pesa más de 5 MB');
+  if (archivo.size > TAMANO_MAXIMO_FOTO) return error(400, 'La foto pesa más de 5 MB');
 
   const { data: modelo, error: e1 } = await s.supabase
     .from('catalogo_alquiler')
@@ -48,7 +34,7 @@ export async function POST(request: Request) {
   if (e1) return desdeErrorDeBase(e1);
   if (!modelo) return error(404, 'Ese modelo no existe');
 
-  const ruta = `${modeloId}/${nombreSeguro(archivo.name, extension)}`;
+  const ruta = `${modeloId}/${nombreSeguroFoto(archivo.name, extension)}`;
   const { error: e2 } = await s.supabase.storage
     .from('catalogo')
     .upload(ruta, archivo, { upsert: true, contentType: archivo.type, cacheControl: '60' });

@@ -18,6 +18,8 @@ export type FilaModelo = ModeloCatalogo & {
   fotos: string[];
   editado_por: string | null;
   editado_at: string;
+  /** Prioridad con la que Lucía recomienda: 1 pesa más (0044, decisión de Mateo). */
+  orden: number;
 };
 export type FilaAccesorio = {
   n: string;
@@ -57,8 +59,8 @@ export async function obtenerCatalogo(db: ClienteDb): Promise<{ modelos: FilaMod
   const [modelos, accesorios] = await Promise.all([
     db
       .from('catalogo_alquiler')
-      .select('id, modelo, precio_base, descripcion, colores, talles, fotos, activo, version, editado_por, editado_at')
-      .order('modelo', { ascending: true }),
+      .select('id, modelo, precio_base, descripcion, colores, talles, fotos, activo, version, editado_por, editado_at, orden')
+      .order('orden', { ascending: true }),
     db
       .from('accesorios_alquiler')
       .select('id, nombre, precio, precio_compra, activo, version')
@@ -81,6 +83,7 @@ export async function obtenerCatalogo(db: ClienteDb): Promise<{ modelos: FilaMod
         fotos: m.fotos,
         editado_por: m.editado_por,
         editado_at: m.editado_at,
+        orden: m.orden,
         n: m.modelo,
         p: plata(m.precio_base),
         talles: rangoTalles(m.talles),

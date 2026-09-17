@@ -43,6 +43,15 @@ const monto = z.number().nonnegative('No puede ser negativo').max(100_000_000, '
 const hora = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, 'Hora en formato HH:MM');
 const entero = (min: number, max: number) =>
   z.number().int('Tiene que ser un número entero').min(min, `Mínimo ${min}`).max(max, `Máximo ${max}`);
+// Solo al dar de alta un cliente a mano (turno por teléfono, decisión de Mateo 16/9): mismo
+// formato que usa el webhook (E.164 sin "+", p. ej. 5493411234567), para que si esa persona
+// después escribe por WhatsApp caiga en la misma ficha. Se limpia lo que se pueda tipear
+// (espacios, guiones, paréntesis, el "+") y se valida el largo de lo que queda.
+const telefonoAlta = z
+  .string()
+  .trim()
+  .transform((v) => v.replace(/\D/g, ''))
+  .pipe(z.string().min(8, 'Teléfono inválido: muy corto').max(15, 'Teléfono inválido: muy largo'));
 
 type Fila = Record<string, unknown>;
 type Rechazo = { status: number; mensaje: string };
@@ -112,7 +121,10 @@ const describirFranja = (f: { dia_semana: number; desde: string; hasta: string }
   `del ${DIAS_LARGOS[f.dia_semana].toLowerCase()} de ${f.desde.slice(0, 5)} a ${f.hasta.slice(0, 5)}`;
 
 export const ENTIDADES = {
-  // Catálogo › modelos: precios, colores, talles, fotos (0016).
+  // Catálogo › modelos: precios, colores, talles, fotos (0016). `orden` es la prioridad con la
+  // que Lucía recomienda (0044, decisión de Mateo): 1 pesa más, los números altos pesan menos.
+  // Se asigna solo al dar de alta (el siguiente libre, como reglas_agente.numero) y la dueña lo
+  // cambia después para reordenar.
   modelos: definir(
     'catalogo_alquiler',
     {
@@ -130,8 +142,17 @@ export const ENTIDADES = {
       talles: z.array(z.string().trim().min(1).max(8)).max(60, 'Máximo 60 talles'),
       fotos: z.array(enlace).max(12, 'Máximo 12 fotos'),
       activo: z.boolean(),
+      orden: entero(1, 999),
     },
-    { obligatorios: ['modelo', 'precio_base'] }
+    {
+      obligatorios: ['modelo', 'precio_base'],
+      completarAlta: async (db, datos) => {
+        if (datos.orden !== undefined) return datos;
+        const { data, error } = await db.from('catalogo_alquiler').select('orden').order('orden', { ascending: false }).limit(1);
+        if (error) throw error;
+        return { ...datos, orden: ((data?.[0]?.orden as number | undefined) ?? 0) + 1 };
+      },
+    }
   ),
 
   // Catálogo › accesorios.
@@ -315,8 +336,9 @@ export const ENTIDADES = {
     { obligatorios: ['texto'] }
   ),
 
-  // Clientes: la ficha (AGENTE.md § 7, columnas de 1.15). El teléfono no se edita: es la
-  // identidad del cliente en WhatsApp.
+  // Clientes: la ficha (AGENTE.md § 7, columnas de 1.15). El teléfono no se edita nunca (es la
+  // identidad del cliente en WhatsApp): solo se manda al dar de alta a mano (decisión de Mateo,
+  // 16/9 — el cliente que saca turno por teléfono), vía soloAlCrear.
   clientes: definir(
     'clientes',
     {
@@ -342,7 +364,7 @@ export const ENTIDADES = {
       presupuesto_mencionado: textoOpcional(120),
       notas_libres: textoOpcional(4000),
     },
-    { obligatorios: null, soloAdmin: false }
+    { obligatorios: [], soloAdmin: false, soloAlCrear: { telefono: telefonoAlta } }
   ),
 
   // Configuración › Enlaces: web, mapa, reseña.

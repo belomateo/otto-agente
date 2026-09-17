@@ -159,7 +159,10 @@ export async function guardarUnica(sesion: Sesion, clave: ClaveEntidad, request:
 
 /** GET del historial de una fila: versiones anteriores, de la más nueva a la más vieja. */
 export async function listarHistorial(sesion: Sesion, tabla: string | null, id: string | null) {
-  if (!tabla || !entidadPorTabla(tabla)) return error(400, 'Esa tabla no tiene historial en el panel');
+  const ent = tabla ? entidadPorTabla(tabla) : undefined;
+  if (!ent) return error(400, 'Esa tabla no tiene historial en el panel');
+  const bloqueo = sinPermiso(sesion, ent);
+  if (bloqueo) return bloqueo;
   if (!id || !esUuid(id)) return error(400, 'Identificador inválido');
   const { data, error: e } = await db(sesion)
     .from('historial_ediciones')
@@ -213,6 +216,8 @@ export async function borrar(sesion: Sesion, clave: ClaveEntidad, id: string, re
 export async function listarBorradas(sesion: Sesion, tabla: string | null) {
   const ent = tabla ? entidadPorTabla(tabla) : undefined;
   if (!ent?.borrable) return error(400, 'Esa tabla no borra filas desde el panel');
+  const bloqueo = sinPermiso(sesion, ent);
+  if (bloqueo) return bloqueo;
   const { data, error: e1 } = await db(sesion)
     .from('historial_ediciones')
     .select('id, fila_id, version, editado_por, editado_at, datos_anteriores')
