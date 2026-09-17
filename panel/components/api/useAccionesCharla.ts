@@ -47,6 +47,18 @@ export function useAccionesCharla(conversacionId: string | null) {
     }
   }
 
+  // Multipart, no pasa por cliente.ts (enviar() solo manda JSON): mismo camino que
+  // catalogo/EdicionModelo.tsx (SubirFoto) — subida + envío en un solo paso, del lado de
+  // paneles (control 8, bucket `adjuntos`, no `catalogo`: ese es público y solo-admin).
+  async function subirFoto(id: string, archivo: File) {
+    const form = new FormData();
+    form.append('archivo', archivo);
+    const r = await fetch(`/api/bandeja/${id}/foto`, { method: 'POST', body: form });
+    const cuerpo = await r.json().catch(() => null);
+    if (!r.ok) throw new ErrorApi(r.status, cuerpo?.error ?? 'No se pudo enviar la foto', cuerpo?.detalle);
+    return cuerpo;
+  }
+
   return {
     enviando,
     error,
@@ -55,5 +67,6 @@ export function useAccionesCharla(conversacionId: string | null) {
     devolver: () => correr((id) => enviar(`/api/bandeja/${id}/devolver`, 'POST')),
     cerrar: () => correr((id) => enviar(`/api/bandeja/${id}/cerrar`, 'POST')),
     responder: (texto: string) => correr((id) => enviar(`/api/bandeja/${id}/mensajes`, 'POST', { texto })),
+    enviarFoto: (archivo: File) => correr((id) => subirFoto(id, archivo)),
   };
 }

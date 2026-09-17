@@ -9,7 +9,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { NAV_ITEMS } from './nav-items';
+import { navVisibles } from './nav-items';
 import { NAV_ICONS } from './icons';
 import { Chip } from '../ui-otto/Chip';
 import { crearClienteNavegador } from '@/lib/supabase/client';
@@ -43,7 +43,7 @@ export function Sidebar({
       </div>
 
       <nav className="flex flex-col gap-0.5 px-3 py-1.5">
-        {NAV_ITEMS.map(({ key, href, label }) => {
+        {navVisibles(usuario?.rol).map(({ key, href, label }) => {
           const activo = pathname?.startsWith(href);
           const Icon = NAV_ICONS[key];
           return (
