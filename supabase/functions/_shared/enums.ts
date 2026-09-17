@@ -23,8 +23,10 @@ export const SECCIONES = [
 ] as const;
 export type Seccion = typeof SECCIONES[number];
 
-// PROCESOS.md § 4 · derivaciones_motivo_check (logica, 0023 y 0026). evento_inminente: el
-// evento es hoy o mañana y lo resuelve una persona (decisión #8 de Mateo, 14/9).
+// PROCESOS.md § 4 · derivaciones_motivo_check (logica, 0023, 0026 y 0044). evento_inminente: el
+// evento es hoy o mañana y lo resuelve una persona (decisión #8 de Mateo, 14/9). fallo_tecnico
+// (0044, logica, 16/9): un trabajo de la cola agotó los 2 intentos, o un mensaje quedó en duda
+// (el worker se cortó justo al mandarlo) — no es culpa del cliente ni una decisión de Lucía.
 export const MOTIVOS_DERIVACION = [
   "reclamo",
   "cliente_enojado",
@@ -38,6 +40,7 @@ export const MOTIVOS_DERIVACION = [
   "barandilla_doble",
   "sin_respuesta",
   "timeout",
+  "fallo_tecnico",
 ] as const;
 export type MotivoDerivacion = typeof MOTIVOS_DERIVACION[number];
 
@@ -57,13 +60,16 @@ export const MOTIVOS_SIN_MENSAJE: readonly MotivoDerivacion[] = ["reclamo", "cli
 // buscar_horarios/agendar_turno (donde el código SÍ guarda la fecha del evento) y el texto fijo
 // aprobado. evento_inminente lo decide _shared/turno/derivacion_dura.ts o las herramientas de
 // agenda (herramientas/derivacion.ts); barandilla_doble y sin_respuesta/timeout los decide
-// turno.ts después de que el LLM ya dejó de responder o de que una barandilla volvió a saltar:
-// en ninguno de los tres casos hay "un modelo" al que pedirle que elija ese motivo.
+// turno.ts después de que el LLM ya dejó de responder o de que una barandilla volvió a saltar;
+// fallo_tecnico (0044, logica) lo decide el procesamiento de cola_trabajos, fuera de un turno
+// normal (los 2 intentos de un trabajo se agotaron, o un mensaje quedó en duda al mandarlo): en
+// ninguno de los cuatro casos hay "un modelo" al que pedirle que elija ese motivo.
 export const MOTIVOS_SOLO_CODIGO: readonly MotivoDerivacion[] = [
   "evento_inminente",
   "barandilla_doble",
   "sin_respuesta",
   "timeout",
+  "fallo_tecnico",
 ];
 
 // El enum real de la herramienta derivar_a_persona: todos los motivos MENOS los que decide
