@@ -504,9 +504,13 @@ async function testRegistroYCola() {
     let e = await estado(job);
     assert(e.estado === "pendiente" && e.intentos === 1, "un trabajo que falla vuelve a pendiente con intentos = 1");
     await client.query("select cola_terminar($1, false, 'falla de prueba')", [job]);
-    await client.query("select cola_terminar($1, false, 'falla de prueba')", [job]);
     e = await estado(job);
-    assert(e.estado === "error" && e.intentos === 3, "al tercer fallo queda en error y no se reintenta más");
+    assert(e.estado === "error" && e.intentos === 2, "al segundo fallo queda en error (0044: dos intentos y después una persona)");
+    const [der] = (await client.query(
+      `select d.motivo, c.estado from derivaciones d join conversaciones c on c.id = d.conversacion_id
+        where d.conversacion_id = (select conversacion_id from cola_trabajos where id = $1)`, [job])).rows;
+    assert(der?.motivo === "fallo_tecnico" && der?.estado === "derivada",
+      "al agotar los intentos la charla se deriva sola con motivo fallo_tecnico");
 
     await client.query(
       "update cola_trabajos set estado = 'procesando', intentos = 0, tomado_por = 'muerto', tomado_at = now() - interval '6 minutes' where id = $1",
@@ -569,16 +573,17 @@ async function testEnviosProgramados() {
 
     // Recordatorio
     const a = await cliente("5490000001401");
-    const t1 = await turno(a, "2030-06-06T14:00:00-03:00"); // mañana, dentro de las 24 hs
+    const t1 = await turno(a, "2030-06-06T08:00:00-03:00"); // a 17 hs: adentro de las 18
     const t2 = await turno(await cliente("5490000001402"), "2030-06-06T16:00:00-03:00"); // 25 hs
-    const t3 = await turno(await cliente("5490000001403"), "2030-06-06T10:00:00-03:00", { creado: "2030-06-05T12:00:00-03:00" });
+    // A 17,5 hs (adentro de la ventana): lo único que lo deja afuera es haberse reservado recién.
+    const t3 = await turno(await cliente("5490000001403"), "2030-06-06T08:30:00-03:00", { probador: 3, creado: "2030-06-05T12:00:00-03:00" });
     const t4 = await turno(await cliente("5490000001404"), "2030-06-06T11:00:00-03:00", { estado: "confirmado", confirmado: true });
-    let p = await pendientes("recordatorio_24h");
-    assert(p.includes(t1) && !p.includes(t2) && !p.includes(t4), "recordatorio: sale para el turno sin confirmar de mañana que entró en las 24 hs, no para el de 25 hs ni el confirmado");
-    assert(!p.includes(t3), "recordatorio: no sale para un turno reservado hace menos de 24 hs (le acaba de llegar la confirmación)");
+    let p = await pendientes("recordatorio_18h");
+    assert(p.includes(t1) && !p.includes(t2) && !p.includes(t4), "recordatorio: sale para el turno sin confirmar que entró en las 18 hs, no para el de 25 hs ni el confirmado");
+    assert(!p.includes(t3), "recordatorio: no sale para un turno reservado hace menos de 24 hs, aunque ya esté adentro de las 18 (le acaba de llegar la confirmación)");
 
-    const id1 = (await q("select envio_reservar('recordatorio_24h', $1, $2, 'recordatorio_turno_24h') as id", [t1, a]))[0].id;
-    const otra = (await q("select envio_reservar('recordatorio_24h', $1, $2, 'recordatorio_turno_24h') as id", [t1, a]))[0].id;
+    const id1 = (await q("select envio_reservar('recordatorio_18h', $1, $2, 'recordatorio_turno_18h') as id", [t1, a]))[0].id;
+    const otra = (await q("select envio_reservar('recordatorio_18h', $1, $2, 'recordatorio_turno_18h') as id", [t1, a]))[0].id;
     assert(id1 && otra === null, "el mismo envío reservado dos veces: la segunda reserva no sale (unique en la base)");
     await q("select envio_terminar($1, true, 'wamid.T114-1', 'texto del recordatorio')", [id1]);
     const [marca] = await q("select recordatorio_enviado_at is not null as ok from turnos where id = $1", [t1]);
@@ -589,23 +594,23 @@ async function testEnviosProgramados() {
     );
     const [ev] = await q(
       `select count(*)::int as n from eventos_agente e join conversaciones c on c.id = e.conversacion_id
-        where c.cliente_id = $1 and e.detalle->>'etapa' = 'envio_programado' and e.detalle->>'tipo' = 'recordatorio_24h'`,
+        where c.cliente_id = $1 and e.detalle->>'etapa' = 'envio_programado' and e.detalle->>'tipo' = 'recordatorio_18h'`,
       [a]
     );
     assert(marca.ok && enCharla.n === 1 && ev.n === 1, "al salir: recordatorio_enviado_at, el mensaje en la charla del cliente y el evento en la bitácora");
-    assert(!(await pendientes("recordatorio_24h")).includes(t1), "correr el cron otra vez no lo vuelve a mandar");
+    assert(!(await pendientes("recordatorio_18h")).includes(t1), "correr el cron otra vez no lo vuelve a mandar");
 
     // Reintentos: con Meta caída reintenta hasta 3 veces y después no más.
-    const LUEGO = "2030-06-05T17:00:00-03:00"; // el de las 16 de mañana ya entró en las 24 hs
+    const LUEGO = "2030-06-05T23:00:00-03:00"; // el de las 16 de mañana ya entró en las 18 hs
     const b = (await q("select cliente_id from turnos where id = $1", [t2]))[0].cliente_id;
-    assert((await pendientes("recordatorio_24h", LUEGO)).includes(t2), "dos horas después, el de las 16 de mañana ya entra");
+    assert((await pendientes("recordatorio_18h", LUEGO)).includes(t2), "más tarde, el de las 16 de mañana ya entra en las 18 hs");
     for (let i = 1; i <= 3; i++) {
-      const id = (await q("select envio_reservar('recordatorio_24h', $1, $2, 'recordatorio_turno_24h') as id", [t2, b]))[0].id;
+      const id = (await q("select envio_reservar('recordatorio_18h', $1, $2, 'recordatorio_turno_18h') as id", [t2, b]))[0].id;
       if (id) await q("select envio_terminar($1, false, null, 'texto', 'Meta respondió 500')", [id]);
     }
-    const [e2] = await q("select estado, intentos from envios_programados where tipo = 'recordatorio_24h' and referencia = $1", [t2]);
-    const sinMas = (await q("select envio_reservar('recordatorio_24h', $1, $2, 'recordatorio_turno_24h') as id", [t2, b]))[0].id;
-    assert(e2.estado === "error" && e2.intentos === 3 && sinMas === null && !(await pendientes("recordatorio_24h", LUEGO)).includes(t2), "con Meta caída reintenta hasta 3 veces y después no insiste");
+    const [e2] = await q("select estado, intentos from envios_programados where tipo = 'recordatorio_18h' and referencia = $1", [t2]);
+    const sinMas = (await q("select envio_reservar('recordatorio_18h', $1, $2, 'recordatorio_turno_18h') as id", [t2, b]))[0].id;
+    assert(e2.estado === "error" && e2.intentos === 3 && sinMas === null && !(await pendientes("recordatorio_18h", LUEGO)).includes(t2), "con Meta caída reintenta hasta 3 veces y después no insiste");
 
     // Agradecimiento
     const t5 = await turno(await cliente("5490000001405"), "2030-06-01T14:00:00-03:00", { probador: 2 });
@@ -667,7 +672,7 @@ async function testEnviosProgramados() {
     await client.query("savepoint como_anon");
     try {
       await client.query("set local role anon");
-      await client.query("select * from envios_pendientes('recordatorio_24h', 'UTC')");
+      await client.query("select * from envios_pendientes('recordatorio_18h', 'UTC')");
     } catch (err) {
       codigo = err.code;
     }

@@ -122,9 +122,11 @@ language plpgsql
 set search_path = public
 as $$
 declare
-  v_rescatados integer;
+  v_rescatados integer := 0;
   f record;
 begin
+  -- Se cuenta adentro del loop: después de un FOR, `row_count` es el de la última sentencia que
+  -- corrió adentro (o cero si no corrió ninguna), no el del UPDATE.
   for f in
     update cola_trabajos
        set intentos = intentos + 1,
@@ -134,11 +136,11 @@ begin
      where estado = 'procesando' and tomado_at < now() - interval '5 minutes'
     returning conversacion_id, intentos
   loop
+    v_rescatados := v_rescatados + 1;
     if f.intentos >= 2 then
       perform cola_derivar_por_fallo(f.conversacion_id, 'el trabajo quedó trabado y se agotaron los 2 intentos');
     end if;
   end loop;
-  get diagnostics v_rescatados = row_count;
   return v_rescatados;
 end;
 $$;

@@ -12,14 +12,14 @@ const TURNO = "2d7f6c1e-8a3b-4c5d-9e0f-1a2b3c4d5e6f";
 const CHARLA = "0b1c2d3e-4f50-4617-8293-a4b5c6d7e8f9";
 
 Deno.test("recordatorio: nombre, día y hora en orden, y un botón por acción con el turno", () => {
-  const p = armarPlantilla("recordatorio_24h", {
+  const p = armarPlantilla("recordatorio_18h", {
     nombre: "juan pérez",
     inicio: new Date("2030-06-06T16:00:00-03:00"),
     referencia: TURNO,
     linkResena: null,
   }, TZ);
   assert(!("falta" in p));
-  assertEquals(p.nombre, "recordatorio_turno_24h");
+  assertEquals(p.nombre, "recordatorio_turno_18h");
   assertEquals(p.idioma, "es_AR");
   assertEquals(p.cuerpo, ["Juan", "jueves 6 de junio", "16:00"]);
   assertEquals(p.botones, [`CONFIRMO:${TURNO}`, `REPROGRAMAR:${TURNO}`]);
@@ -82,7 +82,7 @@ Deno.test("enviarPlantilla arma el pedido de Meta: cuerpo, un componente por bot
     return Promise.resolve(new Response(JSON.stringify({ messages: [{ id: "wamid.PLANTILLA" }] }), { status: 200 }));
   }) as typeof fetch;
   const id = await enviarPlantilla({ token: "t", phoneNumberId: "1" }, "5493410000000", {
-    nombre: "recordatorio_turno_24h",
+    nombre: "recordatorio_turno_18h",
     idioma: "es_AR",
     cuerpo: ["Juan", "jueves 6 de junio", "16:00"],
     botones: [`CONFIRMO:${TURNO}`, `REPROGRAMAR:${TURNO}`],
@@ -90,7 +90,7 @@ Deno.test("enviarPlantilla arma el pedido de Meta: cuerpo, un componente por bot
   assertEquals(id, "wamid.PLANTILLA");
   assertEquals(pedido.type, "template");
   const template = pedido.template as { name: string; language: { code: string }; components: Record<string, unknown>[] };
-  assertEquals([template.name, template.language.code], ["recordatorio_turno_24h", "es_AR"]);
+  assertEquals([template.name, template.language.code], ["recordatorio_turno_18h", "es_AR"]);
   assertEquals(template.components[0], {
     type: "body",
     parameters: [{ type: "text", text: "Juan" }, { type: "text", text: "jueves 6 de junio" }, { type: "text", text: "16:00" }],
