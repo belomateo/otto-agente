@@ -1263,14 +1263,28 @@ try {
 
   seccion("H1.16 — aviso de turno antes de que empiece (decisión #10)");
   {
-    // Turnos del cliente de prueba alrededor de ahora, en probadores que no se pisan.
-    const nuevo = async (desdeMin, probador, estado = "sin-confirmar", confirmadoPor = null) =>
-      (await q(
-        `insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin, estado, confirmado, confirmado_por)
-         values ($1, 'invitado', 45, $2, now() + make_interval(mins => $3::int), now() + make_interval(mins => $3::int + 45), $4, $5, $6)
-         returning id`,
-        [cli, probador, desdeMin, estado, confirmadoPor !== null, confirmadoPor]
-      ))[0].id;
+    // Turnos del cliente de prueba alrededor de ahora. El probador pedido es solo un punto de
+    // partida: con producción en vivo (16/9) puede haber un turno real ahí mismo, así que ante
+    // un choque (23P01, turnos_sin_solapamiento) se prueba con los demás probadores de la
+    // agenda antes de rendirse — a estas pruebas no les importa CUÁL probador termina usando.
+    const cantidadProbadores = (await q("select cantidad_probadores from configuracion_agenda"))[0].cantidad_probadores;
+    const nuevo = async (desdeMin, probador, estado = "sin-confirmar", confirmadoPor = null) => {
+      for (let intento = 0; intento < cantidadProbadores; intento++) {
+        const p = ((probador - 1 + intento) % cantidadProbadores) + 1;
+        try {
+          return (
+            await q(
+              `insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin, estado, confirmado, confirmado_por)
+               values ($1, 'invitado', 45, $2, now() + make_interval(mins => $3::int), now() + make_interval(mins => $3::int + 45), $4, $5, $6)
+               returning id`,
+              [cli, p, desdeMin, estado, confirmadoPor !== null, confirmadoPor]
+            )
+          )[0].id;
+        } catch (e) {
+          if (e.code !== "23P01" || intento === cantidadProbadores - 1) throw e;
+        }
+      }
+    };
     const tA = await nuevo(10, 1); // empieza en 10': sale
     const tB = await nuevo(120, 1); // en 2 h: no sale
     const tC = await nuevo(-20, 2, "confirmado", "cliente"); // empezó hace 20' y sigue: sale
@@ -1289,9 +1303,12 @@ try {
     const a = nuestros.find((t) => t.id === tA);
     const ficha = (await q("select nombre, telefono, email, fecha_evento::text fecha_evento, talle_aprox, color_preferido, notas_libres from clientes where id = $1", [cli]))[0];
     ok(
-      a?.cliente.nombre === ficha.nombre && a.cliente.telefono === ficha.telefono && a.cliente.email === ficha.email && a.cliente.fecha_evento === ficha.fecha_evento && a.cliente.talle_aprox === ficha.talle_aprox && a.cliente.color_preferido === ficha.color_preferido && a.cliente.notas === ficha.notas_libres && Boolean(a.cliente.evento) && Boolean(a.cliente.rol) && /^\d\d:\d\d$/.test(a.desde) && /^\d\d:\d\d$/.test(a.hasta) && a.t === "Invitado · 45’" && a.p === "Probador 1" && a.cliente_confirmo === false && a.enlaces.charla === `/bandeja/charla?id=${conv}` && a.enlaces.ficha === `/clientes?id=${cli}`,
+      a?.cliente.nombre === ficha.nombre && a.cliente.telefono === ficha.telefono && a.cliente.email === ficha.email && a.cliente.fecha_evento === ficha.fecha_evento && a.cliente.talle_aprox === ficha.talle_aprox && a.cliente.color_preferido === ficha.color_preferido && a.cliente.notas === ficha.notas_libres && Boolean(a.cliente.evento) && Boolean(a.cliente.rol) && /^\d\d:\d\d$/.test(a.desde) && /^\d\d:\d\d$/.test(a.hasta) && a.t === "Invitado · 45’" && a.p === "Probador 1" && a.cliente_confirmo === false && a.enlaces.charla === `/bandeja/charla?id=${conv}` && a.enlaces.ficha === null,
       `el cartel trae el turno, la ficha (con el mail, 2.4) y los links (${a?.desde}–${a?.hasta}, ${a?.t}, ${a?.cliente.nombre}, ${a?.cliente.email}, ${a?.cliente.evento} ${a?.cliente.fecha_evento_corta}, ${a?.cliente.rol}, talle ${a?.cliente.talle_aprox}, ${a?.cliente.color_preferido})`
     );
+    const gAdmin = await api(sa, "GET", "/api/turnos/avisos");
+    const aAdmin = (gAdmin.datos.turnos ?? []).find((t) => t.id === tA);
+    ok(aAdmin?.enlaces.ficha === `/clientes?id=${cli}`, `un admin sí ve el link a la ficha (${aAdmin?.enlaces.ficha})`);
     ok(ficha.email === "juan.perez@gmail.com", `(control del propio test) el mail sigue puesto y normalizado antes del aviso: ${ficha.email}`);
     const c = nuestros.find((t) => t.id === tC);
     ok(c?.cliente_confirmo === true && c.confirmado_por === "cliente", "el que confirmó el cliente sale marcado como confirmado por WhatsApp");

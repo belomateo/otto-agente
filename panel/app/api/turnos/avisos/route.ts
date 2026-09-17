@@ -4,4 +4,4 @@
 import { rutaConsulta } from '@/lib/api/consulta';
 import { turnosPorAvisar } from '@/lib/queries/avisos';
 
-export const GET = rutaConsulta(async (s) => turnosPorAvisar(s.supabase));
+export const GET = rutaConsulta(async (s) => turnosPorAvisar(s.supabase, s.perfil.rol === 'admin'));

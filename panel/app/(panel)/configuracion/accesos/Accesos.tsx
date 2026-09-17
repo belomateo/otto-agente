@@ -8,12 +8,15 @@
 // "Usuarios" es una aproximación: GET /api/accesos?estado=aprobada lista solicitudes
 // resueltas, no un directorio de cuentas — no trae el rol actual de cada una (ese dato no se
 // puede listar desde el panel), así que no se muestra un chip Admin/Equipo que sería
-// inventado. "Quitar" queda deshabilitado: no hay ruta para sacarle el acceso a alguien.
+// inventado. "Quitar" pasa por DELETE /api/accesos/usuarios/[id] con el perfil_id de la
+// solicitud (no su propio id): saca el acceso reusando perfiles.estado = 'rechazado'. Solo
+// admin; la base sola frena que alguien se saque el acceso a sí mismo (42501).
 //
 // Con un usuario 'equipo' (no admin), los dos pedidos dan 403: se explica en vez de mostrar
 // una pantalla a medias.
 
 import { useState } from 'react';
+import { enviar, ErrorApi } from '@/components/api/cliente';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
 import { Cargando } from '@/components/ui-otto/Cargando';
@@ -23,7 +26,6 @@ import { useAccesos } from '../AccesosContexto';
 import { TARJETA } from '../AccionesEdicion';
 import type { SolicitudAcceso } from '@/lib/queries/accesos';
 
-const SIN_CONECTAR = 'Todavía no conectado: no hay ruta para sacarle el acceso a alguien.';
 const TITULO = 'text-[14px] font-medium text-grafito md:text-[13px]';
 
 function FilaSolicitud({ s, onAprobar, onRechazar, ocupado }: { s: SolicitudAcceso; onAprobar: () => void; onRechazar: () => void; ocupado: boolean }) {
@@ -49,9 +51,10 @@ function FilaSolicitud({ s, onAprobar, onRechazar, ocupado }: { s: SolicitudAcce
 
 export function Accesos() {
   const { pendientes, cargando, error, aprobar, rechazar } = useAccesos();
-  const { datos: aprobadas, cargando: cargandoAprobadas, error: errorAprobadas } = useDatos<{ solicitudes: SolicitudAcceso[] }>('/api/accesos?estado=aprobada');
+  const { datos: aprobadas, cargando: cargandoAprobadas, error: errorAprobadas, recargar: recargarAprobadas } = useDatos<{ solicitudes: SolicitudAcceso[] }>('/api/accesos?estado=aprobada');
   const { toast, mostrar } = useToastLocal();
   const [ocupadoId, setOcupadoId] = useState<string | null>(null);
+  const [aConfirmar, setAConfirmar] = useState<string | null>(null);
 
   if (cargando && pendientes.length === 0 && !error) return <Cargando />;
   if (error) return <EstadoError mensaje={`No se pudo abrir Accesos: ${error}`} />;
@@ -62,6 +65,20 @@ export function Accesos() {
     setOcupadoId(null);
     if (err) mostrar(err, true);
     else mostrar(accion === 'aprobar' ? `${nombre} ya puede entrar · Equipo` : `Solicitud de ${nombre} rechazada`, false);
+  }
+
+  async function quitar(perfilId: string, nombre: string) {
+    setOcupadoId(perfilId);
+    setAConfirmar(null);
+    try {
+      await enviar(`/api/accesos/usuarios/${perfilId}`, 'DELETE');
+      await recargarAprobadas();
+      mostrar(`Se le sacó el acceso a ${nombre}`, false);
+    } catch (e) {
+      mostrar(e instanceof ErrorApi ? e.message : 'No se pudo sacar el acceso', true);
+    } finally {
+      setOcupadoId(null);
+    }
   }
 
   return (
@@ -104,9 +121,25 @@ export function Accesos() {
                   {u.email ?? '—'} · aprobado {u.hace}
                 </div>
               </div>
-              <button type="button" disabled title={SIN_CONECTAR} className="flex-none px-1 text-[14px] font-medium text-ladrillo/50 md:text-[13px]">
-                Quitar
-              </button>
+              {aConfirmar === u.perfil_id ? (
+                <div className="flex flex-none items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={ocupadoId === u.perfil_id}
+                    onClick={() => quitar(u.perfil_id, u.nombre ?? 'esta persona')}
+                    className="px-1 text-[14px] font-medium text-ladrillo disabled:opacity-50 md:text-[13px]"
+                  >
+                    ¿Seguro? Sí, sacar
+                  </button>
+                  <button type="button" onClick={() => setAConfirmar(null)} className="px-1 text-[14px] font-medium text-grafito md:text-[13px]">
+                    No
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setAConfirmar(u.perfil_id)} className="flex-none px-1 text-[14px] font-medium text-ladrillo/70 md:text-[13px]">
+                  Quitar
+                </button>
+              )}
             </div>
           ))
         )}

@@ -48,8 +48,9 @@ export type AvisoTurno = {
   /** El cliente con el evento más cercano: le tocó el turno más próximo (0046, decisión de
    *  Mateo). Lo pone logica desde el cálculo de huecos. */
   urgencia: boolean;
-  /** Links de las pantallas del panel; front los conecta en 1.17. */
-  enlaces: { charla: string | null; ficha: string };
+  /** Links de las pantallas del panel; front los conecta en 1.17. `ficha` solo para admin
+   *  (/api/clientes/[id] es admin-only, 0045): un 'equipo' se queda con el link a la charla. */
+  enlaces: { charla: string | null; ficha: string | null };
 };
 
 export type AvisosDeTurno = {
@@ -58,7 +59,7 @@ export type AvisosDeTurno = {
   turnos: AvisoTurno[];
 };
 
-export async function turnosPorAvisar(db: ClienteDb): Promise<AvisosDeTurno> {
+export async function turnosPorAvisar(db: ClienteDb, esAdmin: boolean): Promise<AvisosDeTurno> {
   const [turnos, config] = await Promise.all([
     db
       .from('turnos_por_avisar')
@@ -140,7 +141,7 @@ export async function turnosPorAvisar(db: ClienteDb): Promise<AvisosDeTurno> {
         urgencia: t.urgencia,
         enlaces: {
           charla: conversacion ? `/bandeja/charla?id=${conversacion}` : null,
-          ficha: `/clientes?id=${t.cliente_id}`,
+          ficha: esAdmin ? `/clientes?id=${t.cliente_id}` : null,
         },
       };
     }),
