@@ -142,6 +142,7 @@ function armar(c: Contexto, o: Opciones = {}) {
     tz: "America/Argentina/Cordoba",
     derivacionTel: null,
     baseFotos: BASE_FOTOS,
+    adjuntos: { base: "https://ejemplo.test/storage/v1/object/adjuntos/", clave: "clave-de-prueba" },
     calendario: calendarioPropio,
     turno: turno.fn,
     fetcher: meta.fetcher,
@@ -349,6 +350,123 @@ prueba("el mostrador fuera de las 24 hs: no sale, y el mensaje queda marcado (00
   assertEquals([m.wa_message_id, m.no_enviado_motivo], [null, "ventana_cerrada"]);
   const ev = (await eventos(c, TEL_AFUERA)).find((e) => e.detalle.etapa === "mostrador");
   assertEquals([ev?.tipo, ev?.detalle.no_enviado_motivo], ["error", "ventana_cerrada"]);
+});
+
+// Un doble que además de Meta atiende al bucket: la foto del mostrador (0048) se baja de Storage,
+// se sube a /media y recién ahí se manda. Son tres llamadas de tres formas distintas.
+function metaConFotos() {
+  const envios: Record<string, unknown>[] = [];
+  const pedidos: string[] = [];
+  let i = 0;
+  const fetcher = ((url: string | URL | Request, init?: RequestInit) => {
+    const u = String(url);
+    pedidos.push(u);
+    if (u.includes("/storage/v1/object/adjuntos/")) {
+      if ((init?.headers as Record<string, string>)?.Authorization !== "Bearer clave-de-prueba") {
+        return Promise.resolve(new Response("no autorizado", { status: 401 }));
+      }
+      return Promise.resolve(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
+    }
+    if (u.endsWith("/media")) {
+      envios.push({ media: (init?.body as FormData).get("type") });
+      return Promise.resolve(Response.json({ id: "media-de-prueba" }));
+    }
+    envios.push(JSON.parse(String(init?.body)));
+    return Promise.resolve(Response.json({ messages: [{ id: `wamid.SALIDA-${i++}` }] }));
+  }) as typeof fetch;
+  return { fetcher, envios, pedidos };
+}
+
+async function charlaTomada(c: Contexto, telefono: string) {
+  await mensajeDelCliente(c, telefono, "hola, me pasás una foto?");
+  const conv = (await c.sql.query(
+    "select c.id from conversaciones c join clientes cl on cl.id = c.cliente_id where cl.telefono = $1",
+    [telefono],
+  )).rows[0].id;
+  await c.sql.query("update conversaciones set estado = 'derivada' where id = $1", [conv]);
+  return conv as string;
+}
+
+async function subirAlBucket(c: Contexto, ruta: string) {
+  await c.sql.query(
+    `insert into storage.objects (bucket_id, name, metadata)
+     values ('adjuntos', $1, jsonb_build_object('mimetype', 'image/jpeg', 'size', 120000))`,
+    [ruta],
+  );
+}
+
+prueba("una foto del mostrador: se baja del bucket privado, se sube a /media y sale por media_id", async (c) => {
+  const conv = await charlaTomada(c, TEL_AFUERA);
+  await subirAlBucket(c, "2026/traje-azul.jpg");
+  const r = (await c.sql.query(
+    "select mostrador_enviar_foto($1, $2, $3) as r",
+    [conv, "2026/traje-azul.jpg", "mirá este, es el que te decía"],
+  )).rows[0].r;
+  const { d, turno } = armar(c);
+  const meta = metaConFotos();
+  d.fetcher = meta.fetcher;
+
+  await atenderCola(c.db, d, "worker-prueba");
+
+  // No pasó por Lucía: lo escribió una persona.
+  assertEquals(turno.llamadas.length, 0);
+  // Bajó del bucket, subió a /media y mandó la foto por id y el epígrafe como texto aparte.
+  assertEquals(meta.pedidos.some((u) => u.endsWith("/storage/v1/object/adjuntos/2026/traje-azul.jpg")), true);
+  assertEquals(meta.envios[0], { media: "image/jpeg" });
+  assertEquals((meta.envios[1] as { image: { id: string } }).image.id, "media-de-prueba");
+  assertEquals(textoDe(meta.envios[2]), "mirá este, es el que te decía");
+  // En la charla: la foto con su ruta y el epígrafe con la marca, cada uno con su wamid.
+  const ms = (await c.sql.query(
+    "select id, tipo, contenido, wa_message_id from mensajes where id = any($1::uuid[]) order by enviado_at",
+    [[r.mensaje_id, r.epigrafe_mensaje_id]],
+  )).rows;
+  assertEquals(ms.map((m) => [m.tipo, m.contenido]), [
+    ["imagen", "[mostrador] 2026/traje-azul.jpg"],
+    ["texto", "[mostrador] mirá este, es el que te decía"],
+  ]);
+  assertEquals(ms.every((m) => m.wa_message_id !== null), true);
+  const ev = (await eventos(c, TEL_AFUERA)).find((e) => e.detalle.etapa === "mostrador-foto");
+  assertEquals([ev?.tipo, ev?.detalle.foto], ["ok", "2026/traje-azul.jpg"]);
+});
+
+prueba("una foto del mostrador que ya salió no se manda de nuevo si el trabajo se reintenta", async (c) => {
+  const conv = await charlaTomada(c, TEL_AFUERA);
+  await subirAlBucket(c, "otra.jpg");
+  const r = (await c.sql.query("select mostrador_enviar_foto($1, $2) as r", [conv, "otra.jpg"])).rows[0].r;
+  const { d } = armar(c);
+  const meta = metaConFotos();
+  d.fetcher = meta.fetcher;
+
+  await atenderCola(c.db, d, "worker-prueba");
+  const salieron = meta.envios.length;
+  // El mismo trabajo otra vez (lo que hace la cola si el worker se cayó después de mandar).
+  await c.sql.query("update cola_trabajos set estado = 'pendiente', tomado_at = null where conversacion_id = $1", [conv]);
+  await atenderCola(c.db, d, "worker-prueba");
+
+  assertEquals(meta.envios.length, salieron);
+  const m = (await c.sql.query("select wa_message_id from mensajes where id = $1", [r.mensaje_id])).rows[0];
+  assertEquals(m.wa_message_id, "wamid.SALIDA-0");
+});
+
+prueba("una foto del mostrador fuera de las 24 hs: no sale, y queda marcada igual que el texto", async (c) => {
+  const conv = await charlaTomada(c, TEL_AFUERA);
+  await subirAlBucket(c, "tarde.jpg");
+  const r = (await c.sql.query("select mostrador_enviar_foto($1, $2, $3) as r", [conv, "tarde.jpg", "mirá"])).rows[0].r;
+  const { d } = armar(c, { desdeSeg: 25 * 3600 });
+  const meta = metaConFotos();
+  d.fetcher = meta.fetcher;
+
+  await atenderCola(c.db, d, "worker-prueba");
+
+  assertEquals(meta.envios.length, 0);
+  const ms = (await c.sql.query(
+    "select wa_message_id, no_enviado_motivo from mensajes where id = any($1::uuid[])",
+    [[r.mensaje_id, r.epigrafe_mensaje_id]],
+  )).rows;
+  assertEquals(ms.map((m) => [m.wa_message_id, m.no_enviado_motivo]), [
+    [null, "ventana_cerrada"],
+    [null, "ventana_cerrada"],
+  ]);
 });
 
 prueba("una caída de Meta se salva con el reintento: salen las dos burbujas", async (c) => {
