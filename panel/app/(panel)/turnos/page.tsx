@@ -181,13 +181,13 @@ function AccionesTurno({ turno, compacto = false, onCambio }: { turno: FilaTurno
   );
 }
 
-function Popover({ turno, onCerrar, onCambio }: { turno: FilaTurno; onCerrar: () => void; onCambio: () => void }) {
+function Popover({ turno, probadores, onCerrar, onCambio }: { turno: FilaTurno; probadores: number; onCerrar: () => void; onCambio: () => void }) {
   const actual = PASOS.findIndex((p) => p.estado === turno.estado);
+  // min(...): con 4 columnas o más el cálculo por fracción puede empujar los 300 px del
+  // popover fuera de la grilla en las últimas columnas — se sujeta al borde derecho.
+  const izquierda = `min(calc(56px + (100% - 56px) * ${(turno.probador - 1) / probadores} + 34px), calc(100% - 308px))`;
   return (
-    <div
-      className="absolute z-10 w-[300px] rounded-otto border border-borde bg-lino p-4 shadow-otto-pop"
-      style={{ left: `calc(56px + (100% - 56px) * ${(turno.probador - 1) / 3} + 34px)`, top: y(inicioMin(turno)) + 72 }}
-    >
+    <div className="absolute z-10 w-[300px] rounded-otto border border-borde bg-lino p-4 shadow-otto-pop" style={{ left: izquierda, top: y(inicioMin(turno)) + 72 }}>
       <div className="flex items-baseline gap-2">
         <span className="flex-1 font-serif text-lg font-semibold">{turno.n}</span>
         <button type="button" onClick={onCerrar} aria-label="Cerrar" className="text-lg leading-none text-grafito">
@@ -303,7 +303,7 @@ function Grilla({
           ))}
         </div>
 
-        {abierto && <Popover turno={abierto} onCerrar={() => onAbrir(null)} onCambio={onCambio} />}
+        {abierto && <Popover turno={abierto} probadores={probadores.length} onCerrar={() => onAbrir(null)} onCambio={onCambio} />}
       </div>
     </>
   );

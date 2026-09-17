@@ -7,7 +7,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
@@ -22,17 +22,26 @@ const SIN_CONECTAR_MES = 'El filtro por mes todavía no está conectado';
 export default function ClientesPage() {
   const idSeleccionado = useSearchParams().get('id');
   const [busqueda, setBusqueda] = useState('');
+  const [busquedaFiltro, setBusquedaFiltro] = useState('');
   const [evento, setEvento] = useState('');
-  const ruta = `/api/clientes${evento ? `?evento=${evento}` : ''}${busqueda.trim() ? `${evento ? '&' : '?'}q=${encodeURIComponent(busqueda.trim())}` : ''}`;
+
+  // 280ms: cada letra no dispara su propio pedido (ni reemplaza la tabla por «Cargando» a
+  // mitad de tipear el nombre de alguien).
+  useEffect(() => {
+    const id = setTimeout(() => setBusquedaFiltro(busqueda), 280);
+    return () => clearTimeout(id);
+  }, [busqueda]);
+
+  const ruta = `/api/clientes${evento ? `?evento=${evento}` : ''}${busquedaFiltro.trim() ? `${evento ? '&' : '?'}q=${encodeURIComponent(busquedaFiltro.trim())}` : ''}`;
   const { datos, cargando, error, recargar } = useDatos<{ clientes: FilaCliente[]; total: number }>(ruta);
   const lista = datos?.clientes ?? [];
 
   const contenido =
-    cargando && lista.length === 0 ? (
+    cargando && datos === null ? (
       <Cargando />
     ) : error ? (
       <EstadoError mensaje={error} onReintentar={recargar} />
-    ) : lista.length === 0 && !busqueda && !evento ? (
+    ) : lista.length === 0 && !busquedaFiltro && !evento ? (
       <EstadoVacio titulo={VACIO.titulo} texto={VACIO.texto} />
     ) : null;
 

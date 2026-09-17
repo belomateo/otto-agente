@@ -21,7 +21,7 @@ const TABS = [
 type Usuario = { nombre: string; rol: string };
 
 export function TabbarMobile({
-  pendientes = 2,
+  pendientes,
   usuario,
 }: {
   pendientes?: number;
@@ -48,7 +48,7 @@ export function TabbarMobile({
             >
               <span className="relative">
                 <Icon width={20} height={20} />
-                {key === 'atencion' && pendientes > 0 && (
+                {key === 'atencion' && (pendientes ?? 0) > 0 && (
                   <span className="absolute -right-4 -top-2 min-w-[20px] rounded-pill bg-ladrillo px-1.5 text-center text-[14px] font-semibold leading-[18px] text-lino">
                     {pendientes}
                   </span>

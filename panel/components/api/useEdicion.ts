@@ -49,14 +49,21 @@ export function useEdicion<T extends { version: number }>(inicial: T) {
    * igual a la forma del borrador en pantalla (por ejemplo, talles como texto separado por
    * comas acá y como array allá): por eso no se tipa como `Partial<T>`. Si la fila que
    * devuelve el servidor tampoco es exactamente `T` (mismo caso: la fila real trae `talles`,
-   * no `talles_texto`), `mapear` arma el borrador de nuevo a partir de esa fila; si no se
-   * pasa, se asume que la fila ya tiene la forma de `T`.
+   * no `talles_texto`), `mapear` arma el borrador de nuevo a partir de esa fila.
+   *
+   * Sin `mapear` NO se usa la fila cruda como borrador nuevo: la fila real de la base trae
+   * columnas que no están en `T` (id, teléfono, columnas de sistema…) y quedarían pegadas al
+   * borrador. Si eso pasa, el próximo guardado manda ese borrador entero como `cambios` — y
+   * como el validador solo acepta las columnas de la entidad (zod strictObject), ese segundo
+   * guardado explota con "Datos inválidos" aunque nada haya cambiado. En vez de eso, se
+   * conserva la forma de `valor` (que ya es la correcta: es lo que se acaba de mandar) y solo
+   * se toma la versión nueva de la fila.
    */
   async function guardar(ruta: string, cambios: Record<string, unknown>, mapear?: (filaCruda: unknown) => T): Promise<string | null> {
     setGuardando(true);
     try {
       const { fila } = await enviar<{ fila: unknown }>(ruta, 'PATCH', { version: guardado.version, ...cambios });
-      const nuevo = mapear ? mapear(fila) : (fila as T);
+      const nuevo = mapear ? mapear(fila) : ({ ...valor, version: (fila as { version: number }).version } as T);
       setGuardado(nuevo);
       setValor(nuevo);
       return null;

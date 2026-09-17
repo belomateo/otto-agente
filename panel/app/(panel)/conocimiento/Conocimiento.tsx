@@ -14,9 +14,9 @@ import { Switch } from '@/components/ui-otto/Switch';
 import { PanelHistorial } from '@/components/api/PanelHistorial';
 import { enviar, obtener, ErrorApi } from '@/components/api/cliente';
 import { useEdicion } from '@/components/api/useEdicion';
+import { useToastLocal } from '@/components/ui-otto/useToastLocal';
 import type { FilaFragmento, ResultadoBusqueda, SeccionConocimiento } from '@/lib/queries/conocimiento';
 
-const SIN_CONECTAR = 'Todavía no conectado';
 
 function Buscador() {
   const [consulta, setConsulta] = useState('cuanto se paga de seña');
@@ -161,18 +161,6 @@ function FragmentoCard({ f, onGuardado }: { f: FilaFragmento; onGuardado: () => 
       {historialAbierto && <PanelHistorial tabla="fragmentos" id={f.id} versionActual={edicion.guardado.version} onCerrar={() => setHistorialAbierto(false)} onRestaurado={onGuardado} />}
     </div>
   );
-}
-
-// Un toast mínimo, en el lugar (no flotante): esta tarjeta ya tiene su propio layout y no hace
-// falta el patrón fijo de ToastFlotante para un mensaje de una línea.
-function useToastLocal() {
-  const [msj, setMsj] = useState<{ texto: string; error: boolean } | null>(null);
-  function mostrar(texto: string, error: boolean) {
-    setMsj({ texto, error });
-    setTimeout(() => setMsj(null), 4000);
-  }
-  const toast = msj && <div className={`mt-2 text-[14px] ${msj.error ? 'text-ladrillo' : 'text-salvia'}`}>{msj.texto}</div>;
-  return { toast, mostrar };
 }
 
 function Secciones({ secciones, onGuardado }: { secciones: SeccionConocimiento[]; onGuardado: () => void }) {
