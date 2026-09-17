@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   if (!esUuid(modeloId)) return error(400, 'Falta modelo_id o no es válido');
   if (!(archivo instanceof File) || archivo.size === 0) return error(400, 'Falta el archivo');
   const extension = EXTENSION_FOTO[archivo.type];
-  if (!extension) return error(400, 'Solo fotos JPG, PNG o WebP');
+  if (!extension) return error(400, 'Solo fotos JPG o PNG');
   if (archivo.size > TAMANO_MAXIMO_FOTO) return error(400, 'La foto pesa más de 5 MB');
 
   const { data: modelo, error: e1 } = await s.supabase

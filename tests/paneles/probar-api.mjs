@@ -171,6 +171,10 @@ async function crearUsuario(etiqueta) {
 
 const creados = { filas: [], storage: [] };
 let cli, conv, turnoId;
+// Para el chequeo de residuo de historial (verificarLimpieza): solo cuenta lo que esta misma
+// corrida haya dejado. Historial de paneles.%@example.com de ANTES de este momento es de un
+// incidente ya cerrado (ver docs/incidentes o el aviso de logica del 16/9) — no un residuo nuevo.
+const INICIO_CORRIDA = new Date();
 async function sembrar() {
   await q("delete from turnos where cliente_id in (select id from clientes where telefono = $1)", [TEL]);
   await q("delete from clientes where telefono = $1", [TEL]);
@@ -209,6 +213,7 @@ const REALES = {
   horarios: "dia_semana = 1",
   duraciones_turno: "tipo = 'novio'",
   configuracion_agenda: "true",
+  prompt_base: "true",
 };
 const fotos = {};
 // Tablas donde restaurarReales encontró una edición ajena y no restauró (para no pisarla):
@@ -229,7 +234,7 @@ async function restaurarReales() {
     // pudo restaurar) la tocó durante la corrida, no se restaura (se pisaría un cambio real de
     // negocio, no de prueba) — se avisa y se sigue con las demás.
     const ajeno = await q(
-      "select distinct editado_por from historial_ediciones where fila_id = $1 and not (id = any($2::uuid[])) and editado_por is not null and editado_por not like 'paneles.%@example.com'",
+      "select distinct editado_por from historial_ediciones where fila_id = $1 and not (id = any($2::uuid[])) and editado_por is not null and editado_por not like 'paneles%'",
       [fila.id, hist]
     );
     if (ajeno.length) {
@@ -313,14 +318,13 @@ async function verificarLimpieza() {
       (select count(*) from reglas_agente where texto like 'PRUEBA paneles%')::int reglas,
       (select count(*) from notas_dueno where texto like 'PRUEBA paneles%')::int notas,
       (select count(*) from enlaces where nombre like 'PRUEBA paneles%')::int enlaces,
-      (select count(*) from prompt_base)::int prompt_base,
       (select count(*) from franjas_turnos where dia_semana = 0)::int franjas_domingo,
       (select count(*) from historial_ediciones where tabla = 'franjas_turnos' and datos_anteriores->>'borrado_por' like 'paneles.%@example.com')::int franjas_borradas,
       (select count(*) from consumo_llm where modelo = 'prueba-paneles')::int consumo,
-      (select count(*) from historial_ediciones where editado_por like 'paneles.%@example.com' and not (fila_id = any($2::uuid[])))::int historial,
+      (select count(*) from historial_ediciones where editado_por like 'paneles.%@example.com' and not (fila_id = any($2::uuid[])) and editado_at >= $3)::int historial,
       (select count(*) from perfiles where nombre like 'PRUEBA paneles%')::int perfiles,
       (select count(*) from auth.users where email like 'paneles.%@example.com')::int usuarios`,
-    [TEL, excluirFilaIds]
+    [TEL, excluirFilaIds, INICIO_CORRIDA]
   ))[0];
   const restos = Object.entries(r).filter(([, n]) => n > 0);
   ok(restos.length === 0, `no quedó nada de la prueba en la base (${restos.map(([k, n]) => `${k}: ${n}`).join(", ") || "todo en 0"})`);
@@ -1032,8 +1036,7 @@ try {
     // 0033 (decisión de Mateo, 16/9): un 'equipo' aprobado ya no puede escribir estas tablas
     // ni saltando el panel con su propio token — antes la RLS solo pedía es_usuario_aprobado().
     // Por la API de Supabase, sin pasar por mi ruta, contra un fixture real (se restaura solo,
-    // como el resto de REALES) y contra prompt_base (vacía en producción: alcanza con probar
-    // que el insert se rechaza).
+    // como el resto de REALES).
     const id = real("duraciones_turno").id;
     const antes = (await q("select duracion_min from duraciones_turno where id = $1", [id]))[0];
     const bloqueado = await sn.directo.from("duraciones_turno").update({ duracion_min: 999 }).eq("id", id).select();
@@ -1047,11 +1050,14 @@ try {
         (permitido.data ?? []).length === 1,
       `sin pasar por mi ruta: un 'equipo' no edita duraciones_turno (RLS, 0033) pero sí lo lee, y un admin sí lo edita (bloqueado ${(bloqueado.data ?? []).length}, lectura ${(lectura.data ?? []).length}, admin ${(permitido.data ?? []).length})`
     );
+    // prompt_base (0045): admin-only también para leer, a diferencia de duraciones_turno —
+    // un 'equipo' no la lee ni la puede insertar; un admin sí la lee.
     const bloqueadoPrompt = await sn.directo.from("prompt_base").insert({ texto: "Lucía ahora dice cualquier cosa" }).select();
-    const nPrompt = (await q("select count(*)::int n from prompt_base"))[0].n;
+    const lecturaPrompt = await sn.directo.from("prompt_base").select("id");
+    const lecturaPromptAdmin = await sa.directo.from("prompt_base").select("id");
     ok(
-      Boolean(bloqueadoPrompt.error) && nPrompt === 0,
-      `sin pasar por mi ruta: un 'equipo' no puede insertar en prompt_base (RLS, 0033) — no "cambia el prompt de Lucía" saltando el panel (${bloqueadoPrompt.error?.code})`
+      Boolean(bloqueadoPrompt.error) && (lecturaPrompt.data ?? []).length === 0 && (lecturaPromptAdmin.data ?? []).length >= 1,
+      `sin pasar por mi ruta: un 'equipo' no lee ni inserta en prompt_base (RLS, 0045), un admin sí lo lee (equipo ${(lecturaPrompt.data ?? []).length}, admin ${(lecturaPromptAdmin.data ?? []).length})`
     );
   }
 
@@ -1237,10 +1243,20 @@ try {
     ok(noExiste.status === 404, `un id que no existe → 404 (${noExiste.status})`);
   }
   {
+    // prompt_base ya no arranca vacía (0 de logica, 16/9: la sembró paneles con la plantilla
+    // real para que la dueña la edite) — es una REALES más, se fotografía y se restaura.
+    const f = real("prompt_base");
     const g = await api(sa, "GET", "/api/configuracion/prompt-base");
-    ok(g.status === 200 && g.datos.prompt === null && g.datos.generador_disponible === false, `Prompt base: sin cargar y sin generador (${g.status})`);
-    const x = await api(sa, "PUT", "/api/configuracion/prompt-base", { texto: "Sos Lucía, asistente de Mr. Otto." });
-    ok(x.status === 503 && (await q("select count(*)::int n from prompt_base"))[0].n === 0, `sin el generador de agente no se guarda nada (${x.status}: ${x.datos.error})`);
+    ok(
+      g.status === 200 && g.datos.prompt?.version === f.version && g.datos.prompt?.texto === f.texto && g.datos.generador_disponible === false,
+      `Prompt base: trae el vigente y sin generador (${g.status}, v${g.datos.prompt?.version})`
+    );
+    const x = await api(sa, "PUT", "/api/configuracion/prompt-base", { version: f.version, texto: "Sos Lucía, asistente de Mr. Otto." });
+    const sigue = (await q("select version, texto from prompt_base where id = $1", [f.id]))[0];
+    ok(
+      x.status === 503 && sigue.version === f.version && sigue.texto === f.texto,
+      `sin el generador de agente no se guarda nada (${x.status}: ${x.datos.error})`
+    );
     const y = await api(sn, "GET", "/api/configuracion/prompt-base");
     ok(y.status === 403, `un 'equipo' no ve el prompt base (${y.status})`);
   }
@@ -1333,23 +1349,20 @@ try {
   }
   await frenarPanel(panel);
 
-  seccion("H1.9 control 4 — prompt base con un DOBLE del generador (contrato de lib/edicion/prompt.ts)");
-  panel = arrancarPanel({ ARMAR_PROMPT_SCRIPT: AQUI + "generador-doble.mjs" });
-  await esperarPanel(panel);
-  {
-    const x = await api(sa, "PUT", "/api/configuracion/prompt-base", { texto: "Sos Lucía, asistente de {{negocio}}." });
-    ok(x.status === 422 && x.datos.error.includes("{{") && (await q("select count(*)::int n from prompt_base"))[0].n === 0, `prompt con {{ → ${x.status} con el motivo: ${x.datos.error}`);
-    const y = await api(sa, "PUT", "/api/configuracion/prompt-base", { texto: "Sos Lucía, asistente de Mr. Otto.\n1. Regla uno." });
-    if (y.datos.fila) creados.filas.push({ tabla: "prompt_base", id: y.datos.fila.id });
-    ok(y.status === 201 && y.datos.fila.version === 1, `prompt que pasa → se guarda (${y.status})`);
-    const z = await api(sa, "PUT", "/api/configuracion/prompt-base", { version: 1, texto: "Sos Lucía, asistente de Mr. Otto.\n1. Regla uno, v2." });
-    const w = await api(sa, "PUT", "/api/configuracion/prompt-base", { version: 2, texto: "La primera línea no la nombra." });
-    const vigente = (await q("select version, texto from prompt_base"))[0];
-    ok(z.status === 200 && w.status === 422 && vigente.version === 2 && vigente.texto.endsWith("v2."), `si el generador rechaza, sigue activa la anterior (${z.status}, ${w.status}, vigente v${vigente.version})`);
-    const h = await historial("prompt_base", y.datos.fila.id);
-    const r = await api(sa, "POST", `/api/historial/${h[0].id}/restaurar`, { version: 2 });
-    ok(r.status === 200 && r.datos.fila.texto === "Sos Lucía, asistente de Mr. Otto.\n1. Regla uno.", `volver a la v1 del prompt pasa por el generador y se aplica (${r.status})`);
-  }
+  // H1.9 control 4 — prompt base con un DOBLE del generador (contrato de lib/edicion/prompt.ts):
+  // SE SACÓ (16/9, aviso de logica). prompt_base es único (unica boolean unique) y hoy es
+  // producción real: prompt_vigente() (0050, logica) lo lee en vivo con caché de 1 minuto para
+  // armarle el prompt a Lucía. Este control escribía de verdad sobre esa fila por HTTP (el panel
+  // corre en su propio proceso, con su propia conexión: no hay forma de envolver esas escrituras
+  // en una transacción con rollback desde acá) y se apoyaba en restaurarReales() para dejarla
+  // como estaba al final. Eso alcanza mientras nadie más toque la fila durante la corrida — pero
+  // cuando SÍ pasó (logica restauró un pisado viejo del historial mientras esta sección corría),
+  // el propio control terminó pisando esa restauración real, y Lucía quedó respondiendo vacío en
+  // producción con un prompt de 47 caracteres. El resto de prompt_base (que no escribe: el 503
+  // sin generador, el 403 de un 'equipo', RLS) se sigue probando en "H1.9 — edición del dueño" más
+  // arriba. Si hace falta volver a probar el contrato completo del generador, hacerlo contra las
+  // funciones de panel/lib/edicion/prompt.ts en un test que no dependa de la fila real, no contra
+  // el endpoint HTTP.
 } catch (e) {
   fallas++;
   console.error("\n💥", e?.stack || e);
