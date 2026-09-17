@@ -211,6 +211,9 @@ const REALES = {
   configuracion_agenda: "true",
 };
 const fotos = {};
+// Tablas donde restaurarReales encontró una edición ajena y no restauró (para no pisarla):
+// verificarLimpieza no las cuenta como una falla, es un aviso, no un bug del código.
+const saltadosRestaurar = new Set();
 async function fotografiar() {
   for (const [tabla, where] of Object.entries(REALES)) {
     const fila = (await q(`select * from ${tabla} where ${where} limit 1`))[0];
@@ -221,21 +224,51 @@ async function fotografiar() {
 }
 async function restaurarReales() {
   for (const [tabla, { fila, hist }] of Object.entries(fotos)) {
-    await db.query("begin");
-    try {
-      // Sin trigger de historial solo dentro de esta transacción: nadie más lo ve apagado.
-      await db.query(`alter table ${tabla} disable trigger trg_historial`);
-      const cols = Object.keys(fila).filter((c) => c !== "id");
-      await db.query(`update ${tabla} set ${cols.map((c, i) => `${c} = $${i + 2}`).join(", ")} where id = $1`, [
-        fila.id,
-        ...cols.map((c) => fila[c]),
-      ]);
-      await db.query(`alter table ${tabla} enable trigger trg_historial`);
-      await db.query("delete from historial_ediciones where fila_id = $1 and not (id = any($2::uuid[]))", [fila.id, hist]);
-      await db.query("commit");
-    } catch (e) {
-      await db.query("rollback");
-      throw e;
+    // La base es la real y esta fila la puede estar editando Mateo/front al mismo tiempo: si
+    // alguien que no es un admin de prueba (de esta corrida o de una anterior que tampoco
+    // pudo restaurar) la tocó durante la corrida, no se restaura (se pisaría un cambio real de
+    // negocio, no de prueba) — se avisa y se sigue con las demás.
+    const ajeno = await q(
+      "select distinct editado_por from historial_ediciones where fila_id = $1 and not (id = any($2::uuid[])) and editado_por is not null and editado_por not like 'paneles.%@example.com'",
+      [fila.id, hist]
+    );
+    if (ajeno.length) {
+      saltadosRestaurar.add(tabla);
+      console.error(
+        `  ⚠️  ${tabla} (id ${fila.id}) lo editó alguien más durante la corrida (${ajeno.map((r) => r.editado_por ?? "sin editado_por").join(", ")}): no se restaura para no pisarle el cambio real. Revisalo a mano.`
+      );
+      continue;
+    }
+    // Reintenta ante un deadlock (40P01): con Mateo/front editando la misma fila en vivo, mi
+    // update puede cruzarse con el suyo. Un par de reintentos alcanza; si sigue, se avisa y se
+    // sigue con las demás en vez de tirar abajo toda la limpieza.
+    for (let intento = 1; ; intento++) {
+      try {
+        await db.query("begin");
+        // Sin trigger de historial solo dentro de esta transacción: nadie más lo ve apagado.
+        await db.query(`alter table ${tabla} disable trigger trg_historial`);
+        const cols = Object.keys(fila).filter((c) => c !== "id");
+        await db.query(`update ${tabla} set ${cols.map((c, i) => `${c} = $${i + 2}`).join(", ")} where id = $1`, [
+          fila.id,
+          ...cols.map((c) => fila[c]),
+        ]);
+        await db.query(`alter table ${tabla} enable trigger trg_historial`);
+        await db.query("delete from historial_ediciones where fila_id = $1 and not (id = any($2::uuid[]))", [fila.id, hist]);
+        await db.query("commit");
+        break;
+      } catch (e) {
+        await db.query("rollback").catch(() => {});
+        if (e.code === "40P01" && intento < 3) {
+          await new Promise((r) => setTimeout(r, 200 * intento));
+          continue;
+        }
+        if (e.code === "40P01") {
+          console.error(`  ⚠️  ${tabla} (id ${fila.id}): deadlock tras ${intento} intentos, no se restauró. Revisalo a mano.`);
+          saltadosRestaurar.add(tabla);
+          break;
+        }
+        throw e;
+      }
     }
   }
 }
@@ -266,6 +299,11 @@ async function limpiar() {
   }
 }
 async function verificarLimpieza() {
+  // Las REALES que no se restauraron (edición ajena durante la corrida) se quedan con
+  // historial de la prueba a propósito: no se cuenta como residuo, ya está avisado aparte.
+  const excluirFilaIds = Object.entries(fotos)
+    .filter(([tabla]) => saltadosRestaurar.has(tabla))
+    .map(([, { fila }]) => fila.id);
   const r = (await q(
     `select
       (select count(*) from clientes where telefono = $1)::int clientes,
@@ -279,10 +317,10 @@ async function verificarLimpieza() {
       (select count(*) from franjas_turnos where dia_semana = 0)::int franjas_domingo,
       (select count(*) from historial_ediciones where tabla = 'franjas_turnos' and datos_anteriores->>'borrado_por' like 'paneles.%@example.com')::int franjas_borradas,
       (select count(*) from consumo_llm where modelo = 'prueba-paneles')::int consumo,
-      (select count(*) from historial_ediciones where editado_por like 'paneles.%@example.com')::int historial,
+      (select count(*) from historial_ediciones where editado_por like 'paneles.%@example.com' and not (fila_id = any($2::uuid[])))::int historial,
       (select count(*) from perfiles where nombre like 'PRUEBA paneles%')::int perfiles,
       (select count(*) from auth.users where email like 'paneles.%@example.com')::int usuarios`,
-    [TEL]
+    [TEL, excluirFilaIds]
   ))[0];
   const restos = Object.entries(r).filter(([, n]) => n > 0);
   ok(restos.length === 0, `no quedó nada de la prueba en la base (${restos.map(([k, n]) => `${k}: ${n}`).join(", ") || "todo en 0"})`);
@@ -303,6 +341,10 @@ async function verificarLimpieza() {
     ok(n === 0, `no quedaron los clientes sueltos de Atención humana (${n})`);
   }
   for (const [tabla, { fila }] of Object.entries(fotos)) {
+    if (saltadosRestaurar.has(tabla)) {
+      console.log(`  ℹ️  ${tabla}: no se restauró a propósito (edición real ajena durante la corrida, ya avisado arriba)`);
+      continue;
+    }
     const ahora = (await q(`select version, editado_por, editado_at from ${tabla} where id = $1`, [fila.id]))[0];
     ok(
       ahora.version === fila.version && ahora.editado_por === fila.editado_por && +ahora.editado_at === +fila.editado_at,
@@ -667,7 +709,20 @@ try {
     );
     const versionEnBase = (await q("select version from turnos where id = $1", [turnoId]))[0].version;
     ok(t?.version === versionEnBase, `GET /api/turnos trae version (sin esto, el PATCH de estado no tiene qué mandar): ${t?.version} vs. ${versionEnBase} en la base`);
-    ok(x.datos.horario?.apertura === "10:00" && x.datos.horario?.corte_desde === "14:00" && x.datos.probadores === 3, `el día trae horario y probadores de las tablas (${JSON.stringify(x.datos.horario)}, ${x.datos.probadores})`);
+    // Contra la base real, no valores fijos: Mateo edita horarios y configuracion_agenda desde
+    // el panel (ya le sacó el corte del mediodía al lunes-viernes, 16/9).
+    const horarioReal = (
+      await q(
+        "select hora_apertura::text apertura, hora_cierre::text cierre, corte_desde::text corte_desde, corte_hasta::text corte_hasta from horarios where dia_semana = extract(dow from '2031-01-15'::date)"
+      )
+    )[0];
+    const probadoresReal = (await q("select cantidad_probadores from configuracion_agenda"))[0].cantidad_probadores;
+    ok(
+      x.datos.horario?.apertura === horarioReal.apertura.slice(0, 5) &&
+        x.datos.horario?.corte_desde === (horarioReal.corte_desde?.slice(0, 5) ?? null) &&
+        x.datos.probadores === probadoresReal,
+      `el día trae horario y probadores de las tablas (${JSON.stringify(x.datos.horario)}, ${x.datos.probadores})`
+    );
     // Contra la base real, no un valor fijo: Mateo carga franjas reales desde el panel y esto
     // dejaría de ser cierto en cuanto las cambie (ya pasó una vez, 16/9).
     const franjasDe = async (fecha) =>
