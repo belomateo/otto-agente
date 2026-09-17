@@ -45,7 +45,7 @@ Un proyecto nuevo, solo para Otto. Nada compartido con otros clientes de ZW Labs
 7. `0007_rls.sql` — RLS en todas las tablas. `anon` ve cero filas. Un usuario
    autenticado **sin perfil aprobado** también ve cero filas.
 8. `0008_storage.sql` — bucket `catalogo` (público lectura) y `adjuntos` (privado).
-9. `0009_cron.sql` — pg_cron: recordatorio 24 hs, recontacto post-devolución,
+9. `0009_cron.sql` — pg_cron: recordatorio 18 hs, recontacto post-devolución,
    analista nocturno, limpieza de cola.
 10. `0010_auth_solicitudes.sql` — `perfiles` (rol: admin / equipo) y
     `solicitudes_acceso` (pendiente / aprobada / rechazada). El primer admin se
@@ -56,8 +56,8 @@ Un proyecto nuevo, solo para Otto. Nada compartido con otros clientes de ZW Labs
 | Función | Trigger | Hace |
 | --- | --- | --- |
 | `webhook-whatsapp` | POST de Meta | Verifica firma, dedup por `wa_message_id`, guarda mensaje, encola. Responde 200 en < 1 s siempre. |
-| `worker` | pg_cron cada 10 s / o llamada tras encolar | Toma trabajos, corre el turno del agente (ver `AGENTE.md` § 3), envía por Meta, escribe bitácora. |
-| `cron-envios` | pg_cron por `tipo` (0022) | Los cuatro envíos por plantilla: recordatorio 24 hs antes del turno (marca `recordatorio_enviado_at`), agradecimiento con pedido de reseña tras la devolución, y los dos recontactos. Apagado mientras `CRONS_ENVIOS` no valga `on`: espera que Meta apruebe las plantillas. |
+| `worker` | trigger al encolar + cron de contención cada minuto | Toma trabajos, corre el turno del agente (ver `AGENTE.md` § 3), envía por Meta, escribe bitácora. |
+| `cron-envios` | pg_cron por `tipo` (0022) | Los cuatro envíos por plantilla: recordatorio 18 hs antes del turno (0045; marca `recordatorio_enviado_at`), agradecimiento con pedido de reseña tras la devolución, y los dos recontactos. Ninguno sale fuera de 9:00–21:00 (0047). Apagado mientras `CRONS_ENVIOS` no valga `on`: espera que Meta apruebe las plantillas. |
 | `cron-analista` | pg_cron 03:00 | Subagente LLM que lee las charlas del día y propone mejoras (ver `PROCESOS.md` § 6). |
 | — | webhook (respuesta al botón) | La confirmación del turno **no es una función aparte**: la resuelve el `worker` (`confirmarPorBoton` en `atender.ts`, `turno_confirmar_por_boton` en 0021). |
 | `probar-agente` | POST desde `scripts/` | Emulador: mismo agente, misma base, sin Meta, sin Calendar real (usa modo dry-run). |
@@ -196,7 +196,8 @@ DERIVACION_ALQUILER_TEL            # a quién se avisa cuando Lucía deriva
 
 - Edge Functions: timeout ~150 s; el turno del agente tiene que cerrar en < 25 s o
   derivar. Máximo 6 iteraciones de tool calling por turno.
-- pg_cron cada 10 s para el worker está bien para el volumen de un local; si crece,
+- el worker se despierta por trigger al encolar, con un cron de contención cada minuto
+  por si un trabajo queda trabado; alcanza de sobra para el volumen de un local; si crece,
   se pasa a Supabase Queues o a un webhook que dispare el worker al encolar.
 - Meta: plantillas fuera de ventana tienen costo por conversación; el
   `cron-recordatorios` agrupa y no reenvía si ya salió.
