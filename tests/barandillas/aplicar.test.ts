@@ -4,7 +4,7 @@
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { aplicarBarandillas, BARANDILLAS } from "../../supabase/functions/_shared/barandillas/index.ts";
-import { AHORA, entrada, HORA_MS, revisorDoble } from "./_ayuda.ts";
+import { AHORA, entrada, HORA_MS } from "./_ayuda.ts";
 
 Deno.test("son 14 y van en orden formato → contenido → reglas", () => {
   assertEquals(BARANDILLAS.length, 14);
@@ -47,6 +47,27 @@ Deno.test("en el primer intento, dos barandillas que piden rehacer se rehacen un
   assertMatch(r.instruccion ?? "", /consultar_catalogo/);
 });
 
+// Hallazgo de la auditoría, 17/9: si lo único que salta es un "cortar" (sin_relleno,
+// presentacion_repetida, confirmacion_doble) y el corte deja el mensaje vacío, antes esto caía
+// en "enviar" con texto "" — el cliente se quedaba sin nada y ni siquiera quedaba una
+// derivación: mudo sin que nadie se entere. Ahora cuenta como si hubiera que rehacer.
+Deno.test("un corte que vacía el mensaje entero no sale como 'enviar' vacío: pide rehacer, y a la segunda deriva", async () => {
+  const r = await aplicarBarandillas(entrada("Quedo atenta."));
+  assertEquals(r.decision, "rehacer");
+  assertEquals(r.texto, "");
+  assertMatch(r.instruccion ?? "", /vacío/);
+
+  const r2 = await aplicarBarandillas(entrada("Quedo atenta."), { saltosPrevios: 1 });
+  assertEquals(r2.decision, "derivar");
+  assertEquals(r2.motivoDerivacion, "barandilla_doble");
+});
+
+Deno.test("un corte que deja el mensaje con contenido real sigue saliendo tal cual (caso parecido)", async () => {
+  const r = await aplicarBarandillas(entrada("Te espero el jueves. Quedo atenta."));
+  assertEquals(r.decision, "enviar");
+  assertEquals(r.texto, "Te espero el jueves.");
+});
+
 Deno.test("fuera de la ventana de Meta, bloquear le gana a todo", async () => {
   const r = await aplicarBarandillas(
     entrada("¿Cómo estás? ¿Seguís interesado?", { ultimoMensajeClienteAt: new Date(AHORA.getTime() - 25 * HORA_MS) }),
@@ -77,14 +98,3 @@ Deno.test("las de formato no llaman a ningún LLM: son funciones sincrónicas de
   }
 });
 
-Deno.test("en todo el recorrido, el revisor solo se llama para una negativa dudosa", async () => {
-  const revisor = revisorDoble({ ok: true, motivo: "" });
-  for (const texto of ["**hola**", "Quedo atenta.", "¿a? ¿b?", "x ".repeat(400), "Sale $150.000", "A las 16:15", "Soy una IA"]) {
-    await aplicarBarandillas(entrada(texto, { revisor }));
-  }
-  assertEquals(revisor.llamadas, 0);
-  await aplicarBarandillas(
-    entrada("No hacemos envíos a otras ciudades, pero te lo dejamos listo en el local para que lo retires el día antes.", { revisor }),
-  );
-  assertEquals(revisor.llamadas, 1);
-});

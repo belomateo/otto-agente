@@ -1,5 +1,5 @@
 // Ayudas de las pruebas de barandillas (hito 1.5). Todo en memoria: las barandillas trabajan
-// sobre el texto de salida y la traza del turno, sin base y sin LLM (el revisor es un doble).
+// sobre el texto de salida y la traza del turno, sin base y sin LLM.
 
 import type { EntradaBarandilla } from "../../supabase/functions/_shared/barandillas/tipos.ts";
 import { type Traza, trazaNueva } from "../../supabase/functions/_shared/traza.ts";
@@ -19,16 +19,4 @@ export function traza(p: { herramientas?: string[]; precios?: number[]; horas?: 
 
 export function entrada(texto: string, extra: Partial<EntradaBarandilla> = {}): EntradaBarandilla {
   return { texto, traza: trazaNueva(), ahora: AHORA, ultimoMensajeClienteAt: HACE_UN_MINUTO, esPrimerMensaje: false, ...extra };
-}
-
-// Doble del revisor (LLM_CLASIFICADOR): contesta lo que se le pida y cuenta las llamadas.
-export function revisorDoble(respuesta: { ok: boolean; motivo: string }) {
-  const doble = Object.assign(
-    (_p: { regla: string; texto: string }) => {
-      doble.llamadas++;
-      return Promise.resolve(respuesta);
-    },
-    { llamadas: 0 },
-  );
-  return doble;
 }

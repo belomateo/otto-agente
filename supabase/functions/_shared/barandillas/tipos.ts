@@ -1,7 +1,6 @@
 // Tipos de las barandillas (AGENTE.md § 6, hito 1.5). Una barandilla mira el texto que Lucía le
 // quiere mandar al cliente y la traza del turno (qué herramientas llamó y qué le devolvieron),
-// y dice si salta, qué hace el código y por qué (el motivo va a la bitácora). Todas son código;
-// solo no_a_secas le puede preguntar al revisor (LLM_CLASIFICADOR), y solo en el caso dudoso.
+// y dice si salta, qué hace el código y por qué (el motivo va a la bitácora). Todas son código.
 
 import type { Traza } from "../traza.ts";
 
@@ -16,16 +15,12 @@ export type Accion =
   | "ejecutar_derivacion" // Lucía anunció un pase: el código lo ejecuta
   | "bloquear"; // fuera de la ventana de Meta: texto libre no, solo plantilla
 
-// Revisor de salida (AGENTE.md § 11): responde si el texto cumple una regla. En los tests, un doble.
-export type Revisor = (p: { regla: string; texto: string }) => Promise<{ ok: boolean; motivo: string }>;
-
 export type EntradaBarandilla = {
   texto: string;
   traza: Traza;
   ahora: Date;
   ultimoMensajeClienteAt: Date | null;
   esPrimerMensaje: boolean;
-  revisor?: Revisor;
 };
 
 export type ResultadoBarandilla =

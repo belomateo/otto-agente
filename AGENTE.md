@@ -200,7 +200,7 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | `accesorio_sin_herramienta` | Menciona zapato(s), cinturón, corbata o camisa sin `consultar_accesorios` en este turno (hallazgo del 15/9 con un principal más económico: la palabra "obligatoria" del prompt sola no alcanzaba) | Rehace |
 | `deriva_y_pregunta` | `derivar_a_persona` + `?` en el mismo mensaje | Quita la pregunta |
 | `anuncia_sin_derivar` | «te paso con», «le derivo» sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
-| `no_a_secas` | Mensaje que arranca negando, es corto y no ofrece nada. Si arranca negando pero es largo u ofrece algo, decide el revisor (`LLM_CLASIFICADOR`) | Rehace |
+| `no_a_secas` | Mensaje que arranca negando, es corto y no ofrece nada. Si arranca negando pero es largo u ofrece algo (caso dudoso), no salta | Rehace |
 | `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje); además, desde el 15/9 (hallazgo M3 del tester), un patrón más amplio: "ia" cerca de una palabra de meta-funcionamiento («instrucción», «configuración», «protege», «entrena», «responde de forma segura»), para cubrir una frase que rodea el tema sin decir ninguna de las exactas de arriba | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
@@ -356,7 +356,6 @@ aviso: quien esté del otro lado tiene que estar mirando la pestaña.
 | --- | --- | --- | --- |
 | **Clasificador** | `LLM_CLASIFICADOR` | Paso 4 de cada turno | Mensaje + últimas 3 líneas → `{intencion, urgencia, derivar_duro}` JSON |
 | **Extractor** | `LLM_EXTRACTOR` | Paso 10 de cada turno | Turno completo → ficha del cliente (§ 7) JSON. Solo lo dicho. |
-| **Revisor de salida** | `LLM_CLASIFICADOR` | Solo si una barandilla semántica lo pide (ej. `no_a_secas`) | Respuesta → `{ok, motivo}` |
 | **Analista nocturno** | `LLM_ANALISTA` | 03:00 | Charlas del día + reglas → propuestas de fragmentos nuevos, fallas por regla, objeciones sin guion. **Propone, no aplica** (ver `PROCESOS.md` § 6). |
 
 Ninguno escribe en la base directamente: devuelven JSON, el código valida contra

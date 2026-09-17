@@ -44,6 +44,11 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   // un mes — "el 23 de la tarde"): en español nadie dice un precio así ("te sale el 90" no es
   // una frase real); acotado a 1-31 para no comerse un "el 150" si alguna vez apareciera.
   /\bel\s+(?:[12]?\d|3[01])\b/g,
+  // Porcentaje (hallazgo de la auditoría, 17/9): "se abona el 100%" o "la seña es del 50 por
+  // ciento" no son precios — son la sección que-incluye/reserva-y-garantia hablando de una
+  // proporción, no un monto en pesos.
+  /\b\d{1,3}\s*%/g,
+  /\b\d{1,3}\s+por\s*ciento\b/g,
 ];
 
 function enmascararContexto(normalizado: string): string {

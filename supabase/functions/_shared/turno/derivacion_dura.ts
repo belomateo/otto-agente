@@ -16,9 +16,17 @@ export type DerivacionDura = { motivo: MotivoDerivacion; porQue: string };
 
 // dañ* cubre dañado/dañada/dañó/daños. "manchad*" se suma porque la ficha del negocio habla de
 // "prenda dañada o manchada" (AGENTE.md § 5, regla 13) con las mismas palabras.
+// OJO: el patrón corre sobre `normalizar(mensaje)` (abajo), que le saca los acentos Y LA Ñ (NFD
+// descompone ñ en n + tilde combinante, que normalizar() también borra): "dañado" llega como
+// "danado". Por eso el patrón va en "dan...", no en "dañ..." — un patrón con ñ literal nunca
+// matchea nada normalizado (hallazgo de la auditoría, 17/9: la derivación dura por prenda dañada
+// no disparaba nunca, quedaba solo el clasificador). "dan(?:ad|ar|o|os|a|as)" evita el falso
+// positivo de "dan"/"dando" (verbo dar) sin agregar ninguno nuevo salvo "danos" (imperativo de
+// dar, poco común acá) — más vale un falso positivo que derive de más que la falla actual, donde
+// nunca deriva.
 const PALABRAS: { motivo: MotivoDerivacion; patron: RegExp; porQue: string }[] = [
   { motivo: "reclamo", patron: /\breclam\w*/, porQue: "la palabra \"reclamo\"" },
-  { motivo: "prenda_danada", patron: /\bdañ\w*/, porQue: "la palabra \"dañ...\"" },
+  { motivo: "prenda_danada", patron: /\bdan(?:ad|ar|o|os|a|as)\w*/, porQue: "la palabra \"dañ...\"" },
   { motivo: "prenda_danada", patron: /\bmanchad\w*/, porQue: "la palabra \"manchad...\"" },
   { motivo: "corporativo", patron: /\bcorporativ\w*/, porQue: "la palabra \"corporativo\"" },
   { motivo: "corporativo", patron: /\bunifor\w*/, porQue: "la palabra \"uniforme\"" },

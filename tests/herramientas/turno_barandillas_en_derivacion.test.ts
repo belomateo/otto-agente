@@ -11,9 +11,10 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import type { Db, Fila } from "../../supabase/functions/_shared/db.ts";
 import { calendarioDeEnsayo } from "../../supabase/functions/_shared/herramientas/tipos.ts";
+import { horaLocal } from "../../supabase/functions/_shared/tiempo.ts";
 import { correrTurno } from "../../supabase/functions/_shared/turno/turno.ts";
 import { sinSignosDeApertura } from "../../supabase/functions/_shared/whatsapp/preparar.ts";
-import { AHORA, conBase, contar, fila, prueba, TZ } from "./_arnes.ts";
+import { AHORA, conBase, contar, crearTurno, fila, prueba, TZ } from "./_arnes.ts";
 
 // Arma una respuesta de Chat Completions mínima, con o sin tool_call.
 function respuestaChat(p: { contenido?: string | null; toolCall?: { nombre: string; argumentos: unknown } }) {
@@ -314,3 +315,43 @@ prueba("dos saltos del mismo turno derivan barandilla_doble de verdad: fila en d
   assertEquals([der?.motivo, der?.estado], ["barandilla_doble", "pendiente"]);
   assertEquals((await fila(sql, "select estado from conversaciones where id = $1", [conversacionId])).estado, "derivada");
 });
+
+// Hallazgo de la auditoría, 17/9: traza.ts y horario_sin_herramienta.ts prometen que las horas
+// de los turnos activos del cliente (las que ya le pasamos en el contexto, CONTEXTO.md § "SUS
+// TURNOS") quedan sembradas en traza.horasDevueltas — pero nadie las sembraba de verdad. El
+// cliente preguntando por la hora de SU PROPIO turno, con el modelo repitiéndola tal cual la vio
+// en el contexto, hacía saltar horario_sin_herramienta igual que si la hubiera inventado.
+prueba(
+  "el cliente pregunta la hora de su propio turno: el modelo la repite del contexto y no salta horario_sin_herramienta",
+  async ({ ctx, sql, conversacionId, clienteId }) => {
+    const inicio = new Date(AHORA.getTime() + 7 * 24 * 60 * 60 * 1000);
+    await crearTurno(sql, { clienteId, inicio, tipo: "invitado" });
+    const hora = horaLocal(inicio, TZ);
+    await insertarEntrante(sql, conversacionId, "¿a qué hora era mi turno?");
+    const fetcher = ((_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      const esClasificador = body.response_format?.json_schema?.name === "clasificacion";
+      const esExtractor = body.response_format?.json_schema?.name === "ficha";
+      if (esClasificador) {
+        return Promise.resolve(respuestaChat({ contenido: JSON.stringify({ intencion: "otro", urgencia: "baja", derivar_duro: false, motivo_derivacion: null }) }));
+      }
+      if (esExtractor) {
+        return Promise.resolve(respuestaChat({
+          contenido: JSON.stringify({
+            nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+            talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+          }),
+        }));
+      }
+      return Promise.resolve(respuestaChat({ contenido: `Tu turno es a las ${hora}, te esperamos.` }));
+    }) as unknown as typeof fetch;
+
+    const resultado = await correrTurno(ctx.db, {
+      clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+      calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+    });
+
+    assertEquals(resultado.derivo, false, "no tenía que derivar: la hora ya estaba en el contexto, no la inventó");
+    assertEquals(resultado.mensajesAlCliente, [`Tu turno es a las ${hora}, te esperamos.`]);
+  },
+);
