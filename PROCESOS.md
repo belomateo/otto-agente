@@ -41,7 +41,7 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
 | Elección de momento | 🧠→🔧 | Lucía pregunta mañana/tarde; `buscar_horarios` calcula huecos reales | traza en `eventos_agente` |
 | Agenda | 🔧 | `agendar_turno` valida hueco, horario laboral, datos mínimos, sin turno previo → fila + evento en Google Calendar | `turnos`, `google_event_id` |
 | Confirmación al cliente | 🔧 | Texto fijo: día, hora, España 764, mapa, un acompañante, 45 min con 10 de tolerancia, la reserva del traje se abona en el local, avisar si no puede | `mensajes` |
-| Recontacto si NO agendó | 🔧 | Consultó y no agendó → plantilla al día siguiente y a las 72 hs, una vez cada una | `recontactos` |
+| Recontacto si NO agendó | 🔧 | Consultó y no agendó → plantilla al día siguiente y a las 72 hs, una vez cada una | `envios_programados` |
 | 24 hs antes | 🔧 | Plantilla `recordatorio_turno_18h` con botones. `recordatorio_enviado_at` | `turnos` |
 | Confirmación | 🔧 | **Solo** cuando llega la respuesta al botón "Confirmo" se marca `confirmado=true`, con `confirmado_por = 'cliente'`. Ninguna interpretación del LLM lo marca. "Reprogramar" → Lucía retoma con `reprogramar_turno` | `turnos.confirmado_at` |
 | Sin respuesta al recordatorio | 👤 | Aparece en Turnos con estado "sin confirmar"; el equipo decide llamar | panel |
@@ -155,7 +155,7 @@ sistemas son datos en mal estado.
    migración esté aplicada en producción (`supabase migration list`).
 7. 🔧 `supabase functions deploy` + `vercel --prod`.
 8. 🔧 Un guion de humo contra producción con el número de prueba
-   (`invitado-casamiento`), verificado en la base y en el Calendar.
+   (`invitado-casamiento`), verificado en la base.
 9. 📋 Fila en `deploys` con commit, quién, informes.
 
 ---

@@ -149,6 +149,53 @@ async function borrarSinEnviar(db: Db, conversacionId: string, burbujas: string[
   }
 }
 
+// Anota las fotos en la charla ANTES de mandarlas, igual que las burbujas (0044). Antes se
+// insertaban recién DESPUÉS de salir por Meta, y como las burbujas van primero, una caída de
+// Meta en la primera burbuja relanzaba el trabajo y las fotos no quedaban en ningún lado: el
+// reintento mandaba el texto y las fotos se perdían para siempre, sin un solo rastro. El cliente
+// leía «te paso dos modelos» y no le llegaba ninguno (hallazgo de la auditoría del 17/9).
+async function anotarFotos(db: Db, conversacionId: string, links: string[]) {
+  const filas: { id: string; contenido: string }[] = [];
+  for (const link of links) {
+    // Detrás de la última burbuja: el turno fecha las suyas con el reloj de la función y la base
+    // tiene el suyo; así la charla queda en el orden en que salió.
+    const [f] = await db.consulta<{ id: string }>(
+      `insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at)
+       select $1::uuid, 'saliente', 'imagen', $2,
+              greatest(clock_timestamp(), max(enviado_at) + interval '10 milliseconds')
+         from mensajes where conversacion_id = $1::uuid
+       returning id::text as id`,
+      [conversacionId, link],
+    );
+    if (f) filas.push({ id: f.id, contenido: link });
+  }
+  return filas;
+}
+
+// Manda las fotos ya anotadas y les completa el wamid. Una foto que falla NO tumba el turno —el
+// texto ya salió, que es lo que importa— pero queda en la bitácora y su fila sigue pendiente, así
+// que el próximo reintento la vuelve a intentar en vez de darla por perdida.
+async function mandarFotos(
+  db: Db,
+  d: Dependencias,
+  conversacionId: string,
+  telefono: string,
+  filas: { id: string; contenido: string }[],
+  simulado: boolean,
+) {
+  let enviadas = 0;
+  for (const f of filas) {
+    try {
+      const waMessageId = simulado ? null : await conReintento(d, () => enviarImagen(d.wa, telefono, f.contenido, d.fetcher));
+      if (waMessageId) await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [f.id, waMessageId]);
+      enviadas++;
+    } catch (e) {
+      await evento(db, conversacionId, "error", { etapa: "envio-foto", foto: f.contenido, error: mensajeDeError(e) });
+    }
+  }
+  return enviadas;
+}
+
 // Lo que devolvió el turno sale por Meta en orden: primero las burbujas, cada una completa su fila
 // con el wamid; después las fotos. Si una burbuja no sale ni con el reintento se cortan las que
 // siguen (el orden importa). El turno no se repite: ya corrió, ya agendó si tenía que agendar.
@@ -235,9 +282,11 @@ async function retomarEnvio(db: Db, d: Dependencias, t: Trabajo, telefono: strin
     return { retomado: true, en_duda: enDuda.length, derivada: true };
   }
   const textos = pendientes.filter((m) => m.tipo === "texto" && m.contenido).map((m) => m.contenido as string);
-  if (!textos.length) return { retomado: true, nada_pendiente: true };
+  const fotos = pendientes.filter((m) => m.tipo === "imagen" && m.contenido).map((m) => ({ id: m.id, contenido: m.contenido as string }));
+  if (!textos.length && !fotos.length) return { retomado: true, nada_pendiente: true };
   if (!puedeTextoLibre(await ultimoMensajeDelCliente(db, t.conversacion_id), d.ahora())) {
     await borrarSinEnviar(db, t.conversacion_id, textos);
+    for (const f of fotos) await db.consulta("delete from mensajes where id = $1::uuid", [f.id]);
     await evento(db, t.conversacion_id, "error", {
       etapa: "envio",
       error: "fuera de la ventana de 24 hs: solo se puede mandar una plantilla",
@@ -247,7 +296,8 @@ async function retomarEnvio(db: Db, d: Dependencias, t: Trabajo, telefono: strin
   }
   const simulado = esTelefonoFicticio(telefono);
   const enviadas = simulado ? 0 : await mandarBurbujas(db, d, t.conversacion_id, telefono, textos);
-  return { retomado: true, enviadas, ...(simulado ? { simulado: true } : {}) };
+  const fotosEnviadas = await mandarFotos(db, d, t.conversacion_id, telefono, fotos, simulado);
+  return { retomado: true, enviadas, ...(fotosEnviadas ? { fotos_enviadas: fotosEnviadas } : {}), ...(simulado ? { simulado: true } : {}) };
 }
 
 async function entregar(db: Db, d: Dependencias, conversacionId: string, telefono: string, r: ResultadoTurno) {
@@ -276,27 +326,13 @@ async function entregar(db: Db, d: Dependencias, conversacionId: string, telefon
   }
 
   const simulado = esTelefonoFicticio(telefono);
+  // Primero se anotan las fotos, después sale todo: si Meta se cae en el medio, quedan pendientes
+  // en la charla y el reintento las manda.
+  const filasDeFotos = await anotarFotos(db, conversacionId, r.imagenes.map((foto) => urlDeFoto(d.baseFotos, foto)));
   if (!simulado) await mandarBurbujas(db, d, conversacionId, telefono, burbujas);
 
-  let fotosEnviadas = 0;
-  for (const foto of r.imagenes) {
-    const link = urlDeFoto(d.baseFotos, foto);
-    try {
-      const waMessageId = simulado ? null : await conReintento(d, () => enviarImagen(d.wa, telefono, link, d.fetcher));
-      // Detrás de la última burbuja: el turno fecha las suyas con el reloj de la función y la
-      // base tiene el suyo; así la charla queda en el orden en que salió.
-      await db.consulta(
-        `insert into mensajes (conversacion_id, wa_message_id, direccion, tipo, contenido, enviado_at)
-         select $1::uuid, $2, 'saliente', 'imagen', $3,
-                greatest(clock_timestamp(), max(enviado_at) + interval '10 milliseconds')
-           from mensajes where conversacion_id = $1::uuid`,
-        [conversacionId, waMessageId, link],
-      );
-      fotosEnviadas++;
-    } catch (e) {
-      await evento(db, conversacionId, "error", { etapa: "envio-foto", foto: link, error: mensajeDeError(e) });
-    }
-  }
+  const fotosEnviadas = await mandarFotos(db, d, conversacionId, telefono, filasDeFotos, simulado);
+
   return { ...resumen, enviadas: burbujas.length, fotos_enviadas: fotosEnviadas, ...(simulado ? { simulado: true } : {}) };
 }
 

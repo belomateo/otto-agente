@@ -557,6 +557,38 @@ prueba("fotos del catálogo: después del texto sale cada foto con su link públ
   assertEquals((await salientes(c, TEL)).map((s) => s.tipo), ["texto", "imagen"]);
 });
 
+prueba("si Meta se cae mandando el texto, las fotos NO se pierden: quedan en la charla y salen en el reintento", async (c) => {
+  // Hallazgo de la auditoría del 17/9: las fotos se insertaban recién DESPUÉS de salir por Meta, y
+  // como las burbujas van primero, una caída de Meta en la primera burbuja relanzaba el trabajo sin
+  // dejar rastro de las fotos. El reintento mandaba el texto y las fotos no salían nunca: el cliente
+  // leía «te paso dos modelos» y no le llegaba ninguno.
+  await mensajeDelCliente(c, TEL, "tenes fotos?");
+  const { d, meta } = armar(c, {
+    respuestas: ["Te paso dos modelos."],
+    resultado: { imagenes: ["modelo-1/frente.png", "modelo-2/frente.png"] },
+    falla: (i) => i <= 1, // los dos intentos de la única burbuja
+  });
+
+  await atenderCola(c.db, d, "worker-prueba");
+
+  // No salió nada, pero las dos fotos YA están anotadas en la charla, esperando.
+  assertEquals(meta.envios.length, 0);
+  const tras = await salientes(c, TEL);
+  assertEquals(tras.map((s) => s.tipo), ["texto", "imagen", "imagen"]);
+  assertEquals(tras.every((s) => s.wa_message_id === null), true);
+  const [trabajo] = await trabajos(c, TEL);
+  assertEquals(trabajo.estado, "pendiente"); // vuelve a la cola, no se da por hecho
+
+  // El reintento las manda: el texto y las dos fotos. La cola le pone 30 s de espera al
+  // reintento (0044) y el reloj de la prueba no mueve el de la base: se la sacamos a mano.
+  await c.sql.query("update cola_trabajos set reintentar_despues_de = null where conversacion_id = $1", [trabajo.conversacion_id]);
+  const { d: d2, meta: meta2, turno: turno2 } = armar(c, { desdeSeg: 20 });
+  await atenderCola(c.db, d2, "worker-prueba");
+  assertEquals(turno2.llamadas.length, 0); // no vuelve a pensar
+  assertEquals(meta2.envios.map((e) => e.type), ["text", "image", "image"]);
+  assertEquals((await salientes(c, TEL)).every((s) => s.wa_message_id !== null), true);
+});
+
 prueba("fuera de la ventana de 24 hs no sale texto libre: se borra de la charla y queda el error", async (c) => {
   await mensajeDelCliente(c, TEL, "hola", -25 * 3600); // Meta lo fechó hace 25 hs
   const { d, meta } = armar(c);
