@@ -7,8 +7,13 @@
 // paneles, PROCESOS.md § 4 pasos 6 y 7): tomar y devolver solo valen si la charla no está
 // cerrada; responder (mostrador_enviar) solo si está 'derivada' y hubo un mensaje del cliente
 // en las últimas 24 hs — el 409 de la base explica el motivo exacto si no se puede.
+//
+// Mandar una foto (POST /api/bandeja/<id>/foto, multipart, mismas reglas que responder) pedido
+// de Mateo 16/9, ítem 3: mismo botón que ya estaba pero desconectado. Falta que paneles exponga
+// una URL en la lectura de mensajes para mostrar la foto en la burbuja — hasta entonces se
+// avisa "Foto" en vez del texto crudo. El de audio sigue sin conectar, no era parte del pedido.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { BurbujaCliente, BurbujaLucia, BurbujaMostrador } from '@/components/ui-otto/Burbuja';
 import { Cargando } from '@/components/ui-otto/Cargando';
@@ -25,11 +30,20 @@ import type { Charla } from '@/lib/queries/bandeja';
 // cliente desde otro número, solo cuando el motivo es la ventana cerrada.
 function AvisoNoEnviado({ motivo }: { motivo: 'ventana_cerrada' | 'error_al_enviar' }) {
   return (
-    <div className="mr-1 self-end text-right text-[13px] leading-[1.4] text-ladrillo">
+    <div className="mr-1 self-end text-right text-[14px] leading-[1.4] text-ladrillo md:text-[13px]">
       <div>No se pudo enviar.</div>
       {motivo === 'ventana_cerrada' && <div className="font-medium">Probá escribirle al cliente desde otro número.</div>}
     </div>
   );
+}
+
+const TIPOS_FOTO_ACEPTADOS = 'image/jpeg,image/png,image/webp';
+
+// Todavía no hay URL para mostrar la foto en la burbuja (paneles: la lectura de mensajes no la
+// expone), tampoco para las que manda el cliente — se avisa que es una foto en vez de mostrar
+// el texto crudo "(imagen)" que arma textoDeMensaje.
+function textoDeBurbuja(m: { tipo: string; texto: string }) {
+  return m.tipo === 'imagen' ? '📷 Foto' : m.texto;
 }
 
 function separador(fecha: string) {
@@ -65,8 +79,9 @@ function resumenDe(charla: Charla) {
 export function ChatThread({ variante, conversacionId }: { variante: 'desktop' | 'mobile'; conversacionId: string | null }) {
   const compacto = variante === 'mobile';
   const { datos: charla, cargando, error, recargar } = useDatos<Charla>(conversacionId ? `/api/bandeja/${conversacionId}` : null, { sondeoMs: SONDEO_LISTAS_MS });
-  const { enviando, error: errorAccion, motivo: motivoAccion, tomar, devolver, cerrar, responder } = useAccionesCharla(conversacionId);
+  const { enviando, error: errorAccion, motivo: motivoAccion, tomar, devolver, cerrar, responder, enviarFoto } = useAccionesCharla(conversacionId);
   const [texto, setTexto] = useState('');
+  const inputFotoRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setTexto('');
@@ -97,6 +112,12 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
       setTexto('');
       recargar();
     }
+  }
+  async function onFotoElegida(e: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0];
+    e.target.value = ''; // permite volver a elegir el mismo archivo después
+    if (!archivo) return;
+    if (await enviarFoto(archivo)) recargar();
   }
 
   let fechaAnterior = '';
@@ -210,11 +231,11 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
               <div key={m.id} className="contents">
                 {!compacto && nuevoDia && <span className="self-center rounded-pill bg-[#EFEBE3] px-3 py-[3px] text-[14px] text-grafito md:text-xs">{separador(m.fecha)}</span>}
                 {m.autor === 'cliente' ? (
-                  <BurbujaCliente texto={m.texto} hora={m.hora} />
+                  <BurbujaCliente texto={textoDeBurbuja(m)} hora={m.hora} />
                 ) : m.autor === 'mostrador' ? (
-                  <BurbujaMostrador texto={m.texto} hora={m.hora} autor="Equipo" inicial="E" />
+                  <BurbujaMostrador texto={textoDeBurbuja(m)} hora={m.hora} autor="Equipo" inicial="E" />
                 ) : (
-                  <BurbujaLucia texto={m.texto} hora={m.hora} resumen={esUltimoLucia ? resumen : undefined} bitacora={esUltimoLucia ? bitacora : undefined} />
+                  <BurbujaLucia texto={textoDeBurbuja(m)} hora={m.hora} resumen={esUltimoLucia ? resumen : undefined} bitacora={esUltimoLucia ? bitacora : undefined} />
                 )}
                 {m.no_enviado_motivo && <AvisoNoEnviado motivo={m.no_enviado_motivo} />}
               </div>
@@ -224,27 +245,34 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
       </div>
 
       {errorAccion && (
-        <div className={`text-[13px] text-ladrillo ${compacto ? 'px-3.5 pt-2' : 'px-6 pt-2'}`}>
+        <div className={`text-[14px] text-ladrillo md:text-[13px] ${compacto ? 'px-3.5 pt-2' : 'px-6 pt-2'}`}>
           <div>{errorAccion}</div>
           {motivoAccion === 'ventana_cerrada' && <div className="mt-0.5 font-medium">Probá escribirle al cliente desde otro número.</div>}
         </div>
       )}
 
       <div className={`flex items-center gap-2.5 border-t border-borde bg-lino ${compacto ? 'px-3.5 pb-[22px] pt-2.5' : 'px-6 py-3.5'}`}>
+        <input ref={inputFotoRef} type="file" accept={TIPOS_FOTO_ACEPTADOS} className="hidden" onChange={onFotoElegida} />
         {!compacto ? (
           <>
-            <span className="flex h-[42px] w-[42px] flex-none items-center justify-center rounded-otto border border-borde opacity-45">
+            <button
+              type="button"
+              onClick={() => inputFotoRef.current?.click()}
+              disabled={charla.estado !== 'derivada' || enviando}
+              aria-label="Mandar una foto"
+              className="flex h-[42px] w-[42px] flex-none items-center justify-center rounded-otto border border-borde disabled:opacity-45"
+            >
               <IconFoto className="text-grafito" />
-            </span>
+            </button>
             <span className="flex h-[42px] w-[42px] flex-none items-center justify-center rounded-otto border border-borde opacity-45">
               <IconAudio className="text-grafito" />
             </span>
           </>
         ) : (
           <>
-            <span className="flex-none opacity-50">
+            <button type="button" onClick={() => inputFotoRef.current?.click()} disabled={charla.estado !== 'derivada' || enviando} aria-label="Mandar una foto" className="flex-none disabled:opacity-50">
               <IconFoto className="text-grafito" width={20} height={20} />
-            </span>
+            </button>
             <span className="flex-none opacity-50">
               <IconAudio className="text-grafito" width={20} height={20} />
             </span>
