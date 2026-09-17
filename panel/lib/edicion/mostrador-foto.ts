@@ -35,7 +35,7 @@ export async function enviarFotoMostrador(sesion: Sesion, conversacionId: string
   const epigrafe = form.get('epigrafe');
   if (!(archivo instanceof File) || archivo.size === 0) return error(400, 'Falta el archivo');
   const extension = EXTENSION_FOTO[archivo.type];
-  if (!extension) return error(400, 'Solo fotos JPG, PNG o WebP');
+  if (!extension) return error(400, 'Solo fotos JPG o PNG');
   if (archivo.size > TAMANO_MAXIMO_FOTO) return error(400, 'La foto pesa más de 5 MB');
   if (epigrafe !== null && typeof epigrafe !== 'string') return error(400, 'El epígrafe tiene que ser texto');
 
