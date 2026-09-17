@@ -7,19 +7,27 @@
 // Modelos y accesorios son solo-admin del lado del servidor (H1.9): con un usuario aprobado
 // que no sea admin, el switch y Guardar van a fallar con 403; acá no se oculta nada, se deja
 // que el propio error lo diga.
+//
+// «Nuevo modelo» es real (POST /api/catalogo/modelos, pedido de Mateo 16/9: el catálogo
+// arranca vacío, lo carga la dueña): nombre, precio y talles nada más — fotos y colores se
+// suman después abriendo el modelo recién creado. El orden por prioridad que también pidió
+// (el 1 pesa más que el 10 para lo que recomienda Lucía) queda pendiente: no hay columna
+// todavía en catalogo_alquiler, se lo pedimos a paneles.
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
+import { enviar, ErrorApi } from '@/components/api/cliente';
 import { useDatos } from '@/components/api/useDatos';
 import type { FilaAccesorio, FilaModelo } from '@/lib/queries/catalogo';
 import { EdicionModelo } from './EdicionModelo';
 import { SwitchMuestra } from './SwitchMuestra';
 
 const VACIO = { titulo: 'Todavía no hay modelos', texto: 'Lucía solo muestra lo que está cargado acá.' };
-const SIN_CONECTAR = 'Todavía no conectado';
+const ETIQUETA = 'flex flex-col gap-1 text-[14px] font-medium text-grafito md:text-[11.5px]';
+const CAMPO = 'w-full rounded-otto border border-borde px-2.5 py-2 text-sm text-tinta outline-none focus:border-cobre';
 
 export function FotoPlaceholder({ texto, chico = false }: { texto: string; chico?: boolean }) {
   return (
@@ -42,6 +50,83 @@ function Foto({ modelo, chico = false }: { modelo: FilaModelo; chico?: boolean }
   return <img src={modelo.foto} alt={modelo.n} className="aspect-[3/4] w-full object-cover" onError={() => setRota(true)} />;
 }
 
+// Alta real (POST /api/catalogo/modelos, H1.9): nombre y precio nada más — fotos y colores se
+// suman después, abriendo el modelo recién creado (misma pantalla que ya los edita).
+function NuevoModelo({ onCreado }: { onCreado: (id: string) => void }) {
+  const [abierto, setAbierto] = useState(false);
+  const [modelo, setModelo] = useState('');
+  const [precio, setPrecio] = useState(0);
+  const [talles, setTalles] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function crear() {
+    setEnviando(true);
+    setError(null);
+    try {
+      const { fila } = await enviar<{ fila: { id: string } }>('/api/catalogo/modelos', 'POST', {
+        modelo,
+        precio_base: precio,
+        talles: talles
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+        activo: true,
+      });
+      setAbierto(false);
+      setModelo('');
+      setPrecio(0);
+      setTalles('');
+      onCreado(fila.id);
+    } catch (e) {
+      setError(e instanceof ErrorApi ? e.message : 'No se pudo crear');
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => setAbierto(true)} className="rounded-otto bg-cobre px-4.5 py-2.5 text-sm font-medium text-lino md:px-3.5 md:py-2 md:text-[14px]">
+        Nuevo modelo
+      </button>
+      {abierto && (
+        <div role="dialog" aria-label="Nuevo modelo" className="fixed inset-0 z-50 flex items-center justify-center bg-tinta/[.32] p-4" onClick={() => !enviando && setAbierto(false)}>
+          <div className="w-full max-w-[380px] rounded-otto bg-lino p-4.5 shadow-otto-pop" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <span className="font-serif text-lg font-semibold">Nuevo modelo</span>
+              <button type="button" onClick={() => setAbierto(false)} aria-label="Cerrar" className="text-lg leading-none text-grafito">
+                ×
+              </button>
+            </div>
+            <label className={ETIQUETA}>
+              Nombre
+              <input value={modelo} onChange={(e) => setModelo(e.target.value)} className={CAMPO} autoFocus />
+            </label>
+            <label className={`${ETIQUETA} mt-2.5`}>
+              Precio base
+              <input inputMode="numeric" value={precio} onChange={(e) => setPrecio(Number(e.target.value.replace(/\D/g, '')) || 0)} className={`${CAMPO} tabular-nums`} />
+            </label>
+            <label className={`${ETIQUETA} mt-2.5`}>
+              Talles (separados por coma)
+              <input value={talles} onChange={(e) => setTalles(e.target.value)} placeholder="44, 46, 48…" className={CAMPO} />
+            </label>
+            <div className="mt-3 flex items-center gap-2.5">
+              <button type="button" onClick={crear} disabled={enviando || !modelo.trim() || precio <= 0} className="rounded-otto bg-cobre px-4.5 py-2.5 text-sm font-medium text-lino disabled:opacity-50">
+                {enviando ? 'Creando…' : 'Crear'}
+              </button>
+              <button type="button" onClick={() => setAbierto(false)} disabled={enviando} className="rounded-otto border border-borde bg-lino px-3.5 py-2.5 text-sm font-medium text-grafito">
+                Cancelar
+              </button>
+            </div>
+            {error && <div className="mt-2 text-[13px] text-ladrillo">{error}</div>}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function CatalogoPage() {
   const router = useRouter();
   const idAbierto = useSearchParams().get('id');
@@ -49,6 +134,11 @@ export default function CatalogoPage() {
   const modelos = datos?.modelos ?? [];
   const accesorios = datos?.accesorios ?? [];
   const modeloAbierto = modelos.find((m) => m.id === idAbierto) ?? null;
+
+  function onModeloCreado(id: string) {
+    recargar();
+    router.push(`/catalogo?id=${id}`);
+  }
 
   const contenido =
     cargando && modelos.length === 0 ? (
@@ -66,9 +156,7 @@ export default function CatalogoPage() {
         <div className="min-w-0 flex-1 overflow-y-auto px-6 py-5.5">
           <div className="mb-4 flex items-center">
             <h1 className="flex-1 font-serif text-[22px] font-semibold">Catálogo</h1>
-            <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto bg-cobre/50 px-4.5 py-2.5 text-sm font-medium text-lino">
-              Nuevo modelo
-            </button>
+            <NuevoModelo onCreado={onModeloCreado} />
           </div>
           {contenido ?? (
             <div className="grid grid-cols-3 gap-4">
@@ -131,9 +219,7 @@ export default function CatalogoPage() {
       <div className="flex flex-1 flex-col md:hidden">
         <div className="flex items-center px-4 pb-2.5 pt-[18px]">
           <div className="flex-1 font-serif text-[22px] font-semibold">Catálogo</div>
-          <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto bg-cobre/50 px-3.5 py-2 text-[14px] font-medium text-lino">
-            Nuevo modelo
-          </button>
+          <NuevoModelo onCreado={onModeloCreado} />
         </div>
         <div className="flex-1 px-4 pb-4 pt-1.5">
           {contenido ?? (
