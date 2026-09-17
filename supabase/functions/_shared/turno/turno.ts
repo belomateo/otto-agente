@@ -76,6 +76,10 @@ export type ParametrosTurno = {
   tz: string;
   calendario: Calendario;
   derivacionTel: string | null;
+  // El prompt ya armado. Lo manda el worker, que lo saca de la base (prompt_vigente(), 0050) para
+  // que lo que la dueña edita en el panel le llegue a Lucía sin volver a publicar. Si no viene, se
+  // usa el prompt.md que viaja adentro de la función.
+  prompt?: string;
   fetcher?: typeof fetch;
 };
 
@@ -151,7 +155,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     // Paso 5 — armar contexto, y paso 6 — el principal con herramientas.
     const [contextoTexto, prompt, herramientas] = await Promise.all([
       armarContextoDelTurno(db, { clienteId: p.clienteId, ahora: p.ahora, tz: p.tz }),
-      leerPrompt(),
+      p.prompt ?? leerPrompt(),
       definicionesParaElModelo(db),
     ]);
     const mensajesLlm: MensajeLlm[] = [
