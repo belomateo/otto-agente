@@ -699,6 +699,38 @@ export type Database = {
         }
         Relationships: []
       }
+      invitaciones_acceso: {
+        Row: {
+          creado_at: string
+          email: string
+          invitado_por: string | null
+          rol: string
+          usado_at: string | null
+        }
+        Insert: {
+          creado_at?: string
+          email: string
+          invitado_por?: string | null
+          rol: string
+          usado_at?: string | null
+        }
+        Update: {
+          creado_at?: string
+          email?: string
+          invitado_por?: string | null
+          rol?: string
+          usado_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invitaciones_acceso_invitado_por_fkey"
+            columns: ["invitado_por"]
+            isOneToOne: false
+            referencedRelation: "perfiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mensajes: {
         Row: {
           contenido: string | null
@@ -1121,6 +1153,22 @@ export type Database = {
           to: "cola_trabajos"
           isOneToOne: false
           isSetofReturn: true
+        }
+      }
+      crear_invitacion: {
+        Args: { p_email: string; p_rol: string }
+        Returns: {
+          creado_at: string
+          email: string
+          invitado_por: string | null
+          rol: string
+          usado_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "invitaciones_acceso"
+          isOneToOne: true
+          isSetofReturn: false
         }
       }
       conversacion_abierta_de: { Args: { p_cliente: string }; Returns: string }
