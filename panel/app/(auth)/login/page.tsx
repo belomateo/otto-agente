@@ -5,7 +5,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { crearClienteNavegador } from '@/lib/supabase/client';
 
@@ -33,11 +33,26 @@ function mensajeDeError(error: { message: string; status?: number }, modo: 'entr
   return 'Email o contraseña incorrectos.';
 }
 
+// Igual que en Configuración › Accesos: en la base es 'admin'/'equipo', acá se muestra
+// "Administrador"/"Colaborador" — la traducción es solo de pantalla.
+type RolPedido = 'equipo' | 'admin';
+const ETIQUETA_ROL: Record<RolPedido, string> = { equipo: 'Colaborador', admin: 'Administrador' };
+
 export default function LoginPage() {
   const router = useRouter();
-  const [modo, setModo] = useState<'entrar' | 'crear-cuenta'>('entrar');
-  const [email, setEmail] = useState('');
+  const searchParams = useSearchParams();
+  // Link del mail de invitación (paneles, H1.10): .../login?modo=crear-cuenta&email=<email> —
+  // arranca directo en el registro con el mail ya cargado, un solo paso en vez de pedir
+  // acceso a mano y volver a escribir el mail. Solo se lee una vez, al montar: de ahí en más
+  // `modo`/`email` son estado normal, no quedan atados a la URL.
+  const [modo, setModo] = useState<'entrar' | 'crear-cuenta'>(() => (searchParams.get('modo') === 'crear-cuenta' ? 'crear-cuenta' : 'entrar'));
+  const [email, setEmail] = useState(() => searchParams.get('email') ?? '');
+  // El mail queda bloqueado mientras venga de la invitación: si se pudiera cambiar, el alta no
+  // engancharía con la invitación (queda como solicitud pendiente normal) y nadie entendería
+  // por qué no entró directo. "¿no sos vos?" lo desbloquea a mano.
+  const [emailBloqueado, setEmailBloqueado] = useState(() => Boolean(searchParams.get('email')));
   const [password, setPassword] = useState('');
+  const [rolSolicitado, setRolSolicitado] = useState<RolPedido>('equipo');
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -53,7 +68,7 @@ export default function LoginPage() {
       const { data, error } =
         modo === 'entrar'
           ? await supabase.auth.signInWithPassword({ email, password })
-          : await supabase.auth.signUp({ email, password });
+          : await supabase.auth.signUp({ email, password, options: { data: { rol_solicitado: rolSolicitado } } });
 
       if (error) {
         setError(mensajeDeError(error, modo));
@@ -100,8 +115,25 @@ export default function LoginPage() {
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="rounded-otto border border-borde bg-lino px-3.5 py-3 text-[15px] outline-none"
+          readOnly={emailBloqueado}
+          className={`rounded-otto border border-borde px-3.5 py-3 text-[15px] outline-none ${emailBloqueado ? 'bg-hueso text-grafito' : 'bg-lino'}`}
         />
+        {emailBloqueado && (
+          <div className="-mt-1.5 flex items-center justify-between text-[13px] text-grafito">
+            <span>Te invitaron con este mail</span>
+            <button
+              type="button"
+              onClick={() => {
+                setEmailBloqueado(false);
+                setEmail('');
+                router.replace('/login?modo=crear-cuenta');
+              }}
+              className="underline"
+            >
+              ¿No sos vos?
+            </button>
+          </div>
+        )}
         <input
           placeholder="Contraseña"
           type="password"
@@ -111,6 +143,30 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           className="rounded-otto border border-borde bg-lino px-3.5 py-3 text-[15px] outline-none"
         />
+        {/* Con el mail precargado por una invitación ya está todo decidido (el rol lo puso
+            quien invitó): el trigger ni mira rol_solicitado en ese caso, así que preguntarlo
+            de nuevo sería una elección que no hace nada. */}
+        {modo === 'crear-cuenta' && !emailBloqueado && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm text-grafito" htmlFor="rol-pedido">
+              ¿Con qué rol querés entrar?
+            </label>
+            <select
+              id="rol-pedido"
+              value={rolSolicitado}
+              onChange={(e) => setRolSolicitado(e.target.value as RolPedido)}
+              className="rounded-otto border border-borde bg-lino px-3.5 py-3 text-[15px] outline-none"
+            >
+              <option value="equipo">{ETIQUETA_ROL.equipo}</option>
+              <option value="admin">{ETIQUETA_ROL.admin}</option>
+            </select>
+            {rolSolicitado === 'admin' && (
+              <div className="text-[13px] leading-[1.4] text-grafito">
+                Pedir Administrador no te lo da automático: lo aprueba alguien que ya es admin. Mientras tanto tu cuenta queda esperando aprobación, igual que hoy.
+              </div>
+            )}
+          </div>
+        )}
         {error && <div className="text-sm text-ladrillo">{error}</div>}
         {aviso && <div className="text-sm text-grafito">{aviso}</div>}
         <button
@@ -126,6 +182,7 @@ export default function LoginPage() {
         onClick={() => {
           setError(null);
           setAviso(null);
+          setRolSolicitado('equipo');
           setModo((m) => (m === 'entrar' ? 'crear-cuenta' : 'entrar'));
         }}
         className="text-sm text-grafito underline"
