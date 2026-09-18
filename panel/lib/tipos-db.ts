@@ -958,6 +958,7 @@ export type Database = {
           perfil_id: string
           resuelto_at: string | null
           resuelto_por: string | null
+          rol_solicitado: string | null
           solicitado_at: string
         }
         Insert: {
@@ -966,6 +967,7 @@ export type Database = {
           perfil_id: string
           resuelto_at?: string | null
           resuelto_por?: string | null
+          rol_solicitado?: string | null
           solicitado_at?: string
         }
         Update: {
@@ -974,6 +976,7 @@ export type Database = {
           perfil_id?: string
           resuelto_at?: string | null
           resuelto_por?: string | null
+          rol_solicitado?: string | null
           solicitado_at?: string
         }
         Relationships: [
@@ -1237,6 +1240,7 @@ export type Database = {
           perfil_id: string
           resuelto_at: string | null
           resuelto_por: string | null
+          rol_solicitado: string | null
           solicitado_at: string
         }
         SetofOptions: {

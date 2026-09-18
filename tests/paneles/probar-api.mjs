@@ -155,14 +155,14 @@ async function api(ses, metodo, ruta, cuerpo) {
 // ---------- usuarios y datos de prueba ----------
 const SUFIJO = Date.now().toString(36);
 const usuarios = {};
-async function crearUsuario(etiqueta) {
+async function crearUsuario(etiqueta, metadataExtra = {}) {
   const email = `paneles.${etiqueta}.${SUFIJO}@example.com`;
   const password = randomBytes(18).toString("base64url") + "Aa1!";
   const { data, error } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
-    user_metadata: { nombre: `${MARCA} ${etiqueta}` },
+    user_metadata: { nombre: `${MARCA} ${etiqueta}`, ...metadataExtra },
   });
   if (error) throw new Error(`no se pudo crear el usuario ${etiqueta}: ${error.message}`);
   usuarios[etiqueta] = { id: data.user.id, email, password };
@@ -523,6 +523,33 @@ try {
     ok((data ?? []).length === 0, "un 'equipo' no se da rol admin (RLS: 0 filas)");
     const { error } = await sa.directo.from("perfiles").update({ rol: "equipo" }).eq("id", A.id);
     ok(error?.code === "42501", `un admin no se cambia su propio rol (${error?.code}: ${error?.message})`);
+  }
+
+  seccion("Rol pedido al registrarse (decisión de Mateo, 17/9): informativo, nunca se auto-otorga");
+  {
+    const P = await crearUsuario("pidereview", { rol_solicitado: "admin" });
+    const solP = await solDe(P.id);
+    const filaDirectaP = (await q("select estado, rol_solicitado from solicitudes_acceso where id = $1", [solP]))[0];
+    const lista = await api(sa, "GET", "/api/accesos");
+    const sP = (lista.datos.solicitudes ?? []).find((s) => s.id === solP);
+    ok(
+      lista.status === 200 && sP?.rol_solicitado === "admin",
+      `la solicitud muestra el rol que pidió, para que el admin lo lea antes de aprobar (${lista.status}, api:${sP?.rol_solicitado}, sql directo: estado ${filaDirectaP.estado} rol_solicitado ${filaDirectaP.rol_solicitado}, total en la lista: ${lista.datos.solicitudes?.length})`
+    );
+    const aprobar = await api(sa, "POST", `/api/accesos/${solP}`, { accion: "aprobar" });
+    const perfilP = (await q("select rol from perfiles where id = $1", [P.id]))[0];
+    ok(
+      aprobar.status === 200 && perfilP.rol === "equipo",
+      `pedir 'admin' no lo otorga solo: sin que un admin elija ese rol al aprobar, queda en el default 'equipo' (${perfilP.rol})`
+    );
+
+    const G = await crearUsuario("basura", { rol_solicitado: "haxor" });
+    const solG = await solDe(G.id);
+    const filaG = (await q("select rol_solicitado from solicitudes_acceso where id = $1", [solG]))[0];
+    ok(Boolean(solG) && filaG.rol_solicitado === null, `un rol_solicitado fuera de admin/equipo no rompe el registro y queda null (${filaG.rol_solicitado})`);
+
+    const filaT = (await q("select rol_solicitado from solicitudes_acceso where id = $1", [solT]))[0];
+    ok(filaT.rol_solicitado === null, `sin pedir nada, rol_solicitado queda null (compatibilidad con el registro de siempre) (${filaT.rol_solicitado})`);
   }
 
   seccion("H1.8 controles 1 y 4 — cada pestaña con el admin: 200, datos y la forma de los mocks");
