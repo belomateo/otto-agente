@@ -61,3 +61,43 @@ export async function resolverSolicitud(sesion: Sesion, id: string, aprobar: boo
 export async function quitarAcceso(sesion: Sesion, perfilId: string) {
   return sesion.supabase.from('perfiles').update({ estado: 'rechazado' }).eq('id', perfilId).select('id, nombre, rol, estado').maybeSingle();
 }
+
+/**
+ * Invitar por mail (H1.10, decisión de Mateo 17/9): pre-aprobación en vez de mandar un correo
+ * de Supabase (necesitaría SMTP propio y una pantalla de fijar contraseña que no existe). Se
+ * registra igual que hoy (email + contraseña); manejar_alta_usuario() (0053) la deja pasar
+ * directo si hay una invitación sin usar para su mail.
+ */
+export type Invitacion = {
+  email: string;
+  rol: 'admin' | 'equipo';
+  invitado_por: string | null;
+  creado_at: string;
+  usado_at: string | null;
+};
+
+export async function listarInvitaciones(sesion: Sesion): Promise<Invitacion[]> {
+  const { data, error } = await sesion.supabase
+    .from('invitaciones_acceso')
+    .select('email, rol, invitado_por, creado_at, usado_at')
+    .order('creado_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as Invitacion[];
+}
+
+// crear_invitacion() es security definer y re-verifica es_admin() adentro (0053): no depende
+// solo de que esta ruta ya pidió admin, porque insertar acá con rol 'admin' es hacerse admin
+// solo con registrarse después.
+export async function crearInvitacion(sesion: Sesion, email: string, rol: 'admin' | 'equipo') {
+  return sesion.supabase.rpc('crear_invitacion', { p_email: email, p_rol: rol });
+}
+
+export async function revocarInvitacion(sesion: Sesion, email: string) {
+  return sesion.supabase
+    .from('invitaciones_acceso')
+    .delete()
+    .eq('email', email.toLowerCase())
+    .is('usado_at', null)
+    .select('email, rol, invitado_por, creado_at, usado_at')
+    .maybeSingle();
+}
