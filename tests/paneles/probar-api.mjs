@@ -297,6 +297,9 @@ async function limpiar() {
   await q("delete from turnos where cliente_id in (select id from clientes where telefono = $1)", [TEL]);
   await q("delete from consumo_llm where modelo = 'prueba-paneles'");
   await q("delete from clientes where telefono = $1", [TEL]);
+  // Una invitación usada (0053) no se puede "revocar" por la API a propósito: se limpia acá,
+  // antes de borrar los usuarios (no tiene FK a auth.users, es por email, no cascadea sola).
+  await q("delete from invitaciones_acceso where email like 'paneles.%@example.com' or email like 'prueba.paneles.%@example.com'");
   await restaurarReales();
   for (const u of Object.values(usuarios)) {
     const { error } = await admin.auth.admin.deleteUser(u.id);
@@ -323,7 +326,8 @@ async function verificarLimpieza() {
       (select count(*) from consumo_llm where modelo = 'prueba-paneles')::int consumo,
       (select count(*) from historial_ediciones where editado_por like 'paneles.%@example.com' and not (fila_id = any($2::uuid[])) and editado_at >= $3)::int historial,
       (select count(*) from perfiles where nombre like 'PRUEBA paneles%')::int perfiles,
-      (select count(*) from auth.users where email like 'paneles.%@example.com')::int usuarios`,
+      (select count(*) from auth.users where email like 'paneles.%@example.com')::int usuarios,
+      (select count(*) from invitaciones_acceso where email like 'paneles.%@example.com' or email like 'prueba.paneles.%@example.com')::int invitaciones`,
     [TEL, excluirFilaIds, INICIO_CORRIDA]
   ))[0];
   const restos = Object.entries(r).filter(([, n]) => n > 0);
@@ -1241,6 +1245,68 @@ try {
     ok(yaSinAcceso.status === 403, `esa persona ya no entra a nada (${yaSinAcceso.status})`);
     const noExiste = await api(sa, "DELETE", "/api/accesos/usuarios/11111111-1111-1111-1111-111111111111");
     ok(noExiste.status === 404, `un id que no existe → 404 (${noExiste.status})`);
+  }
+
+  seccion("Invitar por mail (decisión de Mateo, 17/9)");
+  {
+    const EMAIL_INV = `PRUEBA.paneles.invitacion.${SUFIJO}@Example.com`;
+    const bloqueadas = await Promise.all([
+      api(sn, "GET", "/api/accesos/invitaciones"),
+      api(sn, "POST", "/api/accesos/invitaciones", { email: EMAIL_INV, rol: "equipo" }),
+      api(sn, "DELETE", `/api/accesos/invitaciones/${encodeURIComponent(EMAIL_INV)}`),
+    ]);
+    ok(bloqueadas.every((x) => x.status === 403), `un 'equipo' no lista, no crea ni revoca invitaciones (${bloqueadas.map((x) => x.status).join(",")})`);
+
+    const x = await api(sa, "POST", "/api/accesos/invitaciones", { email: EMAIL_INV, rol: "equipo" });
+    ok(
+      x.status === 201 && x.datos.invitacion?.email === EMAIL_INV.toLowerCase() && x.datos.invitacion?.rol === "equipo" && x.datos.invitacion?.usado_at === null,
+      `admin invita por mail, el email se guarda en minúscula (${x.status}, ${x.datos.invitacion?.email})`
+    );
+    const dup = await api(sa, "POST", "/api/accesos/invitaciones", { email: EMAIL_INV, rol: "admin" });
+    ok(dup.status === 409 && dup.datos.error.includes("Ya hay una invitación pendiente"), `la misma invitación dos veces → 409 (${dup.status}: ${dup.datos.error})`);
+    const yaTiene = await api(sa, "POST", "/api/accesos/invitaciones", { email: A.email, rol: "admin" });
+    ok(yaTiene.status === 409 && yaTiene.datos.error.includes("ya tiene cuenta"), `invitar a alguien que ya tiene cuenta → 409 (${yaTiene.status}: ${yaTiene.datos.error})`);
+    const malEmail = await api(sa, "POST", "/api/accesos/invitaciones", { email: "no-es-un-mail", rol: "equipo" });
+    ok(malEmail.status === 400, `email mal formado → 400 (${malEmail.status})`);
+    const malRol = await api(sa, "POST", "/api/accesos/invitaciones", { email: "otra@example.com", rol: "dueña" });
+    ok(malRol.status === 400, `rol fuera del enum → 400 (${malRol.status})`);
+
+    const lista = await api(sa, "GET", "/api/accesos/invitaciones");
+    ok(
+      lista.status === 200 && lista.datos.invitaciones.some((i) => i.email === EMAIL_INV.toLowerCase()),
+      `la lista trae la invitación recién creada (${lista.status}, ${lista.datos.invitaciones?.length})`
+    );
+
+    // Alguien se registra con ese mail (como ya funciona hoy, email + contraseña): nace
+    // aprobado con el rol de la invitación, sin que nadie la apruebe a mano.
+    const rol0053 = "admin"; // el caso más sensible: probar justo la escalada a admin.
+    const emailReal = `paneles.invitada.${SUFIJO}@example.com`;
+    const inv2 = await api(sa, "POST", "/api/accesos/invitaciones", { email: emailReal, rol: rol0053 });
+    ok(inv2.status === 201, `invitación real para el alta de abajo (${inv2.status})`);
+    const I = await crearUsuario("invitada");
+    ok(I.email === emailReal, "el email del alta coincide con el de la invitación (mismo patrón determinístico)");
+    const filaPerfil = (await q("select rol, estado from perfiles where id = $1", [I.id]))[0];
+    ok(
+      filaPerfil.rol === rol0053 && filaPerfil.estado === "aprobado",
+      `se registra sola y nace aprobada con el rol de la invitación (${filaPerfil.rol}, ${filaPerfil.estado})`
+    );
+    const filaSolicitud = (await q("select estado, resuelto_at, resuelto_por from solicitudes_acceso where perfil_id = $1", [I.id]))[0];
+    ok(
+      filaSolicitud.estado === "aprobada" && Boolean(filaSolicitud.resuelto_at) && filaSolicitud.resuelto_por === A.id,
+      `su solicitud nace ya aprobada, resuelta por quien invitó (${filaSolicitud.estado}, resuelto_por ${filaSolicitud.resuelto_por === A.id})`
+    );
+    const filaInv = (await q("select usado_at from invitaciones_acceso where email = $1", [emailReal]))[0];
+    ok(Boolean(filaInv.usado_at), "la invitación queda marcada como usada");
+    const si = await iniciarSesion(I.email, I.password);
+    const comoAdmin = await api(si, "GET", "/api/catalogo");
+    ok(comoAdmin.status === 200, `la persona invitada como admin entra directo a una pantalla admin-only (${comoAdmin.status})`);
+
+    const revocada = await api(sa, "DELETE", `/api/accesos/invitaciones/${encodeURIComponent(EMAIL_INV)}`);
+    ok(revocada.status === 200 && revocada.datos.invitacion?.email === EMAIL_INV.toLowerCase(), `revocar la que no se usó (${revocada.status})`);
+    const yaNo = await api(sa, "DELETE", `/api/accesos/invitaciones/${encodeURIComponent(EMAIL_INV)}`);
+    ok(yaNo.status === 404, `revocarla de nuevo → 404 (${yaNo.status})`);
+    const noRevocaUsada = await api(sa, "DELETE", `/api/accesos/invitaciones/${encodeURIComponent(emailReal)}`);
+    ok(noRevocaUsada.status === 404, `una invitación ya usada no se puede "revocar" (${noRevocaUsada.status})`);
   }
   {
     // prompt_base ya no arranca vacía (0 de logica, 16/9: la sembró paneles con la plantilla
