@@ -75,6 +75,20 @@ Deno.test("fuera de la ventana de Meta, bloquear le gana a todo", async () => {
   assertEquals(r.decision, "bloquear");
 });
 
+// Pedido de Mateo, 19/9 (toda derivación le deja algo al cliente): los textos fijos nuevos
+// (texto_derivacion_reclamo, texto_derivacion_fallo) los manda derivar_a_persona.ts/turno.ts
+// como cualquier otra pieza del turno — o sea, pasan por ESTA misma función antes de llegar al
+// cliente. Ojo señalado por logica al revisar el diseño: si la ventana de Meta está cerrada, ese
+// texto de repuesto NO puede saltearse el bloqueo (si no, se intentaría mandar igual y Meta lo
+// rechazaría). Confirma que ninguno de los dos textos fijos es una excepción a la regla.
+Deno.test("los textos fijos nuevos de derivación (reclamo/fallo) tampoco se saltean la ventana de Meta cerrada", async () => {
+  const vieja = { ultimoMensajeClienteAt: new Date(AHORA.getTime() - 25 * HORA_MS) };
+  const reclamo = await aplicarBarandillas(entrada("Te leo. Esto lo sigue alguien del local: en un rato te escriben.", vieja));
+  assertEquals(reclamo.decision, "bloquear");
+  const fallo = await aplicarBarandillas(entrada("Se me complicó de este lado. Ya avisé a alguien del local y en un rato te escriben.", vieja));
+  assertEquals(fallo.decision, "bloquear");
+});
+
 Deno.test("anunciar un pase sin derivar termina en derivar, y sin la pregunta", async () => {
   const r = await aplicarBarandillas(entrada("Te paso con alguien del equipo. ¿Te parece bien?"));
   assertEquals(r.decision, "derivar");

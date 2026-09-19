@@ -239,10 +239,11 @@ prueba("supuesto #33, caso parecido: nada nuevo en la ráfaga sigue sin contesta
 // Pedido de Mateo, 16/9: antes solo derivaba garantizado un cliente enojado si además calificaba
 // como "reclamo" (una queja puntual). Ahora el clasificador (paso 4b) lo detecta por el TONO,
 // sin depender de esa palabra — acá se fuerza esa clasificación de forma determinística (no se
-// puede pedir con confianza que el modelo real se ponga agresivo) y se confirma en la base que
-// derivó sin ningún mensaje, ni siquiera el texto fijo genérico (MOTIVOS_DERIVAN_EN_SILENCIO,
-// igual que un reclamo: no se discute).
-prueba("cliente_enojado: el clasificador lo detecta por tono, sin decir 'reclamo', y deriva sin ningún mensaje", async ({ ctx, sql, conversacionId }) => {
+// puede pedir con confianza que el modelo real se ponga agresivo).
+// Pedido de Mateo, 19/9: toda derivación le deja algo al cliente. No se discute con alguien
+// caliente (cliente_enojado sigue en MOTIVOS_CON_TEXTO_RECLAMO de turno.ts), pero el silencio
+// total de antes ahora es el texto fijo texto_derivacion_reclamo.
+prueba("cliente_enojado: el clasificador lo detecta por tono, sin decir 'reclamo', y deriva con el texto fijo de reclamo", async ({ ctx, sql, conversacionId }) => {
   await insertarEntrante(sql, conversacionId, "ESTO ES UNA VERGUENZA, son todos unos inutiles, denme la plata YA o hago un escandalo");
   const fetcher = ((_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
@@ -271,9 +272,50 @@ prueba("cliente_enojado: el clasificador lo detecta por tono, sin decir 'reclamo
 
   assertEquals(resultado.derivo, true);
   assertEquals(resultado.motivoDerivacion, "cliente_enojado");
-  assertEquals(resultado.mensajesAlCliente, [], "ni una despedida propia ni el texto fijo genérico: sigue una persona, sin discutir");
+  assertEquals(
+    resultado.mensajesAlCliente,
+    ["Te leo. Esto lo sigue alguien del local: en un rato te escriben."],
+    "no queda muda: el texto fijo de reclamo reemplaza cualquier despedida propia, no discute",
+  );
   const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
   assertEquals([der?.motivo, der?.estado], ["cliente_enojado", "pendiente"]);
+});
+
+// Mismo pedido de Mateo, 19/9, pero por el otro camino: reclamo detectado por PALABRA CLAVE
+// (paso 4a, derivacion_dura.ts), antes de gastar un solo token de LLM — no hace falta mockear
+// clasificador ni principal, el turno nunca los llama (el `throw` de acá abajo lo confirma).
+// El extractor (paso 10) SÍ corre igual, en el finally, para cualquier turno con mensaje de
+// texto — no depende de por qué camino terminó el turno — así que se le da una respuesta válida
+// como al resto de los tests, para no ensuciar la corrida con un error de bitácora de más.
+// Antes derivar() fetcheaba texto_derivacion_dura_generica y lo tiraba igual (reclamo estaba en
+// la vieja MOTIVOS_DERIVAN_EN_SILENCIO); ahora ese fetch de más se ignora y en su lugar usa
+// texto_derivacion_reclamo — mismo texto que por el clasificador, para que la charla se vea
+// igual sin importar quién detectó el motivo.
+prueba("reclamo por palabra clave (código, sin LLM) también deriva con el texto fijo de reclamo, no muda", async ({ ctx, sql, conversacionId }) => {
+  await insertarEntrante(sql, conversacionId, "quiero hacer un reclamo por el traje que me dieron");
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    if (body.response_format?.json_schema?.name === "ficha") {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({
+          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+        }),
+      }));
+    }
+    throw new Error("la derivación dura por palabra clave no debería llamar al clasificador ni al principal");
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assertEquals(resultado.derivo, true);
+  assertEquals(resultado.motivoDerivacion, "reclamo");
+  assertEquals(resultado.mensajesAlCliente, ["Te leo. Esto lo sigue alguien del local: en un rato te escriben."]);
+  const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
+  assertEquals([der?.motivo, der?.estado], ["reclamo", "pendiente"]);
 });
 
 // Verificación pedida por logica, 16/9: cuando una barandilla de "rehacer" (acá,
@@ -281,7 +323,10 @@ prueba("cliente_enojado: el clasificador lo detecta por tono, sin decir 'reclamo
 // sin avisarle a nadie, o deriva de verdad? Fuerza al principal a decir SIEMPRE un precio sin
 // haber llamado a consultar_catalogo, así precio_sin_herramienta salta en el primer intento y
 // otra vez en el reintento — el camino de aplicarBarandillas hacia barandilla_doble.
-prueba("dos saltos del mismo turno derivan barandilla_doble de verdad: fila en derivaciones y charla pausada, no un texto vacío sin más", async ({ ctx, sql, conversacionId }) => {
+// Pedido de Mateo, 19/9: barandilla_doble es un problema DEL SISTEMA (Lucía no logró escribir
+// algo que pasara las barandillas), no del cliente — texto fijo propio (texto_derivacion_fallo,
+// con tono de disculpa), reemplaza el [] de antes.
+prueba("dos saltos del mismo turno derivan barandilla_doble de verdad: fila en derivaciones, charla pausada y el texto fijo de fallo, no un texto vacío sin más", async ({ ctx, sql, conversacionId }) => {
   await insertarEntrante(sql, conversacionId, "cuanto sale el traje");
   const fetcher = ((_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
@@ -310,7 +355,7 @@ prueba("dos saltos del mismo turno derivan barandilla_doble de verdad: fila en d
 
   assertEquals(resultado.derivo, true);
   assertEquals(resultado.motivoDerivacion, "barandilla_doble");
-  assertEquals(resultado.mensajesAlCliente, []);
+  assertEquals(resultado.mensajesAlCliente, ["Se me complicó de este lado. Ya avisé a alguien del local y en un rato te escriben."]);
   const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
   assertEquals([der?.motivo, der?.estado], ["barandilla_doble", "pendiente"]);
   assertEquals((await fila(sql, "select estado from conversaciones where id = $1", [conversacionId])).estado, "derivada");

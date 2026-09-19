@@ -237,8 +237,23 @@ prueba("derivar_a_persona escribe la derivación, pausa la charla y corta el tur
   assertEquals(await contar(sql, "select count(*)::int as n from derivaciones where conversacion_id = $1", [conversacionId]), 1);
 });
 
-prueba("derivar_a_persona con motivo descuento o reclamo no manda la despedida", async ({ ctx }) => {
+// Pedido de Mateo, 19/9: toda derivación le deja algo al cliente. Con descuento/reclamo/
+// cliente_enojado la despedida QUE ESCRIBE EL MODELO se sigue descartando (no se discute con
+// alguien caliente), pero ya no queda mudo: un texto fijo aprobado (texto_derivacion_reclamo,
+// sembrado en contexto_agente) la reemplaza. Hasta el 18/9 esto daba mensajesAlCliente: [].
+prueba("derivar_a_persona con motivo descuento o reclamo reemplaza la despedida por el texto fijo, no la deja muda", async ({ ctx }) => {
   const r = await ejecutarHerramienta("derivar_a_persona", { motivo: "descuento", mensaje_al_cliente: "Le paso tu consulta al equipo." }, ctx);
   esOk(r);
-  assertEquals(r.efectos?.mensajesAlCliente, []);
+  assert((r.efectos?.mensajesAlCliente?.length ?? 0) > 0, "el cliente recibe el texto fijo, no queda mudo");
+  assertEquals(r.efectos?.mensajesAlCliente, ["Te leo. Esto lo sigue alguien del local: en un rato te escriben."]);
+});
+
+// El otro camino mudo que encontró la auditoría del 19/9: un motivo que SÍ permite despedida
+// propia (no está en MOTIVOS_SIN_MENSAJE), pero el modelo mandó null o solo espacios — antes eso
+// también daba []. Ahora cae al genérico de siempre (texto_derivacion_dura_generica), red de
+// contención igual que en cualquier otra derivación sin texto propio.
+prueba("derivar_a_persona sin mensaje_al_cliente (motivo que sí lo permite) cae al texto genérico, no queda muda", async ({ ctx }) => {
+  const r = await ejecutarHerramienta("derivar_a_persona", { motivo: "pide_persona", mensaje_al_cliente: "   " }, ctx);
+  esOk(r);
+  assertEquals(r.efectos?.mensajesAlCliente, ["Te paso con alguien del equipo para que te ayude con esto. En un rato te escriben."]);
 });

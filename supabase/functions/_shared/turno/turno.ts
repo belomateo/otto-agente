@@ -33,11 +33,25 @@ import { prepararParaEnviar } from "../whatsapp/preparar.ts";
 export const LIMITE_TURNO_MS = 25_000;
 const CLAVE_TEXTO_DERIVACION_DURA = "texto_derivacion_dura_generica";
 const CLAVE_TEXTO_MENSAJE_NO_SOPORTADO = "texto_mensaje_no_soportado";
-// Con estos motivos, derivar() de acá abajo no manda nada al cliente, ni siquiera el texto fijo
-// genérico de derivación dura (CLAVE_TEXTO_DERIVACION_DURA). No confundir con MOTIVOS_SIN_MENSAJE
-// de _shared/enums.ts: esa otra es sobre la despedida que ESCRIBE EL MODELO al llamar
-// derivar_a_persona (otra lista, con otros motivos, para una pregunta parecida).
-const MOTIVOS_DERIVAN_EN_SILENCIO: readonly MotivoDerivacion[] = ["reclamo", "cliente_enojado", "sin_respuesta", "timeout", "barandilla_doble"];
+// Pedido de Mateo, 19/9: toda derivación le tiene que dejar algo al cliente, no importa quién la
+// haya decidido. Estos dos motivos, en cambio, son la excepción a propósito: es el CLIENTE el
+// que dejó de escribir (sin_respuesta/timeout), así que "en breve te contestan" sería un mensaje
+// no pedido — y si ya pasaron 24 hs, Meta lo rechaza igual (fuera_ventana_meta). Quedan mudos
+// hasta que Mateo decida lo contrario; si dice que sí, se agrega con una plantilla aprobada, no
+// con texto libre. No confundir con MOTIVOS_SIN_MENSAJE de _shared/enums.ts: esa otra es sobre
+// la despedida que ESCRIBE EL MODELO al llamar derivar_a_persona (otra lista, para una pregunta
+// parecida, resuelta ahí con texto fijo en vez de silencio — ver derivar_a_persona.ts).
+const MOTIVOS_QUE_QUEDAN_MUDOS: readonly MotivoDerivacion[] = ["sin_respuesta", "timeout"];
+// reclamo/cliente_enojado: mismo texto fijo, decida esto el código (palabra clave o
+// clasificador) o el modelo por derivar_a_persona.ts — para que la charla se vea igual del lado
+// del cliente sin importar quién detectó el motivo.
+const CLAVE_TEXTO_DERIVACION_RECLAMO = "texto_derivacion_reclamo";
+const MOTIVOS_CON_TEXTO_RECLAMO: readonly MotivoDerivacion[] = ["reclamo", "cliente_enojado"];
+// barandilla_doble: dos saltos del mismo turno son un problema DEL SISTEMA (Lucía no logró
+// escribir algo que pasara las barandillas), no del cliente ni de su reclamo — texto propio, con
+// tono de disculpa, en vez del genérico o el de reclamo.
+const CLAVE_TEXTO_DERIVACION_FALLO = "texto_derivacion_fallo";
+const MOTIVOS_CON_TEXTO_FALLO: readonly MotivoDerivacion[] = ["barandilla_doble"];
 
 export type ResultadoTurno = {
   mensajesAlCliente: string[];
@@ -48,12 +62,28 @@ export type ResultadoTurno = {
   bloqueadoPorVentana: boolean;
 };
 
+// Invariante (pedido de Mateo, 19/9): si el turno deriva (derivo === true), mensajesAlCliente
+// tiene que tener algo — salvo tres excepciones documentadas: la ventana de Meta cerrada
+// (bloqueadoPorVentana, más abajo: ahí ni siquiera se intenta y derivo queda false), y
+// sin_respuesta/timeout (MOTIVOS_QUE_QUEDAN_MUDOS, arriba). Antes el silencio era la respuesta
+// por defecto para varios motivos y una despedida vacía del modelo; ahora es al revés: el
+// silencio es la excepción, documentada acá, y todo lo demás manda un texto fijo aprobado si no
+// hay uno propio que valga.
 async function derivar(
   db: Db,
   p: { conversacionId: string; motivo: MotivoDerivacion; mensaje: string | null; derivacionTel: string | null },
 ): Promise<ResultadoTurno> {
   const { id } = await registrarDerivacion({ db, conversacionId: p.conversacionId, derivacionTel: p.derivacionTel }, p.motivo);
-  const mensajesAlCliente = MOTIVOS_DERIVAN_EN_SILENCIO.includes(p.motivo) ? [] : prepararParaEnviar([p.mensaje]);
+  let mensajesAlCliente: string[];
+  if (MOTIVOS_QUE_QUEDAN_MUDOS.includes(p.motivo)) {
+    mensajesAlCliente = [];
+  } else if (MOTIVOS_CON_TEXTO_RECLAMO.includes(p.motivo)) {
+    mensajesAlCliente = prepararParaEnviar([await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_RECLAMO)]);
+  } else if (MOTIVOS_CON_TEXTO_FALLO.includes(p.motivo)) {
+    mensajesAlCliente = prepararParaEnviar([await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_FALLO)]);
+  } else {
+    mensajesAlCliente = prepararParaEnviar([p.mensaje]);
+  }
   return { mensajesAlCliente, imagenes: [], derivo: true, motivoDerivacion: p.motivo, avisoEquipo: { motivo: p.motivo, derivacionId: id }, bloqueadoPorVentana: false };
 }
 

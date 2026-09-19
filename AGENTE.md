@@ -145,7 +145,7 @@ el índice del prompt.
 | `anotar(texto)` | — | Nota libre en la libreta (`notas`, autor `lucia`) |
 | `enviar_fotos(modelo_ids[])` | Máximo 3 · ids existen en catálogo, activos y con fotos | Manda la primera foto cargada en la ficha de cada modelo |
 | `enviar_link(tipo)` | tipo ∈ {mapa, resena, web} · el link está cargado en `enlaces` (se reconoce por el nombre) | Manda el link de `enlaces` |
-| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum **sin los que decide solo el código** (`evento_inminente`, `barandilla_doble`, `sin_respuesta`, `timeout` — ver § 10) · sin pregunta en el mensaje | Fila en `derivaciones` (una sola si ya había una pendiente), conversación derivada, avisa al número del canal, **corta el turno**. Con reclamo o descuento no se manda la despedida. Aparece en la pestaña Atención humana. El `mensaje_al_cliente` (texto libre del modelo) pasa por las barandillas igual que cualquier otro texto antes de salir (hallazgo C1 del tester, 15/9: antes no pasaba) |
+| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum **sin los que decide solo el código** (`evento_inminente`, `barandilla_doble`, `sin_respuesta`, `timeout` — ver § 10) · sin pregunta en el mensaje | Fila en `derivaciones` (una sola si ya había una pendiente), conversación derivada, avisa al número del canal, **corta el turno**. Con reclamo, cliente enojado o descuento la despedida del modelo se reemplaza por un texto fijo (`texto_derivacion_reclamo`, no se discute); si el motivo permite despedida propia pero no llegó ninguna, cae al genérico (`texto_derivacion_dura_generica`) — pedido de Mateo, 19/9: ninguna derivación queda muda. Aparece en la pestaña Atención humana. El `mensaje_al_cliente` (texto libre del modelo, o el texto fijo que corresponda) pasa por las barandillas igual que cualquier otro texto antes de salir (hallazgo C1 del tester, 15/9: antes no pasaba) |
 
 Cada herramienta devuelve al modelo sus datos o un rechazo que dice qué hacer ahora. Lo que
 le llega al cliente armado en código (confirmación, link, fotos, el texto fijo de una
@@ -207,8 +207,10 @@ en el caso parecido. Orden: formato → contenido → reglas.
 Son 14 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
 código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
 del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
-el segundo del mismo turno deriva con motivo `barandilla_doble`. Si Lucía anunció un pase,
-se ejecuta la derivación; fuera de la ventana de Meta, se bloquea y le gana a todo.
+el segundo del mismo turno deriva con motivo `barandilla_doble` — desde el 19/9, con un texto
+fijo propio (`texto_derivacion_fallo`, tono de disculpa: es un problema del sistema, no del
+cliente). Si Lucía anunció un pase, se ejecuta la derivación; fuera de la ventana de Meta, se
+bloquea y le gana a todo (ahí sí, sin texto: no se puede mandar texto libre).
 
 ---
 
@@ -303,9 +305,11 @@ prenda dañada, pedido corporativo/uniforme, turno urgente sin hueco disponible.
 mensaje no diga "reclamo" ni nombre nada roto — es el TONO, no el contenido: insulta,
 grita en mayúsculas, usa groserías o amenaza. Lo detecta el clasificador (paso 4b,
 `LLM_CLASIFICADOR`), que no depende de una palabra clave para esto (una queja puntual
-sobre algo sigue siendo `reclamo`). Sin despedida armada (`MOTIVOS_SIN_MENSAJE`, igual
-que reclamo): no se discute, sigue una persona. Lucía también puede llamarlo directo
-con `derivar_a_persona` si lo nota a mitad de la charla.
+sobre algo sigue siendo `reclamo`). Sin despedida armada por el modelo (`MOTIVOS_SIN_MENSAJE`,
+igual que reclamo): no se discute, sigue una persona — pero desde el 19/9 (pedido de Mateo:
+ninguna derivación queda muda) un texto fijo aprobado (`texto_derivacion_reclamo`, editable
+desde Configuración › Lucía) reemplaza esa despedida en vez de no mandar nada. Lucía también
+puede llamarlo directo con `derivar_a_persona` si lo nota a mitad de la charla.
 
 **Evento hoy o mañana** (decisión #8 de Mateo, 14/9): un alquiler con el evento hoy o
 mañana lo resuelve una persona, siempre. Se cuenta con la fecha del evento en hora de
@@ -331,7 +335,16 @@ cualquiera de las dos, ya no hay ningún modelo esperando que le pidan un motivo
 schema de `derivar_a_persona` aceptaba estos motivos igual, y el modelo podía llamarlos
 por su cuenta con un texto propio en vez del flujo garantizado). `MOTIVOS_SOLO_CODIGO`
 (`_shared/enums.ts`) es la lista completa: `evento_inminente`, `barandilla_doble`,
-`sin_respuesta`, `timeout`; ninguno está en el enum que ve la herramienta.
+`sin_respuesta`, `timeout`, `fallo_tecnico` (0044, logica, 16/9: se agotaron los intentos
+de un trabajo de la cola, o un mensaje quedó en duda al mandarlo); ninguno está en el
+enum que ve la herramienta.
+
+Silencio real (sin ningún mensaje al cliente): solo `sin_respuesta` y `timeout` —
+el cliente dejó de escribir, así que "en breve te contestan" sería un mensaje no pedido
+(y si ya pasaron 24 hs, Meta lo rechaza). Todo el resto de las derivaciones, decida el
+motivo el código o el LLM, deja un texto fijo aprobado (pedido de Mateo, 19/9). Fuera de
+la ventana de Meta el silencio también es real, pero ahí es la regla de Meta, no una
+elección: no se puede mandar texto libre.
 
 Al derivar: `derivaciones` recibe la fila con motivo y resumen (lo arma el
 extractor); la conversación se pausa para Lucía hasta que una persona la retome desde
