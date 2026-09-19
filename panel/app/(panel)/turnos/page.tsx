@@ -11,6 +11,15 @@
 // transición es posible desde el estado actual y exige un motivo para cancelar. «Nuevo turno»
 // y «Mover» a otro horario todavía no tienen ruta en paneles: quedan deshabilitados con una
 // nota, en vez de simular una acción que no pasa a ninguna base.
+//
+// Vista semana (?vista=semana&dia=AAAA-MM-DD, GET /api/turnos/semana?desde=, H1.8 paneles):
+// no hay maqueta de Claude Design para esto (pedido de Mateo 18/9, sin mock previo) — es una
+// lista de 7 secciones de día, no una grilla de 7 columnas: con dos o tres turnos superpuestos
+// en un mismo horario, columnas angostas se vuelven ilegibles justo en los días más ocupados.
+// Misma lista en escritorio y celular (a diferencia de la vista día, acá el layout no cambia
+// con el ancho, así que no hace falta duplicar el contenido por breakpoint como el resto del
+// archivo) — tocar un turno abre HojaTurno, el mismo modal que ya usa el día en celular: no
+// hay geometría de grilla en la vista semana que le dé sentido a un Popover posicionado.
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -25,6 +34,9 @@ import type { AgendaDelDia, FilaTurno } from '@/lib/queries/turnos';
 import { aHora, aMinutos, describirFranjas, horaCorta } from '../configuracion/agenda/franjas';
 
 type Franja = AgendaDelDia['franjas'][number];
+// GET /api/turnos/semana?desde=AAAA-MM-DD (paneles): 7 días, cada uno con la misma forma que
+// ya devuelve GET /api/turnos para un día.
+type AgendaSemana = { semana: { desde: string; hasta: string }; dias: AgendaDelDia[] };
 
 const VACIO = { titulo: 'No hay turnos este día', texto: 'Cuando Lucía o el equipo agenden uno, aparece en su probador.' };
 const SIN_FRANJAS = { titulo: 'Este día no se dan turnos', texto: 'Las franjas de turnos se cambian en Configuración › Agenda.' };
@@ -56,6 +68,17 @@ function sumarDiaISO(fecha: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** 'AAAA-MM-DD' → '15', 'AAAA-MM-DD' → 'septiembre', para el rango de la semana. */
+const diaDelMes = (fecha: string) => Number(fecha.slice(8, 10));
+const nombreMes = (fecha: string) => new Date(`${fecha}T00:00:00Z`).toLocaleDateString('es-AR', { month: 'long', timeZone: 'UTC' });
+
+/** '15 – 21 de septiembre', o '29 de septiembre – 5 de octubre' si cruza de mes. */
+function rangoSemana(desde: string, hasta: string): string {
+  const mesDesde = nombreMes(desde);
+  const mesHasta = nombreMes(hasta);
+  return mesDesde === mesHasta ? `${diaDelMes(desde)} – ${diaDelMes(hasta)} de ${mesDesde}` : `${diaDelMes(desde)} de ${mesDesde} – ${diaDelMes(hasta)} de ${mesHasta}`;
+}
+
 // Tramos de un probador fuera de toda franja: en una franja con P probadores toman
 // turnos del 1 al P (supuesto #22), así que el sábado a la tarde el 3 queda gris.
 function tramosSinTurnos(franjas: Franja[], probador: number) {
@@ -82,6 +105,21 @@ function Flechas({ fecha, children }: { fecha: string; children: React.ReactNode
       </Link>
       {children}
       <Link href={`/turnos?dia=${sumarDiaISO(fecha, 1)}`} aria-label="Día siguiente" className="flex h-10 w-10 flex-none items-center justify-center rounded-otto border border-borde bg-lino text-[18px] leading-none text-grafito md:h-8 md:w-8">
+        ›
+      </Link>
+    </span>
+  );
+}
+
+// Igual que Flechas, pero de a 7 días: ‹ semana › en vez de ‹ día ›.
+function FlechasSemana({ desde, children }: { desde: string; children: React.ReactNode }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <Link href={`/turnos?vista=semana&dia=${sumarDiaISO(desde, -7)}`} aria-label="Semana anterior" className="flex h-10 w-10 flex-none items-center justify-center rounded-otto border border-borde bg-lino text-[18px] leading-none text-grafito md:h-8 md:w-8">
+        ‹
+      </Link>
+      {children}
+      <Link href={`/turnos?vista=semana&dia=${sumarDiaISO(desde, 7)}`} aria-label="Semana siguiente" className="flex h-10 w-10 flex-none items-center justify-center rounded-otto border border-borde bg-lino text-[18px] leading-none text-grafito md:h-8 md:w-8">
         ›
       </Link>
     </span>
@@ -339,10 +377,135 @@ function HojaTurno({ turno, onCerrar, onCambio }: { turno: FilaTurno; onCerrar: 
   );
 }
 
+// Una fila de la lista (día en celular, o cada sección de la semana). Extraído porque la
+// vista semana la reusa tal cual.
+function FilaTurnoLista({ t, onAbrir }: { t: FilaTurno; onAbrir: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onAbrir}
+      className="flex items-center gap-3 rounded-otto border border-borde bg-lino px-3.5 py-[13px] text-left"
+      style={{ borderLeft: `3px solid ${BORDE_ESTADO[t.estado as EstadoTurno]}` }}
+    >
+      <span className="w-[46px] flex-none font-serif text-[15px] font-semibold tabular-nums">{t.h}</span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-serif text-[15px] font-semibold">{t.n}</div>
+        <div className="text-[14px] text-grafito">
+          {t.t} · {t.p}
+        </div>
+        {t.aviso && <div className="mt-0.5 text-[14px] font-medium text-ambar">↻ {t.aviso}</div>}
+      </div>
+      <span className="flex-none rounded-pill px-[9px] py-[3px] text-[14px] font-medium" style={{ background: t.eb, color: t.ef }}>
+        {t.e}
+      </span>
+    </button>
+  );
+}
+
+// Una de las 7 secciones de la vista semana: el título del día (mismo formato que ya trae
+// AgendaDelDia.titulo) y sus turnos, o un aviso corto si no hay franjas o no hay turnos.
+function SeccionDia({ dia, onAbrir }: { dia: AgendaDelDia; onAbrir: (id: string) => void }) {
+  const turnos = [...dia.turnos].sort((a, b) => inicioMin(a) - inicioMin(b));
+  const vacio = dia.franjas.length === 0 ? 'Este día no se dan turnos' : turnos.length === 0 ? 'Sin turnos' : null;
+  return (
+    <div className="border-b border-borde-suave py-3.5 last:border-b-0">
+      <div className="mb-2 font-serif text-[16px] font-semibold">{dia.titulo}</div>
+      {vacio ? (
+        <div className="text-[14px] text-grafito">{vacio}</div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {turnos.map((t) => (
+            <FilaTurnoLista key={t.id} t={t} onAbrir={() => onAbrir(t.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Vista semana: una sola lista para cualquier ancho (a diferencia del día, el layout no
+// cambia con el breakpoint, así que no hace falta duplicar el contenido). Tocar un turno abre
+// HojaTurno — no hay grilla acá que le dé sentido a un Popover posicionado por columna.
+function VistaSemana({ semana, abiertoId, onAbrir, onCambio }: { semana: AgendaSemana; abiertoId: string | null; onAbrir: (id: string | null) => void; onCambio: () => void }) {
+  const abierto = semana.dias.flatMap((d) => d.turnos).find((t) => t.id === abiertoId) ?? null;
+  const rango = rangoSemana(semana.semana.desde, semana.semana.hasta);
+
+  return (
+    <>
+      {/* Escritorio */}
+      <div className="hidden flex-1 flex-col px-6 pt-5.5 md:flex">
+        <div className="mb-1.5 flex items-center gap-3.5">
+          <h1 className="font-serif text-[22px] font-semibold">Turnos</h1>
+          <FlechasSemana desde={semana.semana.desde}>
+            <div className="min-w-[220px] text-center text-sm text-grafito">{rango}</div>
+          </FlechasSemana>
+          <div className="flex overflow-hidden rounded-otto border border-borde text-[14px] font-medium md:text-[13px]">
+            <Link href={`/turnos?dia=${semana.semana.desde}`} className="bg-lino px-4 py-[7px] text-grafito">
+              Día
+            </Link>
+            <span className="bg-cobre px-4 py-[7px] text-lino">Semana</span>
+          </div>
+          <button type="button" onClick={onCambio} className="text-[14px] text-tinta underline-offset-2 hover:underline md:text-[13px]">
+            ↻ Actualizar
+          </button>
+          <div className="flex-1" />
+          <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto bg-cobre/50 px-4.5 py-2.5 text-sm font-medium text-lino">
+            Nuevo turno
+          </button>
+        </div>
+      </div>
+
+      {/* Celular */}
+      <div className="px-4 pb-3 pt-[18px] md:hidden">
+        <div className="flex items-center">
+          <div className="flex-1 font-serif text-[22px] font-semibold">Turnos</div>
+          <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto bg-cobre/50 px-3.5 py-2.5 text-[14px] font-medium text-lino">
+            Nuevo turno
+          </button>
+        </div>
+        <div className="mt-2.5">
+          <FlechasSemana desde={semana.semana.desde}>
+            <div className="min-w-0 flex-1 text-center text-[15px] font-medium">{rango}</div>
+          </FlechasSemana>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <Link href={`/turnos?dia=${semana.semana.desde}`} className="rounded-pill border border-borde px-3 py-1.5 text-[14px] font-medium text-grafito">
+            Día
+          </Link>
+          <button type="button" onClick={onCambio} className="text-[14px] text-tinta underline-offset-2">
+            ↻ Actualizar
+          </button>
+        </div>
+      </div>
+
+      {/* Contenido: una sola lista, compartida por los dos anchos. */}
+      <div className="flex-1 overflow-y-auto px-4 pb-4 md:px-6">
+        {semana.dias.map((dia) => (
+          <SeccionDia key={dia.fecha} dia={dia} onAbrir={(id) => onAbrir(id)} />
+        ))}
+      </div>
+
+      {abierto && <HojaTurno turno={abierto} onCerrar={() => onAbrir(null)} onCambio={onCambio} />}
+    </>
+  );
+}
+
 export default function TurnosPage() {
-  const fechaPedida = useSearchParams().get('dia');
-  const { datos: agenda, cargando, error, recargar } = useDatos<AgendaDelDia>(`/api/turnos${fechaPedida ? `?fecha=${fechaPedida}` : ''}`);
+  const params = useSearchParams();
+  const fechaPedida = params.get('dia');
+  const esSemana = params.get('vista') === 'semana';
+  const { datos: agenda, cargando, error, recargar } = useDatos<AgendaDelDia>(esSemana ? null : `/api/turnos${fechaPedida ? `?fecha=${fechaPedida}` : ''}`);
+  const { datos: semana, cargando: cargandoSemana, error: errorSemana, recargar: recargarSemana } = useDatos<AgendaSemana>(
+    esSemana ? `/api/turnos/semana${fechaPedida ? `?desde=${fechaPedida}` : ''}` : null,
+  );
   const [abiertoId, setAbiertoId] = useState<string | null>(null);
+
+  if (esSemana) {
+    if (cargandoSemana && !semana) return <Cargando />;
+    if (errorSemana) return <EstadoError mensaje={errorSemana} onReintentar={recargarSemana} />;
+    if (!semana) return null;
+    return <VistaSemana semana={semana} abiertoId={abiertoId} onAbrir={setAbiertoId} onCambio={recargarSemana} />;
+  }
 
   if (cargando && !agenda) return <Cargando />;
   if (error) return <EstadoError mensaje={error} onReintentar={recargar} />;
@@ -364,7 +527,9 @@ export default function TurnosPage() {
           </Flechas>
           <div className="flex overflow-hidden rounded-otto border border-borde text-[14px] font-medium md:text-[13px]">
             <span className="bg-cobre px-4 py-[7px] text-lino">Día</span>
-            <span className="bg-lino px-4 py-[7px] text-grafito">Semana</span>
+            <Link href={`/turnos?vista=semana&dia=${agenda.fecha}`} className="bg-lino px-4 py-[7px] text-grafito">
+              Semana
+            </Link>
           </div>
           {!vacio && agenda.sin_confirmar_manana > 0 && (
             <span className="rounded-pill border border-[#EEDFC0] bg-ambar-suave px-3 py-1.5 text-[14px] font-medium text-ambar md:text-[12.5px]">Sin confirmar para mañana · {agenda.sin_confirmar_manana}</span>
@@ -403,15 +568,17 @@ export default function TurnosPage() {
             </Flechas>
           </div>
           <div className="mt-2 text-[14px] leading-[1.45] text-grafito">{resumen}</div>
-          {!vacio && (
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              {agenda.sin_confirmar_manana > 0 && <span className="rounded-pill border border-[#EEDFC0] bg-ambar-suave px-3 py-1.5 text-[14px] font-medium text-ambar">Sin confirmar mañana · {agenda.sin_confirmar_manana}</span>}
-              <span className="rounded-pill border border-borde px-3 py-1.5 text-[14px] font-medium text-grafito">Semana</span>
-              <button type="button" onClick={recargar} className="text-[14px] text-tinta underline-offset-2">
-                ↻ Actualizar
-              </button>
-            </div>
-          )}
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            {!vacio && agenda.sin_confirmar_manana > 0 && (
+              <span className="rounded-pill border border-[#EEDFC0] bg-ambar-suave px-3 py-1.5 text-[14px] font-medium text-ambar">Sin confirmar mañana · {agenda.sin_confirmar_manana}</span>
+            )}
+            <Link href={`/turnos?vista=semana&dia=${agenda.fecha}`} className="rounded-pill border border-borde px-3 py-1.5 text-[14px] font-medium text-grafito">
+              Semana
+            </Link>
+            <button type="button" onClick={recargar} className="text-[14px] text-tinta underline-offset-2">
+              ↻ Actualizar
+            </button>
+          </div>
         </div>
 
         {vacio ? (
@@ -421,25 +588,7 @@ export default function TurnosPage() {
         ) : (
           <div className="flex flex-1 flex-col gap-2.5 px-4 pb-4">
             {turnos.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setAbiertoId(t.id)}
-                className="flex items-center gap-3 rounded-otto border border-borde bg-lino px-3.5 py-[13px] text-left"
-                style={{ borderLeft: `3px solid ${BORDE_ESTADO[t.estado as EstadoTurno]}` }}
-              >
-                <span className="w-[46px] flex-none font-serif text-[15px] font-semibold tabular-nums">{t.h}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-serif text-[15px] font-semibold">{t.n}</div>
-                  <div className="text-[14px] text-grafito">
-                    {t.t} · {t.p}
-                  </div>
-                  {t.aviso && <div className="mt-0.5 text-[14px] font-medium text-ambar">↻ {t.aviso}</div>}
-                </div>
-                <span className="flex-none rounded-pill px-[9px] py-[3px] text-[14px] font-medium" style={{ background: t.eb, color: t.ef }}>
-                  {t.e}
-                </span>
-              </button>
+              <FilaTurnoLista key={t.id} t={t} onAbrir={() => setAbiertoId(t.id)} />
             ))}
           </div>
         )}
