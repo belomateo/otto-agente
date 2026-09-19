@@ -38,6 +38,10 @@ export type ReglasAgenda = {
   escalonadoMin: number;
   diasReservaUrgencia: number | null;
   duracionMin: number;
+  // Cuántos días tienen que quedar entre el turno y el evento: el traje necesita un mínimo de
+  // confección (decisión de Mateo, el dieciséis de septiembre). Un día es solo "nada el día del
+  // evento", que es lo de siempre y lo que corresponde a la prueba final, donde ya no se arregla.
+  diasConfeccion: number;
 };
 
 export type PedidoHuecos = {
@@ -72,7 +76,13 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
 
   let primerDia = p.desde < hoy ? hoy : p.desde;
   let ultimoDia = p.hasta;
-  if (p.fechaEvento !== null && sumarDias(p.fechaEvento, -1) < ultimoDia) ultimoDia = sumarDias(p.fechaEvento, -1);
+  // Nada el día del evento ni después (supuesto #24) y, para los turnos de prueba, con los días
+  // de confección de margen: un traje probado el viernes no llega para un casamiento el sábado.
+  // La prueba final va con margen 1, porque a esa altura ya no se arregla nada.
+  const margen = Math.max(1, Math.trunc(reglas.diasConfeccion));
+  if (p.fechaEvento !== null && sumarDias(p.fechaEvento, -margen) < ultimoDia) {
+    ultimoDia = sumarDias(p.fechaEvento, -margen);
+  }
   if (reglas.diasReservaUrgencia !== null) {
     const finDeLaReserva = sumarDias(hoy, reglas.diasReservaUrgencia);
     const urgente = p.fechaEvento !== null && p.fechaEvento <= finDeLaReserva;
@@ -103,6 +113,23 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
   return { huecos };
 }
 
+// Los días de confección salen de configuracion_agenda si la columna existe (la agrega paneles,
+// que es el dueño de esa tabla) y, mientras no exista, del valor que fijó Mateo. Se lee
+// así y no con un número fijo para que la dueña lo pueda cambiar desde el panel sin tocar código.
+export const DIAS_CONFECCION_POR_DEFECTO = 2;
+
+async function diasConfeccion(db: Db, tipo: TipoTurno): Promise<number> {
+  if (tipo === "prueba_final") return 1; // el día antes está bien: ya no se arregla nada
+  const hay = await db.consulta(
+    `select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'configuracion_agenda' and column_name = 'dias_confeccion'`,
+  );
+  if (!hay.length) return DIAS_CONFECCION_POR_DEFECTO;
+  const [f] = await db.consulta("select dias_confeccion from configuracion_agenda limit 1");
+  const n = Number(f?.dias_confeccion);
+  return Number.isFinite(n) && n >= 1 ? Math.trunc(n) : DIAS_CONFECCION_POR_DEFECTO;
+}
+
 async function leerReglas(db: Db, tipo: TipoTurno): Promise<ReglasAgenda> {
   const [config] = await db.consulta(
     "select escalonado_min, dias_reserva_urgencia from configuracion_agenda limit 1",
@@ -116,6 +143,7 @@ async function leerReglas(db: Db, tipo: TipoTurno): Promise<ReglasAgenda> {
     escalonadoMin: Number(config.escalonado_min),
     diasReservaUrgencia: config.dias_reserva_urgencia === null ? null : Number(config.dias_reserva_urgencia),
     duracionMin: Number(duracion.duracion_min),
+    diasConfeccion: await diasConfeccion(db, tipo),
   };
 }
 

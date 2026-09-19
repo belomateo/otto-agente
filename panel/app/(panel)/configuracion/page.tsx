@@ -1,164 +1,269 @@
 'use client';
 
-// Configuración — subpestaña Lucía, con toast de guardado. Puerto de
-// d-config.html y m-config.html. Las otras subpestañas (Agenda, Herramientas,
-// Enlaces, Notas, Accesos) son de otros roles — ver STACK.md § 6 y H1.10.
+// Configuración › Lucía — conectado a GET /api/configuracion (reglas, contexto) y
+// GET/PUT /api/configuracion/prompt-base (H1.8/H1.9, paneles). El contexto real son 7 claves
+// fijas de contexto_agente (presentacion, tono, ancla_de_valor y los 4 textos de derivación/
+// turno), no un solo cuadro de texto libre como en el mock: cada una se edita por separado.
+// Las reglas no se borran desde el panel (la entidad no es `borrable`): "Activa" en false es
+// cómo se deja de aplicar una sin perder su historial ni renumerar las demás.
 
-import { useState } from 'react';
-import { Toast } from '@/components/ui-otto/Toast';
-import { reglas } from '@/lib/mock-data';
+import { useEffect, useState } from 'react';
+import { Cargando } from '@/components/ui-otto/Cargando';
+import { EstadoError } from '@/components/ui-otto/EstadoError';
+import { PanelHistorial } from '@/components/api/PanelHistorial';
+import { enviar, ErrorApi } from '@/components/api/cliente';
+import { useDatos } from '@/components/api/useDatos';
+import { useEdicion } from '@/components/api/useEdicion';
+import { useToastLocal } from '@/components/ui-otto/useToastLocal';
+import { AccionesEdicion, CAMPO, ETIQUETA, TARJETA } from './AccionesEdicion';
+import { useConfiguracion } from './ConfiguracionContexto';
+import type { Configuracion } from '@/lib/queries/configuracion';
 
-const SUBPESTAÑAS_DESKTOP = ['Lucía', 'Agenda', 'Herramientas', 'Enlaces', 'Notas', 'Accesos'];
-const SUBPESTAÑAS_MOBILE = ['Lucía', 'Agenda', 'Herram.', 'Enlaces', 'Notas'];
+const SIN_CONECTAR = 'Todavía no conectado';
 
-function TarjetaLucia({ compacta = false }: { compacta?: boolean }) {
+type FilaContexto = Configuracion['contexto'][number];
+type FilaRegla = Configuracion['reglas'][number];
+
+const LABEL_CONTEXTO: Record<string, string> = {
+  presentacion: 'Presentación — lo primero que dice en cada charla nueva',
+  tono: 'Tono — cómo habla',
+  ancla_de_valor: 'Ancla de valor — por qué elegir Mr. Otto',
+  texto_derivacion_dura_generica: 'Derivación genérica — cuando pasa la charla a una persona sin un motivo más puntual',
+  texto_evento_inminente: 'Evento hoy o mañana — cuando deriva porque el evento ya está encima',
+  texto_mensaje_no_soportado: 'Mensaje no soportado — cuando el cliente manda algo que no puede leer (audio, ubicación…)',
+  texto_turno_confirmado: 'Turno confirmado — lo que dice al agendar',
+};
+// El orden en que se editan: presentación primero (ya tenía su lugar en el canvas), el resto
+// alfabético por clave para que sea estable entre cargas.
+const ORDEN_CONTEXTO = ['presentacion', 'tono', 'ancla_de_valor', 'texto_turno_confirmado', 'texto_evento_inminente', 'texto_derivacion_dura_generica', 'texto_mensaje_no_soportado'];
+
+function TarjetaLucia() {
   return (
-    <div className={`flex items-center gap-4 rounded-otto border border-borde bg-lino ${compacta ? 'gap-3 p-3.5' : 'p-4.5'}`}>
-      <div
-        className={`flex flex-none items-center justify-center rounded-pill bg-noche font-serif font-semibold text-hueso ${
-          compacta ? 'h-11 w-11 text-xl' : 'h-14 w-14 text-[26px]'
-        }`}
-      >
-        L
+    <div className={`flex items-center gap-3 md:gap-4 ${TARJETA}`}>
+      <div className="flex h-11 w-11 flex-none items-center justify-center rounded-pill bg-noche font-serif text-xl font-semibold text-hueso md:h-14 md:w-14 md:text-[26px]">L</div>
+      <div className="min-w-0 flex-1">
+        <div className="font-serif text-[15px] font-semibold md:text-[17px]">Lucía</div>
+        <div className="text-[14px] text-grafito md:text-[13px]">Asistente de WhatsApp de Mr. Otto · alquiler</div>
       </div>
-      <div className="flex-1">
-        <div className={`font-serif font-semibold ${compacta ? 'text-[15px]' : 'text-[17px]'}`}>Lucía</div>
-        <div className={compacta ? 'text-xs text-grafito' : 'text-[13px] text-grafito'}>
-          {compacta ? 'Asistente de WhatsApp de Mr. Otto' : 'Asistente de WhatsApp de Mr. Otto · atendiendo desde marzo 2026'}
+      <button type="button" disabled title={SIN_CONECTAR} className="hidden flex-none rounded-otto border border-borde bg-lino px-3.5 py-2 text-[14px] font-medium text-[#8A8578] md:block md:text-[13px]">
+        Cambiar avatar
+      </button>
+    </div>
+  );
+}
+
+function ContextoEditable({ fila, onCambio }: { fila: FilaContexto; onCambio: () => void }) {
+  const edicion = useEdicion({ version: fila.version, valor: fila.valor });
+  const { toast, mostrar } = useToastLocal();
+  const [historial, setHistorial] = useState(false);
+  const corto = fila.clave === 'presentacion' || fila.clave === 'tono' || fila.clave === 'ancla_de_valor';
+
+  async function guardar() {
+    const err = await edicion.guardar(`/api/configuracion/contexto/${fila.id}`, { valor: edicion.valor.valor });
+    if (err) mostrar(err, true);
+    else {
+      mostrar('Guardado', false);
+      onCambio();
+    }
+  }
+
+  return (
+    <div className={TARJETA}>
+      <label className={ETIQUETA}>{LABEL_CONTEXTO[fila.clave] ?? fila.clave}</label>
+      {corto ? (
+        <input value={edicion.valor.valor} onChange={(e) => edicion.setValor({ ...edicion.valor, valor: e.target.value })} className={CAMPO} />
+      ) : (
+        <textarea value={edicion.valor.valor} onChange={(e) => edicion.setValor({ ...edicion.valor, valor: e.target.value })} rows={3} className={`${CAMPO} resize-y leading-[1.6]`} />
+      )}
+      {toast}
+      <AccionesEdicion sucio={edicion.sucio} guardando={edicion.guardando} onGuardar={guardar} onDeshacer={edicion.deshacer} onVerHistorial={() => setHistorial(true)} />
+      {historial && <PanelHistorial tabla="contexto_agente" id={fila.id} versionActual={edicion.guardado.version} onCerrar={() => setHistorial(false)} onRestaurado={onCambio} />}
+    </div>
+  );
+}
+
+function ReglaEditable({ regla, onCambio }: { regla: FilaRegla; onCambio: () => void }) {
+  const edicion = useEdicion({ version: regla.version, numero: regla.numero, texto: regla.texto, activo: regla.activo });
+  const { toast, mostrar } = useToastLocal();
+
+  async function guardar() {
+    const err = await edicion.guardar(`/api/configuracion/reglas/${regla.id}`, edicion.valor);
+    if (err) mostrar(err, true);
+    else {
+      mostrar('Guardado', false);
+      onCambio();
+    }
+  }
+
+  return (
+    <div className="border-t border-borde-suave py-2">
+      <div className="flex items-center gap-3">
+        <input
+          type="number"
+          value={edicion.valor.numero}
+          onChange={(e) => edicion.setValor({ ...edicion.valor, numero: Number(e.target.value) || 1 })}
+          aria-label={`Orden de la regla ${regla.numero}`}
+          className="w-[52px] flex-none rounded-otto border border-borde bg-lino px-1.5 py-1 text-center font-serif text-sm font-semibold tabular-nums text-cobre outline-none focus:border-cobre"
+        />
+        <input
+          value={edicion.valor.texto}
+          onChange={(e) => edicion.setValor({ ...edicion.valor, texto: e.target.value })}
+          placeholder="Escribí la regla"
+          aria-label={`Regla ${regla.numero}`}
+          className="min-w-0 flex-1 rounded-otto border border-transparent px-1.5 py-1 text-[14.5px] leading-[1.5] outline-none hover:border-borde focus:border-cobre"
+        />
+        <label className="flex flex-none items-center gap-1.5 text-[14px] text-grafito md:text-xs">
+          <input type="checkbox" checked={edicion.valor.activo} onChange={(e) => edicion.setValor({ ...edicion.valor, activo: e.target.checked })} />
+          Activa
+        </label>
+      </div>
+      {toast}
+      {edicion.sucio && (
+        <div className="mt-1.5">
+          <AccionesEdicion sucio guardando={edicion.guardando} onGuardar={guardar} onDeshacer={edicion.deshacer} />
         </div>
-      </div>
-      {!compacta && (
-        <button className="flex-none rounded-otto border border-borde bg-lino px-3.5 py-2 text-[13px] font-medium text-grafito">
-          Cambiar avatar
-        </button>
       )}
     </div>
   );
 }
 
-export default function ConfiguracionPage() {
-  const [guardado, setGuardado] = useState(true);
+function NuevaRegla({ onCreado }: { onCreado: () => void }) {
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function crear() {
+    setEnviando(true);
+    setError(null);
+    try {
+      await enviar('/api/configuracion/reglas', 'POST', { texto });
+      setTexto('');
+      setAbierto(false);
+      onCreado();
+    } catch (e) {
+      setError(e instanceof ErrorApi ? e.message : 'No se pudo crear');
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  if (!abierto) {
+    return (
+      <button type="button" onClick={() => setAbierto(true)} className="mt-2.5 flex-none self-start rounded-[7px] border border-cobre bg-lino px-3 py-1.5 text-[14px] font-medium text-cobre md:text-[12.5px]">
+        Agregar regla
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2.5 flex items-center gap-2">
+      <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escribí la regla nueva" autoFocus className="min-w-0 flex-1 rounded-otto border border-borde bg-lino px-2.5 py-1.5 text-[14.5px] outline-none focus:border-cobre" />
+      <button type="button" onClick={crear} disabled={enviando || !texto.trim()} className="flex-none rounded-otto bg-cobre px-3.5 py-1.5 text-[14px] font-medium text-lino disabled:opacity-50">
+        {enviando ? 'Creando…' : 'Crear'}
+      </button>
+      <button type="button" onClick={() => setAbierto(false)} disabled={enviando} className="flex-none rounded-otto border border-borde bg-lino px-3 py-1.5 text-[14px] font-medium text-grafito">
+        Cancelar
+      </button>
+      {error && <div className="text-[13px] text-ladrillo">{error}</div>}
+    </div>
+  );
+}
+
+type RespuestaPrompt = { prompt: { id: string; texto: string; version: number; editado_por: string | null; editado_at: string } | null; generador_disponible: boolean };
+
+function PromptBase() {
+  const { datos, cargando, error, recargar } = useDatos<RespuestaPrompt>('/api/configuracion/prompt-base');
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [sincronizado, setSincronizado] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const { toast, mostrar } = useToastLocal();
+
+  useEffect(() => {
+    if (datos && !sincronizado) {
+      setTexto(datos.prompt?.texto ?? '');
+      setSincronizado(true);
+    }
+  }, [datos, sincronizado]);
+
+  async function guardar() {
+    setGuardando(true);
+    try {
+      await enviar('/api/configuracion/prompt-base', 'PUT', { version: datos?.prompt?.version ?? 1, texto });
+      mostrar('Prompt validado y guardado · Lucía lo usa en menos de un minuto', false);
+      recargar();
+    } catch (e) {
+      mostrar(e instanceof ErrorApi ? e.message : 'No se pudo guardar', true);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <div className="rounded-otto border border-borde bg-lino">
+      <button type="button" onClick={() => setAbierto((a) => !a)} aria-expanded={abierto} className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 px-3.5 py-3.5 text-left md:px-4.5">
+        <span className="text-grafito" aria-hidden>
+          {abierto ? '▾' : '▸'}
+        </span>
+        <span className="flex-1 text-sm font-medium">Avanzado: prompt base</span>
+        <span className="basis-full text-[14px] text-grafito md:basis-auto md:text-xs">solo si sabés lo que hacés · «Validar y guardar» avisa en rojo si no pasa</span>
+      </button>
+      {abierto && (
+        <div className="border-t border-borde-suave px-3.5 pb-4 pt-3 md:px-4.5">
+          {cargando && !sincronizado ? (
+            <Cargando />
+          ) : error ? (
+            <EstadoError mensaje={error} onReintentar={recargar} />
+          ) : (
+            <>
+              {datos && !datos.generador_disponible && (
+                <div className="mb-2.5 text-[14px] text-ambar md:text-[13px]">
+                  El generador que valida el prompt no está disponible en este entorno: al guardar, la API lo va a decir.
+                </div>
+              )}
+              <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={8} aria-label="Prompt base" className="w-full resize-y rounded-otto border border-borde px-3 py-2.5 font-mono text-[14px] leading-[1.55] outline-none focus:border-cobre md:text-[13px]" />
+              {toast}
+              {/* Sin `sincronizado` no se sabe cuál es la versión vigente: guardar acá podría
+                  mandar `version: 1` a ciegas y pisar el prompt real con lo que haya en el
+                  textarea (vacío si el GET nunca llegó a resolver). */}
+              <button type="button" onClick={guardar} disabled={guardando || !texto.trim() || !sincronizado} className="mt-2.5 rounded-otto border border-cobre bg-lino px-4 py-2.5 text-sm font-medium text-cobre disabled:opacity-50">
+                {guardando ? 'Validando…' : 'Validar y guardar'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ConfiguracionLuciaPage() {
+  const { datos, cargando, error, recargar } = useConfiguracion();
+
+  if (cargando && !datos) return <Cargando />;
+  if (error) return <EstadoError mensaje={error} onReintentar={recargar} />;
+  if (!datos) return null;
+
+  const contextoOrdenado = [...datos.contexto].sort((a, b) => ORDEN_CONTEXTO.indexOf(a.clave) - ORDEN_CONTEXTO.indexOf(b.clave));
 
   return (
     <>
-      {/* Escritorio */}
-      <div className="relative hidden flex-1 flex-col px-7 py-5.5 md:flex">
-        <div className="mb-3.5 font-serif text-[22px] font-semibold">Configuración</div>
-        <div className="mb-5 flex gap-0.5 border-b border-borde text-sm font-medium">
-          {SUBPESTAÑAS_DESKTOP.map((s, i) => (
-            <span
-              key={s}
-              className={i === 0 ? '-mb-px border-b-2 border-cobre px-4 py-2.5 text-cobre' : 'px-4 py-2.5 text-grafito'}
-            >
-              {s}
-              {s === 'Accesos' && (
-                <span className="ml-0.5 rounded-pill bg-ladrillo px-[7px] py-px text-[11px] font-semibold text-lino">1</span>
-              )}
-            </span>
-          ))}
-        </div>
-        <div className="flex max-w-[820px] flex-col gap-3.5">
-          <TarjetaLucia />
-          <div className="rounded-otto border border-borde bg-lino p-4.5">
-            <div className="mb-2 text-[13px] font-medium text-grafito">Presentación — lo primero que dice en cada charla nueva</div>
-            <input
-              defaultValue="Hola, soy Lucía, asistente de Mr. Otto. ¿En qué puedo ayudarte hoy?"
-              className="w-full rounded-otto border border-borde px-3 py-2.5 text-[15px] outline-none"
-            />
-          </div>
-          <div className="rounded-otto border border-borde bg-lino p-4.5">
-            <div className="mb-2 text-[13px] font-medium text-grafito">Contexto — quién es, dónde trabaja, cómo habla</div>
-            <textarea
-              defaultValue="Trabajás en Otto Su Misura, el alquiler de trajes a medida de Mr. Otto (Rosario, desde 1968). Hablás en rioplatense, cálida y concreta. Tu objetivo es entender el evento y agendar una prueba en el local."
-              className="min-h-[88px] w-full resize-none rounded-otto border border-borde px-3 py-2.5 text-[14.5px] leading-[1.6] outline-none"
-            />
-          </div>
-          <div className="rounded-otto border border-borde bg-lino p-4.5">
-            <div className="mb-2.5 flex items-center">
-              <div className="flex-1 text-[13px] font-medium text-grafito">Reglas — Lucía las cumple siempre, en orden</div>
-              <button className="rounded-[7px] border border-cobre bg-lino px-3 py-1.5 text-[12.5px] font-medium text-cobre">
-                Agregar regla
-              </button>
-            </div>
-            {reglas.map((r) => (
-              <div key={r.i} className="flex items-center gap-3 border-t border-borde-suave py-2.5">
-                <span className="w-[18px] flex-none font-serif text-sm font-semibold tabular-nums text-cobre">{r.i}</span>
-                <span className="flex-1 text-[14.5px] leading-[1.5]">{r.t}</span>
-                <span className="cursor-pointer text-[13px] text-[#C9C4B9]">✕</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center gap-2.5 rounded-otto border border-borde bg-lino px-4.5 py-3.5">
-            <span className="text-grafito">▸</span>
-            <span className="flex-1 text-sm font-medium">Avanzado: prompt base</span>
-            <span className="text-xs text-grafito">solo si sabés lo que hacés · «Validar y guardar» avisa en rojo si no pasa</span>
-          </div>
-          <div className="flex items-center gap-2.5 pb-[70px]">
-            <button onClick={() => setGuardado(true)} className="rounded-otto bg-cobre px-5 py-2.5 text-sm font-medium text-lino">
-              Guardar
-            </button>
-            <button className="rounded-otto border border-borde bg-lino px-3.5 py-2.5 text-sm font-medium text-grafito">
-              Deshacer
-            </button>
-            <a className="ml-auto cursor-pointer text-[13px]">Ver versión anterior</a>
-          </div>
-        </div>
-        {guardado && (
-          <div className="absolute bottom-6 right-7">
-            <Toast texto="Guardado · Lucía lo usa en el próximo mensaje" accion="Deshacer" />
-          </div>
-        )}
+      <TarjetaLucia />
+
+      {contextoOrdenado.map((c) => (
+        <ContextoEditable key={`${c.id}-${c.version}`} fila={c} onCambio={recargar} />
+      ))}
+
+      <div className={TARJETA}>
+        <div className="mb-1 text-[14px] font-medium text-grafito md:text-[13px]">Reglas — Lucía las cumple siempre, en orden</div>
+        {datos.reglas.map((r) => (
+          <ReglaEditable key={`${r.id}-${r.version}`} regla={r} onCambio={recargar} />
+        ))}
+        <NuevaRegla onCreado={recargar} />
       </div>
 
-      {/* Mobile */}
-      <div className="flex flex-1 flex-col md:hidden">
-        <div className="px-4 pt-[18px]">
-          <div className="font-serif text-[22px] font-semibold">Configuración</div>
-          <div className="mt-2.5 flex gap-0.5 overflow-hidden border-b border-borde text-[13.5px] font-medium">
-            {SUBPESTAÑAS_MOBILE.map((s, i) => (
-              <span
-                key={s}
-                className={
-                  i === 0
-                    ? '-mb-px flex-none border-b-2 border-cobre px-3 py-2.5 text-cobre'
-                    : 'flex-none px-3 py-2.5 text-grafito'
-                }
-              >
-                {s}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-          <TarjetaLucia compacta />
-          <div className="rounded-otto border border-borde bg-lino p-3.5">
-            <div className="mb-1.5 text-[12.5px] font-medium text-grafito">Presentación</div>
-            <div className="rounded-otto border border-borde px-3 py-2.5 text-sm leading-[1.5]">
-              Hola, soy Lucía, asistente de Mr. Otto. ¿En qué puedo ayudarte hoy?
-            </div>
-          </div>
-          <div className="rounded-otto border border-borde bg-lino p-3.5">
-            <div className="mb-1.5 flex items-center">
-              <div className="flex-1 text-[12.5px] font-medium text-grafito">Reglas</div>
-              <span className="text-xs font-medium text-cobre">Agregar</span>
-            </div>
-            {reglas.map((r) => (
-              <div key={r.i} className="flex gap-2.5 border-t border-borde-suave py-2.5 text-[13.5px] leading-[1.45]">
-                <span className="flex-none font-serif text-[13px] font-semibold text-cobre">{r.i}</span>
-                <span>{r.t}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setGuardado(true)} className="flex-1 rounded-otto bg-cobre py-3 text-sm font-medium text-lino">
-              Guardar
-            </button>
-            <button className="flex-1 rounded-otto border border-borde bg-lino py-3 text-sm font-medium text-grafito">
-              Deshacer
-            </button>
-          </div>
-        </div>
-      </div>
+      <PromptBase />
     </>
   );
 }

@@ -11,6 +11,7 @@ import { enlaceDeTipo } from "../_shared/herramientas/enlaces.ts";
 import type { Db } from "../_shared/db.ts";
 import { enviarPlantilla } from "../_shared/whatsapp/enviar.ts";
 import { armarPlantilla, esTipoEnvio, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
+import { igualesEnTiempoConstante } from "../_shared/whatsapp/firma.ts";
 
 const SECRETO = Deno.env.get("WORKER_SECRET") ?? "";
 const ENCENDIDO = Deno.env.get("CRONS_ENVIOS") === "on";
@@ -75,7 +76,7 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST" || SECRETO === "" || req.headers.get("x-worker-secret") !== SECRETO) {
+  if (req.method !== "POST" || SECRETO === "" || !igualesEnTiempoConstante(req.headers.get("x-worker-secret") ?? "", SECRETO)) {
     return new Response("forbidden", { status: 403 });
   }
   const { tipo } = await req.json().catch(() => ({ tipo: null }));

@@ -1,130 +1,155 @@
-// Clientes — tabla + ficha completa abierta (la libreta de Lucía). Puerto de
-// d-clientes.html (tabla + panel de edición) y m-clientes.html (lista simple).
+'use client';
 
-import { clientes } from '@/lib/mock-data';
+// Clientes — conectada a GET /api/clientes (H1.8, paneles). Puerto de d-clientes.html (tabla +
+// panel de edición) y m-clientes.html (lista simple, sin ficha: igual que Atención humana,
+// el drill-in de mobile queda para más adelante). Tocar una fila en escritorio pone su id en
+// la URL (?id=<id>), el mismo formato que ya usan el cartel de turno y Bandeja para enlazar acá.
 
-const CAMPOS_FICHA: [string, string][] = [
-  ['Evento', 'Casamiento'],
-  ['Fecha', '14/11'],
-  ['Rol', 'Novio'],
-  ['Día / Noche', 'Noche'],
-  ['Talle', '50'],
-  ['Ciudad', 'Rosario'],
-];
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { Cargando } from '@/components/ui-otto/Cargando';
+import { EstadoError } from '@/components/ui-otto/EstadoError';
+import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
+import { useDatos } from '@/components/api/useDatos';
+import { ETIQUETA_EVENTO } from '@/lib/etiquetas';
+import type { FilaCliente } from '@/lib/queries/clientes';
+import { FichaEditable } from './FichaEditable';
+
+const VACIO = { titulo: 'Todavía no hay clientes', texto: 'Cada persona que le escribe a Lucía queda acá con su ficha.' };
+const SIN_CONECTAR_MES = 'El filtro por mes todavía no está conectado';
 
 export default function ClientesPage() {
+  const idSeleccionado = useSearchParams().get('id');
+  const [busqueda, setBusqueda] = useState('');
+  const [busquedaFiltro, setBusquedaFiltro] = useState('');
+  const [evento, setEvento] = useState('');
+
+  // 280ms: cada letra no dispara su propio pedido (ni reemplaza la tabla por «Cargando» a
+  // mitad de tipear el nombre de alguien).
+  useEffect(() => {
+    const id = setTimeout(() => setBusquedaFiltro(busqueda), 280);
+    return () => clearTimeout(id);
+  }, [busqueda]);
+
+  const ruta = `/api/clientes${evento ? `?evento=${evento}` : ''}${busquedaFiltro.trim() ? `${evento ? '&' : '?'}q=${encodeURIComponent(busquedaFiltro.trim())}` : ''}`;
+  const { datos, cargando, error, recargar } = useDatos<{ clientes: FilaCliente[]; total: number }>(ruta);
+  const lista = datos?.clientes ?? [];
+
+  const contenido =
+    cargando && datos === null ? (
+      <Cargando />
+    ) : error ? (
+      <EstadoError mensaje={error} onReintentar={recargar} />
+    ) : lista.length === 0 && !busquedaFiltro && !evento ? (
+      <EstadoVacio titulo={VACIO.titulo} texto={VACIO.texto} />
+    ) : null;
+
   return (
     <>
       {/* Escritorio */}
       <div className="hidden flex-1 md:flex">
-        <div className="flex flex-1 flex-col p-5.5">
+        <div className="flex min-w-0 flex-1 flex-col p-5.5">
           <div className="mb-4 flex items-center gap-3">
-            <div className="flex-none font-serif text-[22px] font-semibold">Clientes</div>
-            <input placeholder="Buscar" className="w-[220px] rounded-otto border border-borde px-3 py-2 text-[13.5px] outline-none" />
-            <span className="rounded-pill border border-borde px-3 py-1.5 text-[12.5px] font-medium text-grafito">Evento: todos ▾</span>
-            <span className="rounded-pill border border-borde px-3 py-1.5 text-[12.5px] font-medium text-grafito">Mes: todos ▾</span>
-            <span className="ml-auto text-[12.5px] text-grafito">{clientes.length} clientes</span>
-          </div>
-          <div className="overflow-hidden rounded-otto border border-borde">
-            <div className="flex h-10 items-center gap-3 border-b border-borde bg-[#FBFAF7] px-4 text-[11.5px] font-semibold uppercase tracking-[.05em] text-grafito">
-              <span className="w-40">Nombre</span>
-              <span className="w-[110px]">Teléfono</span>
-              <span className="flex-1">Evento</span>
-              <span className="w-16">Fecha</span>
-              <span className="w-20">Rol</span>
-              <span className="w-[92px]">Último contacto</span>
-              <span className="w-[76px]">Turno</span>
-            </div>
-            {clientes.map((c) => (
-              <div key={c.n} className="flex h-fila items-center gap-3 border-b border-borde-suave px-4 text-sm last:border-b-0">
-                <span className="w-40 truncate font-serif text-[15px] font-semibold">{c.n}</span>
-                <span className="w-[110px] tabular-nums text-grafito">{c.tel}</span>
-                <span className="flex-1 truncate">{c.ev}</span>
-                <span className="w-16 tabular-nums">{c.f}</span>
-                <span className="w-20 text-grafito">{c.rol}</span>
-                <span className="w-[92px] text-grafito">{c.ult}</span>
-                <span className="w-[76px] tabular-nums">{c.turno}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex w-drawer flex-none flex-col border-l border-borde bg-lino">
-          <div className="flex items-baseline gap-2.5 border-b border-borde-suave px-5.5 pb-3.5 pt-5">
-            <span className="flex-1 font-serif text-xl font-semibold">Franco Bertolini</span>
-            <span className="cursor-pointer text-xs text-grafito">✕ cerrar</span>
-          </div>
-          <div className="flex flex-1 flex-col gap-3.5 overflow-y-auto px-5.5 py-4.5">
-            <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-              {CAMPOS_FICHA.map(([label, valor]) => (
-                <label key={label} className="flex flex-col gap-1 text-[11.5px] font-medium text-grafito">
-                  {label}
-                  <input defaultValue={valor} className="w-full rounded-otto border border-borde px-2.5 py-2 text-sm text-tinta outline-none" />
-                </label>
-              ))}
-              <label className="col-span-2 flex flex-col gap-1 text-[11.5px] font-medium text-grafito">
-                Color preferido
-                <input defaultValue="Azul noche" className="w-full rounded-otto border border-borde px-2.5 py-2 text-sm text-tinta outline-none" />
-              </label>
-              <label className="col-span-2 flex flex-col gap-1 text-[11.5px] font-medium text-grafito">
-                Notas
-                <textarea
-                  defaultValue="Quiere moño, no corbata. La novia eligió paleta terracota."
-                  className="min-h-[56px] w-full resize-none rounded-otto border border-borde px-2.5 py-2 text-sm leading-[1.5] text-tinta outline-none"
-                />
-              </label>
-            </div>
-            <div className="flex items-center gap-2 rounded-otto bg-hueso px-3 py-2.5 text-[12.5px] text-grafito">
-              <span className="flex h-5 w-5 flex-none items-center justify-center rounded-pill bg-noche font-serif text-[10px] font-semibold text-hueso">
-                L
-              </span>
-              Lucía usa esta ficha en cada mensaje.
-            </div>
-            <div>
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[.06em] text-grafito">Historial</div>
-              {[
-                ['hoy 09:41', 'Charla con Lucía · confirmó el turno'],
-                ['sáb 10:00', 'Turno · Novio · Probador 1 · Confirmado'],
-                ['02/09', 'Primera consulta por WhatsApp'],
-              ].map(([fecha, texto]) => (
-                <div key={fecha} className="flex gap-2 border-t border-borde-suave py-2.5 text-[13.5px]">
-                  <span className="w-[76px] flex-none text-grafito">{fecha}</span>
+            <h1 className="flex-none font-serif text-[22px] font-semibold">Clientes</h1>
+            <input
+              type="search"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar"
+              aria-label="Buscar clientes"
+              className="w-[220px] rounded-otto border border-borde px-3 py-2 text-[14px] outline-none focus:border-cobre md:text-[13.5px]"
+            />
+            <select
+              value={evento}
+              onChange={(e) => setEvento(e.target.value)}
+              aria-label="Filtrar por evento"
+              className="rounded-pill border border-borde bg-lino px-3 py-1.5 text-[14px] font-medium text-grafito md:text-[12.5px]"
+            >
+              <option value="">Evento: todos</option>
+              {Object.entries(ETIQUETA_EVENTO).map(([clave, texto]) => (
+                <option key={clave} value={clave}>
                   {texto}
-                </div>
+                </option>
               ))}
+            </select>
+            <span title={SIN_CONECTAR_MES} className="cursor-not-allowed rounded-pill border border-dashed border-borde px-3 py-1.5 text-[14px] font-medium text-[#8A8578] md:text-[12.5px]">
+              Mes: todos ▾
+            </span>
+            <span className="ml-auto text-[14px] tabular-nums text-grafito md:text-[12.5px]">{lista.length} clientes</span>
+          </div>
+          {contenido ?? (
+            <div className="overflow-hidden rounded-otto border border-borde bg-lino">
+              <div className="flex h-10 items-center gap-3 border-b border-borde bg-[#FBFAF7] px-4 text-[14px] font-semibold uppercase tracking-[.05em] text-grafito md:text-[11.5px]">
+                <span className="w-40">Nombre</span>
+                <span className="w-[110px]">Teléfono</span>
+                <span className="flex-1">Evento</span>
+                <span className="w-16">Fecha</span>
+                <span className="w-20">Rol</span>
+                <span className="w-[92px]">Último contacto</span>
+                <span className="w-[76px]">Turno</span>
+              </div>
+              {lista.length === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-grafito">Ningún cliente con ese filtro.</div>
+              ) : (
+                lista.map((c) => (
+                  <Link
+                    key={c.id}
+                    href={`/clientes?id=${c.id}`}
+                    aria-current={c.id === idSeleccionado ? 'page' : undefined}
+                    className={`flex h-fila items-center gap-3 border-b border-borde-suave px-4 text-sm last:border-b-0 ${c.id === idSeleccionado ? 'bg-cobre-claro/50' : ''}`}
+                  >
+                    <span className="w-40 truncate font-serif text-[15px] font-semibold">{c.n}</span>
+                    <span className="w-[110px] tabular-nums text-grafito">{c.tel}</span>
+                    <span className="flex-1 truncate">{c.ev}</span>
+                    <span className="w-16 tabular-nums">{c.f}</span>
+                    <span className="w-20 text-grafito">{c.rol}</span>
+                    <span className="w-[92px] text-grafito">{c.ult}</span>
+                    <span className="w-[76px] tabular-nums">{c.turno}</span>
+                  </Link>
+                ))
+              )}
             </div>
-          </div>
-          <div className="flex items-center gap-2.5 border-t border-borde-suave px-5.5 py-3.5">
-            <button className="rounded-otto bg-cobre px-4.5 py-2.5 text-sm font-medium text-lino">Guardar</button>
-            <button className="rounded-otto border border-borde bg-lino px-3.5 py-2.5 text-sm font-medium text-grafito">Deshacer</button>
-            <a className="ml-auto cursor-pointer text-[13px]">Ver versión anterior</a>
-          </div>
+          )}
         </div>
+        {!contenido && idSeleccionado && <FichaEditable id={idSeleccionado} />}
       </div>
 
       {/* Mobile */}
       <div className="flex flex-1 flex-col bg-lino md:hidden">
         <div className="border-b border-borde-suave px-4 pb-3 pt-[18px]">
           <div className="mb-2.5 font-serif text-[22px] font-semibold">Clientes</div>
-          <input placeholder="Buscar" className="w-full rounded-otto border border-borde bg-hueso px-3 py-2.5 text-sm outline-none" />
+          <input
+            type="search"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar"
+            aria-label="Buscar clientes"
+            className="w-full rounded-otto border border-borde bg-hueso px-3 py-2.5 text-sm outline-none focus:border-cobre"
+          />
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {clientes.map((c) => (
-            <div key={c.n} className="flex items-center gap-2.5 border-b border-borde-suave px-4 py-[14px]">
-              <div className="min-w-0 flex-1">
-                <div className="font-serif text-[15.5px] font-semibold">{c.n}</div>
-                <div className="mt-0.5 truncate text-[13px] text-grafito">
-                  {c.ev} · {c.f} · {c.rol}
+        {contenido ?? (
+          <div className="flex-1">
+            {lista.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-grafito">Ningún cliente con ese filtro.</div>
+            ) : (
+              lista.map((c) => (
+                <div key={c.id} className="flex items-center gap-2.5 border-b border-borde-suave px-4 py-[14px]">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-serif text-[15.5px] font-semibold">{c.n}</div>
+                    <div className="mt-0.5 truncate text-[14px] text-grafito">
+                      {c.ev} · {c.f} · {c.rol}
+                    </div>
+                  </div>
+                  <div className="flex-none text-right">
+                    <div className="text-[14px] text-grafito">turno</div>
+                    <div className="text-[14px] font-medium tabular-nums">{c.turno}</div>
+                  </div>
                 </div>
-              </div>
-              <div className="flex-none text-right">
-                <div className="text-xs text-grafito">turno</div>
-                <div className="text-[13px] font-medium tabular-nums">{c.turno}</div>
-              </div>
-              <span className="text-base text-[#C9C4B9]">›</span>
-            </div>
-          ))}
-        </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
     </>
   );

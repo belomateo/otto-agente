@@ -6,7 +6,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { NAV_ICONS } from './icons';
-import { NAV_ITEMS, NAV_MOBILE_PRINCIPALES } from './nav-items';
+import { NAV_MOBILE_PRINCIPALES, navVisibles } from './nav-items';
 import { crearClienteNavegador } from '@/lib/supabase/client';
 
 type Usuario = { nombre: string; rol: string };
@@ -22,7 +22,7 @@ export function MasSheet({
 }) {
   const router = useRouter();
   if (!abierto) return null;
-  const items = NAV_ITEMS.filter((i) => !NAV_MOBILE_PRINCIPALES.includes(i.key));
+  const items = navVisibles(usuario?.rol).filter((i) => !NAV_MOBILE_PRINCIPALES.includes(i.key));
 
   async function salir() {
     await crearClienteNavegador().auth.signOut();
@@ -54,10 +54,10 @@ export function MasSheet({
             {(usuario?.nombre ?? 'Equipo').charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13.5px] font-medium">{usuario?.nombre ?? 'Equipo'}</div>
-            <div className="text-[11.5px] text-grafito">{usuario?.rol === 'admin' ? 'Admin' : 'Equipo'}</div>
+            <div className="truncate text-[14px] font-medium">{usuario?.nombre ?? 'Equipo'}</div>
+            <div className="text-[14px] text-grafito">{usuario?.rol === 'admin' ? 'Admin' : 'Equipo'}</div>
           </div>
-          <button onClick={salir} className="text-[13px] text-grafito underline">
+          <button onClick={salir} className="text-[14px] text-grafito underline">
             Salir
           </button>
         </div>

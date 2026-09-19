@@ -2,12 +2,14 @@
 
 // Sidebar de escritorio, 216px fijo. Puerto de Sidebar.dc.html. Visible desde
 // md hacia arriba (ver app/(panel)/layout.tsx); en mobile la navegación
-// principal la resuelve TabbarMobile + la hoja "Más".
+// principal la resuelve TabbarMobile + la hoja "Más". En el celular no se ve
+// pero sigue en el DOM: los textos chicos llevan 14 px de base y el tamaño del
+// canvas recién desde md (decisión de Mateo, 13/9).
 
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { NAV_ITEMS } from './nav-items';
+import { navVisibles } from './nav-items';
 import { NAV_ICONS } from './icons';
 import { Chip } from '../ui-otto/Chip';
 import { crearClienteNavegador } from '@/lib/supabase/client';
@@ -15,7 +17,7 @@ import { crearClienteNavegador } from '@/lib/supabase/client';
 type Usuario = { nombre: string; rol: string };
 
 export function Sidebar({
-  pendientes = 2,
+  pendientes,
   usuario,
 }: {
   pendientes?: number;
@@ -36,18 +38,19 @@ export function Sidebar({
         <Image src="/logo-otto.png" alt="Otto Su Misura" width={40} height={40} className="rounded-pill" />
         <div>
           <div className="font-serif text-[17px] font-semibold tracking-[.01em]">Otto Su Misura</div>
-          <div className="mt-px text-[11.5px] text-grafito">Panel de Lucía</div>
+          <div className="mt-px text-[14px] text-grafito md:text-[11.5px]">Panel de Lucía</div>
         </div>
       </div>
 
       <nav className="flex flex-col gap-0.5 px-3 py-1.5">
-        {NAV_ITEMS.map(({ key, href, label }) => {
+        {navVisibles(usuario?.rol).map(({ key, href, label }) => {
           const activo = pathname?.startsWith(href);
           const Icon = NAV_ICONS[key];
           return (
             <Link
               key={key}
               href={href}
+              aria-current={activo ? 'page' : undefined}
               className="flex items-center gap-2.5 rounded-otto px-3 py-2.5 text-sm font-medium"
               style={{
                 color: activo ? '#A8703F' : '#5C6068',
@@ -56,8 +59,8 @@ export function Sidebar({
             >
               <Icon />
               <span>{label}</span>
-              {key === 'atencion' && pendientes > 0 && (
-                <Chip bg="#A6473A" fg="#FFFFFF" className="ml-auto px-[7px] py-px text-[11px] font-semibold">
+              {key === 'atencion' && (pendientes ?? 0) > 0 && (
+                <Chip bg="#A6473A" fg="#FFFFFF" className="ml-auto px-[7px] py-px text-[14px] font-semibold md:text-[11px]">
                   {pendientes}
                 </Chip>
               )}
@@ -73,10 +76,10 @@ export function Sidebar({
           {(usuario?.nombre ?? 'Equipo').charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium">{usuario?.nombre ?? 'Equipo'}</div>
-          <div className="text-[11px] text-grafito">{usuario?.rol === 'admin' ? 'Admin' : 'Equipo'}</div>
+          <div className="truncate text-[14px] font-medium md:text-[13px]">{usuario?.nombre ?? 'Equipo'}</div>
+          <div className="text-[14px] text-grafito md:text-[11px]">{usuario?.rol === 'admin' ? 'Admin' : 'Equipo'}</div>
         </div>
-        <button onClick={salir} className="text-[12px] text-grafito underline">
+        <button onClick={salir} className="text-[14px] text-grafito underline md:text-[12px]">
           Salir
         </button>
       </div>

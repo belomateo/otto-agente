@@ -21,7 +21,9 @@ const FRANJAS: Franja[] = [
   { diaSemana: 6, desde: min("09:30"), hasta: min("12:00"), probadores: 3 },
   { diaSemana: 6, desde: min("13:30"), hasta: min("18:30"), probadores: 2 },
 ];
-const REGLAS: ReglasAgenda = { franjas: FRANJAS, escalonadoMin: 15, diasReservaUrgencia: null, duracionMin: 45 };
+// diasConfeccion 1 = el comportamiento de siempre (nada el día del evento). Los casos de la
+// regla nueva de Mateo (16/9) están abajo, con margen 2.
+const REGLAS: ReglasAgenda = { franjas: FRANJAS, escalonadoMin: 15, diasReservaUrgencia: null, duracionMin: 45, diasConfeccion: 1 };
 
 const LUNES = "2030-06-03";
 const MARTES = "2030-06-04";

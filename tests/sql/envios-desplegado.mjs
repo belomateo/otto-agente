@@ -56,10 +56,10 @@ try {
   await limpiar(); // restos de una corrida cortada
 
   console.log("\n[1] cron-envios");
-  let r = await cron({ tipo: "recordatorio_24h" }, false);
+  let r = await cron({ tipo: "recordatorio_18h" }, false);
   await r.text();
   assert(r.status === 403, "sin x-worker-secret: 403");
-  r = await cron({ tipo: "recordatorio_24h" });
+  r = await cron({ tipo: "recordatorio_18h" });
   const j = await r.json().catch(() => ({}));
   assert(r.status === 200 && j.apagado === true, `con el secreto y los envíos apagados: no manda nada (${r.status} ${JSON.stringify(j)})`);
   r = await cron({ tipo: "cualquiera" });

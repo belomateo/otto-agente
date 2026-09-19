@@ -37,6 +37,13 @@ module.exports = {
         'otto-pop': '0 8px 24px rgba(23,26,31,.12)',
       },
       spacing: {
+        // Medios pasos que usa el canvas (pensado para Tailwind 4, donde cualquier
+        // múltiplo de 0,25rem existe). En 3.4 no están en la escala: sin esto,
+        // p-4.5, pt-5.5, gap-6.5 y pl-9.5 no generaban CSS (H1.1, control 3).
+        4.5: '1.125rem',
+        5.5: '1.375rem',
+        6.5: '1.625rem',
+        9.5: '2.375rem',
         fila: '56px',
         sidebar: '216px',
         lista: '360px',

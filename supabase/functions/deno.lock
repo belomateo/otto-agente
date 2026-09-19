@@ -65,8 +65,8 @@
         "@supabase/storage-js"
       ]
     },
-    "@types/node@26.6.1": {
-      "integrity": "sha512-VqGJBMCtdhqkBUCcBLvywI0NJ+KLuVzgNnlBUNFOQjqVxzo2lxLUNg1DSey8+u2u6ktswSAxg+s68QLzWHNOuA==",
+    "@types/node@26.6.0": {
+      "integrity": "sha512-FWWQhDlKSnEJVe+CTJCQL8Fol7s1MKo3Ud0fjryxoOoH+hwMIPxol0MguYrLi2I0VvIFwOU2DwdWET2+px15qg==",
       "dependencies": [
         "undici-types"
       ]

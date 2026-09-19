@@ -10,7 +10,16 @@ import type { Db } from "../_shared/db.ts";
 import type { Calendario } from "../_shared/herramientas/tipos.ts";
 import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts";
 import { botonDeTurno } from "../_shared/whatsapp/botones.ts";
-import { type ConfigWhatsapp, enviarImagen, enviarTexto } from "../_shared/whatsapp/enviar.ts";
+import { type ConfigWhatsapp, enviarImagen, enviarImagenPorId, enviarTexto, subirMedia } from "../_shared/whatsapp/enviar.ts";
+import { type Adjuntos, bajarAdjunto, nombreDeArchivo } from "./adjuntos.ts";
+import {
+  bajarMedioDeMeta,
+  duracionOpusSegundos,
+  guardarEnStorage,
+  rutaDelAdjunto,
+  TIPOS_QUE_BAJAMOS,
+} from "../_shared/whatsapp/medios.ts";
+import { promptDeLucia } from "./prompt.ts";
 import { prepararParaEnviar } from "../_shared/whatsapp/preparar.ts";
 import { puedeTextoLibre } from "../_shared/whatsapp/ventana.ts";
 
@@ -61,6 +70,13 @@ export function esperaDeRafagaMs(ultimoMensajeAt: Date, ahora: Date): number {
   return Math.max(0, QUIETUD_RAFAGA_MS - (ahora.getTime() - ultimoMensajeAt.getTime()));
 }
 
+// Cuántos adjuntos se bajan antes de un turno, y cuánto tiempo se les da en total. El turno
+// entero tiene 25 s (LIMITE_TURNO_MS): si bajar los archivos se comiera ese presupuesto, el
+// cliente se quedaría sin respuesta, que es peor que quedarse sin el audio. Lo que no entra en
+// el presupuesto queda 'pendiente' y lo levanta el turno siguiente.
+export const MAX_ADJUNTOS_POR_TURNO = 4;
+export const PRESUPUESTO_ADJUNTOS_MS = 10_000;
+
 export type Dependencias = {
   wa: ConfigWhatsapp;
   telefonosLucia: ListaTelefonos;
@@ -68,6 +84,7 @@ export type Dependencias = {
   tz: string;
   derivacionTel: string | null;
   baseFotos: string; // <SUPABASE_URL>/storage/v1/object/public/catalogo/
+  adjuntos: Adjuntos; // el bucket privado, para las fotos que manda el equipo desde el panel
   calendario: Calendario;
   turno: (db: Db, p: ParametrosTurno) => Promise<ResultadoTurno>;
   fetcher: typeof fetch; // Meta
@@ -146,6 +163,53 @@ async function borrarSinEnviar(db: Db, conversacionId: string, burbujas: string[
   }
 }
 
+// Anota las fotos en la charla ANTES de mandarlas, igual que las burbujas (0044). Antes se
+// insertaban recién DESPUÉS de salir por Meta, y como las burbujas van primero, una caída de
+// Meta en la primera burbuja relanzaba el trabajo y las fotos no quedaban en ningún lado: el
+// reintento mandaba el texto y las fotos se perdían para siempre, sin un solo rastro. El cliente
+// leía «te paso dos modelos» y no le llegaba ninguno (hallazgo de la auditoría del 17/9).
+async function anotarFotos(db: Db, conversacionId: string, links: string[]) {
+  const filas: { id: string; contenido: string }[] = [];
+  for (const link of links) {
+    // Detrás de la última burbuja: el turno fecha las suyas con el reloj de la función y la base
+    // tiene el suyo; así la charla queda en el orden en que salió.
+    const [f] = await db.consulta<{ id: string }>(
+      `insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at)
+       select $1::uuid, 'saliente', 'imagen', $2,
+              greatest(clock_timestamp(), max(enviado_at) + interval '10 milliseconds')
+         from mensajes where conversacion_id = $1::uuid
+       returning id::text as id`,
+      [conversacionId, link],
+    );
+    if (f) filas.push({ id: f.id, contenido: link });
+  }
+  return filas;
+}
+
+// Manda las fotos ya anotadas y les completa el wamid. Una foto que falla NO tumba el turno —el
+// texto ya salió, que es lo que importa— pero queda en la bitácora y su fila sigue pendiente, así
+// que el próximo reintento la vuelve a intentar en vez de darla por perdida.
+async function mandarFotos(
+  db: Db,
+  d: Dependencias,
+  conversacionId: string,
+  telefono: string,
+  filas: { id: string; contenido: string }[],
+  simulado: boolean,
+) {
+  let enviadas = 0;
+  for (const f of filas) {
+    try {
+      const waMessageId = simulado ? null : await conReintento(d, () => enviarImagen(d.wa, telefono, f.contenido, d.fetcher));
+      if (waMessageId) await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [f.id, waMessageId]);
+      enviadas++;
+    } catch (e) {
+      await evento(db, conversacionId, "error", { etapa: "envio-foto", foto: f.contenido, error: mensajeDeError(e) });
+    }
+  }
+  return enviadas;
+}
+
 // Lo que devolvió el turno sale por Meta en orden: primero las burbujas, cada una completa su fila
 // con el wamid; después las fotos. Si una burbuja no sale ni con el reintento se cortan las que
 // siguen (el orden importa). El turno no se repite: ya corrió, ya agendó si tenía que agendar.
@@ -161,6 +225,93 @@ async function reemplazarBurbujas(db: Db, conversacionId: string, viejas: string
       [conversacionId, texto],
     );
   }
+}
+
+// La fila de una burbuja que todavía no salió. Se busca por contenido porque el turno las
+// guardó él (paso 9) y el worker no tiene sus ids.
+async function filaDeBurbuja(db: Db, conversacionId: string, texto: string) {
+  const [f] = await db.consulta<{ id: string }>(
+    `select id::text as id from mensajes
+      where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null
+        and no_enviado_motivo is null and contenido = $2
+      order by enviado_at limit 1`,
+    [conversacionId, texto],
+  );
+  return f?.id ?? null;
+}
+
+// Manda las burbujas en orden, marcando cada fila ANTES de llamar a Meta (0044). Si Meta falla
+// (ya con el reintento adentro), limpia la marca —sabemos que no salió, porque la excepción la
+// manejamos nosotros— y RELANZA: el trabajo vuelve a la cola en vez de darse por hecho, que era
+// el agujero por el que se perdían respuestas. La marca sin limpiar queda solo si el proceso
+// muere en el medio: ese es el caso "en duda" que retomarEnvio no repite.
+async function mandarBurbujas(db: Db, d: Dependencias, conversacionId: string, telefono: string, burbujas: string[]) {
+  let enviadas = 0;
+  for (const texto of burbujas) {
+    const id = await filaDeBurbuja(db, conversacionId, texto);
+    if (id) await db.consulta("update mensajes set enviando_at = now() where id = $1::uuid", [id]);
+    try {
+      const waMessageId = await conReintento(d, () => enviarTexto(d.wa, telefono, texto, d.fetcher));
+      if (id) await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [id, waMessageId]);
+      enviadas++;
+    } catch (e) {
+      if (id) await db.consulta("update mensajes set enviando_at = null where id = $1::uuid", [id]);
+      await evento(db, conversacionId, "error", { etapa: "envio", error: mensajeDeError(e), sin_enviar: burbujas.slice(enviadas) });
+      throw e;
+    }
+  }
+  return enviadas;
+}
+
+// El trabajo ya pensó (cola_trabajos.respondido_at) y se está reintentando: NO se vuelve a correr
+// el turno —Lucía nunca piensa dos veces lo mismo y el cliente recibiría otra respuesta— sino que
+// se termina de mandar lo que quedó sin salir. Si alguna burbuja quedó "en duda" (marcada como
+// enviándose y sin wamid: el proceso murió en el medio), no se reintenta: se marca y la charla va
+// a una persona, que ve el hilo y decide. Mejor que falte un mensaje a que el cliente lo reciba
+// dos veces.
+async function retomarEnvio(db: Db, d: Dependencias, t: Trabajo, telefono: string) {
+  // Solo lo que dejó Lucía: si en el medio alguien del local escribió desde el panel, ese mensaje
+  // es del mostrador y lo manda enviarDelMostrador con su propio trabajo — acá saldría con la
+  // marca «[mostrador] » puesta, que es interna y el cliente no tiene que ver (hallazgo de la
+  // auditoría del 16/9).
+  const pendientes = await db.consulta<{ id: string; contenido: string | null; tipo: string; enviando_at: Date | string | null }>(
+    `select id::text as id, contenido, tipo, enviando_at from mensajes
+      where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null and no_enviado_motivo is null
+        and contenido not like $2
+      order by enviado_at`,
+    [t.conversacion_id, `${MARCA_MOSTRADOR}%`],
+  );
+  const enDuda = pendientes.filter((m) => m.enviando_at);
+  if (enDuda.length) {
+    await db.consulta(
+      `update mensajes set no_enviado_motivo = 'error_al_enviar'
+        where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null
+          and no_enviado_motivo is null and contenido not like $2`,
+      [t.conversacion_id, `${MARCA_MOSTRADOR}%`],
+    );
+    await db.consulta("select cola_derivar_por_fallo($1::uuid, $2)", [
+      t.conversacion_id,
+      "un mensaje quedó en duda (se estaba mandando cuando se cortó): no se reintenta",
+    ]);
+    return { retomado: true, en_duda: enDuda.length, derivada: true };
+  }
+  const textos = pendientes.filter((m) => m.tipo === "texto" && m.contenido).map((m) => m.contenido as string);
+  const fotos = pendientes.filter((m) => m.tipo === "imagen" && m.contenido).map((m) => ({ id: m.id, contenido: m.contenido as string }));
+  if (!textos.length && !fotos.length) return { retomado: true, nada_pendiente: true };
+  if (!puedeTextoLibre(await ultimoMensajeDelCliente(db, t.conversacion_id), d.ahora())) {
+    await borrarSinEnviar(db, t.conversacion_id, textos);
+    for (const f of fotos) await db.consulta("delete from mensajes where id = $1::uuid", [f.id]);
+    await evento(db, t.conversacion_id, "error", {
+      etapa: "envio",
+      error: "fuera de la ventana de 24 hs: solo se puede mandar una plantilla",
+      sin_enviar: textos,
+    });
+    return { retomado: true, enviadas: 0 };
+  }
+  const simulado = esTelefonoFicticio(telefono);
+  const enviadas = simulado ? 0 : await mandarBurbujas(db, d, t.conversacion_id, telefono, textos);
+  const fotosEnviadas = await mandarFotos(db, d, t.conversacion_id, telefono, fotos, simulado);
+  return { retomado: true, enviadas, ...(fotosEnviadas ? { fotos_enviadas: fotosEnviadas } : {}), ...(simulado ? { simulado: true } : {}) };
 }
 
 async function entregar(db: Db, d: Dependencias, conversacionId: string, telefono: string, r: ResultadoTurno) {
@@ -189,43 +340,13 @@ async function entregar(db: Db, d: Dependencias, conversacionId: string, telefon
   }
 
   const simulado = esTelefonoFicticio(telefono);
-  for (let i = 0; i < burbujas.length && !simulado; i++) {
-    try {
-      const waMessageId = await conReintento(d, () => enviarTexto(d.wa, telefono, burbujas[i], d.fetcher));
-      await db.consulta(
-        `update mensajes set wa_message_id = $3 where id = (
-           select id from mensajes
-            where conversacion_id = $1::uuid and direccion = 'saliente' and wa_message_id is null and contenido = $2
-            order by enviado_at limit 1)`,
-        [conversacionId, burbujas[i], waMessageId],
-      );
-    } catch (e) {
-      const sinEnviar = burbujas.slice(i);
-      await borrarSinEnviar(db, conversacionId, sinEnviar);
-      await evento(db, conversacionId, "error", { etapa: "envio", error: mensajeDeError(e), sin_enviar: sinEnviar });
-      return { ...resumen, enviadas: i };
-    }
-  }
+  // Primero se anotan las fotos, después sale todo: si Meta se cae en el medio, quedan pendientes
+  // en la charla y el reintento las manda.
+  const filasDeFotos = await anotarFotos(db, conversacionId, r.imagenes.map((foto) => urlDeFoto(d.baseFotos, foto)));
+  if (!simulado) await mandarBurbujas(db, d, conversacionId, telefono, burbujas);
 
-  let fotosEnviadas = 0;
-  for (const foto of r.imagenes) {
-    const link = urlDeFoto(d.baseFotos, foto);
-    try {
-      const waMessageId = simulado ? null : await conReintento(d, () => enviarImagen(d.wa, telefono, link, d.fetcher));
-      // Detrás de la última burbuja: el turno fecha las suyas con el reloj de la función y la
-      // base tiene el suyo; así la charla queda en el orden en que salió.
-      await db.consulta(
-        `insert into mensajes (conversacion_id, wa_message_id, direccion, tipo, contenido, enviado_at)
-         select $1::uuid, $2, 'saliente', 'imagen', $3,
-                greatest(clock_timestamp(), max(enviado_at) + interval '10 milliseconds')
-           from mensajes where conversacion_id = $1::uuid`,
-        [conversacionId, waMessageId, link],
-      );
-      fotosEnviadas++;
-    } catch (e) {
-      await evento(db, conversacionId, "error", { etapa: "envio-foto", foto: link, error: mensajeDeError(e) });
-    }
-  }
+  const fotosEnviadas = await mandarFotos(db, d, conversacionId, telefono, filasDeFotos, simulado);
+
   return { ...resumen, enviadas: burbujas.length, fotos_enviadas: fotosEnviadas, ...(simulado ? { simulado: true } : {}) };
 }
 
@@ -275,10 +396,14 @@ async function enviarDelMostrador(db: Db, d: Dependencias, t: Trabajo, telefono:
   }
   if (m.wa_message_id) return;
   if (!puedeTextoLibre(await ultimoMensajeDelCliente(db, t.conversacion_id), d.ahora())) {
+    // Lo escribió una persona: no se borra como las burbujas de Lucía, se marca (0042). Si no,
+    // queda en la charla igual que uno que sí salió y quien lo escribió cree que llegó.
+    await db.consulta("update mensajes set no_enviado_motivo = 'ventana_cerrada' where id = $1::uuid", [mensajeId]);
     await evento(db, t.conversacion_id, "error", {
       etapa: "mostrador",
       mensaje_id: mensajeId,
       error: "fuera de la ventana de 24 hs: solo se puede mandar una plantilla",
+      no_enviado_motivo: "ventana_cerrada",
     });
     return;
   }
@@ -295,6 +420,77 @@ async function enviarDelMostrador(db: Db, d: Dependencias, t: Trabajo, telefono:
   });
 }
 
+// Una foto del equipo desde el panel (0048). La foto vive en el bucket `adjuntos`, que es
+// privado: se baja con la clave de servicio, se sube a /media de WhatsApp y se manda por
+// media_id, así no hay que publicar la foto de un cliente en ninguna URL. El epígrafe, si lo
+// hay, sale detrás como un mensaje de texto aparte (una fila de `mensajes` por cada mensaje de
+// WhatsApp, y Lucía lo lee en el historial).
+// Si algo falla, el trabajo vuelve a la cola: lo que ya salió tiene wa_message_id y no se repite.
+async function enviarFotoDelMostrador(db: Db, d: Dependencias, t: Trabajo, telefono: string) {
+  const mensajeId = String(t.payload?.mensaje_id ?? "");
+  const epigrafeId = t.payload?.epigrafe_mensaje_id ? String(t.payload.epigrafe_mensaje_id) : null;
+  const ruta = String(t.payload?.storage_path ?? "");
+  const mime = String(t.payload?.mime ?? "image/jpeg");
+
+  const [foto] = await db.consulta<{ wa_message_id: string | null }>(
+    "select wa_message_id from mensajes where id = $1::uuid and conversacion_id = $2::uuid and direccion = 'saliente'",
+    [mensajeId, t.conversacion_id],
+  );
+  if (!foto) {
+    await evento(db, t.conversacion_id, "error", { etapa: "mostrador-foto", mensaje_id: mensajeId, error: "la foto no está en la charla" });
+    return;
+  }
+  const [epigrafe] = epigrafeId
+    ? await db.consulta<{ contenido: string | null; wa_message_id: string | null }>(
+      "select contenido, wa_message_id from mensajes where id = $1::uuid and conversacion_id = $2::uuid",
+      [epigrafeId, t.conversacion_id],
+    )
+    : [];
+  // Ya salió todo en un intento anterior.
+  if (foto.wa_message_id && (!epigrafeId || epigrafe?.wa_message_id)) return;
+
+  if (!puedeTextoLibre(await ultimoMensajeDelCliente(db, t.conversacion_id), d.ahora())) {
+    // Lo mandó una persona: se marca, no se borra (0042), igual que el texto del mostrador.
+    await db.consulta(
+      "update mensajes set no_enviado_motivo = 'ventana_cerrada' where id = any($1::uuid[]) and wa_message_id is null",
+      [[mensajeId, ...(epigrafeId ? [epigrafeId] : [])]],
+    );
+    await evento(db, t.conversacion_id, "error", {
+      etapa: "mostrador-foto",
+      mensaje_id: mensajeId,
+      error: "fuera de la ventana de 24 hs: solo se puede mandar una plantilla",
+      no_enviado_motivo: "ventana_cerrada",
+    });
+    return;
+  }
+
+  const simulado = esTelefonoFicticio(telefono);
+  let waFoto = foto.wa_message_id;
+  if (!waFoto && !simulado) {
+    const archivo = await conReintento(d, () => bajarAdjunto(d.adjuntos, ruta, mime, d.fetcher));
+    const mediaId = await conReintento(d, () => subirMedia(d.wa, archivo, nombreDeArchivo(ruta), d.fetcher));
+    waFoto = await conReintento(d, () => enviarImagenPorId(d.wa, telefono, mediaId, d.fetcher));
+    await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [mensajeId, waFoto]);
+  }
+
+  let waEpigrafe = epigrafe?.wa_message_id ?? null;
+  if (epigrafe?.contenido && !waEpigrafe && !simulado) {
+    const texto = epigrafe.contenido.startsWith(MARCA_MOSTRADOR) ? epigrafe.contenido.slice(MARCA_MOSTRADOR.length) : epigrafe.contenido;
+    waEpigrafe = await conReintento(d, () => enviarTexto(d.wa, telefono, texto, d.fetcher));
+    await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [epigrafeId, waEpigrafe]);
+  }
+
+  await evento(db, t.conversacion_id, "ok", {
+    etapa: "mostrador-foto",
+    mensaje_id: mensajeId,
+    foto: ruta,
+    autor: t.payload?.autor ?? null,
+    wa_message_id: waFoto,
+    ...(epigrafeId ? { epigrafe_wa_message_id: waEpigrafe } : {}),
+    ...(simulado ? { simulado: true } : {}),
+  });
+}
+
 async function estadoDeLaCharla(db: Db, conversacionId: string) {
   const [f] = await db.consulta<{ estado: string; cliente_id: string; telefono: string }>(
     `select c.estado, c.cliente_id::text as cliente_id, cl.telefono
@@ -305,15 +501,100 @@ async function estadoDeLaCharla(db: Db, conversacionId: string) {
   return f ?? null;
 }
 
+// Baja a nuestro Storage los audios y fotos que mandó el cliente y todavía no se bajaron (0055,
+// 0056). Corre ANTES del turno, después de esperar la quietud de la ráfaga: así los mensajes de
+// una misma tanda ya entraron todos y se bajan juntos.
+//
+// Nada de lo que pase acá puede tumbar el turno. Un audio que no se pudo bajar es un audio que
+// no se pudo bajar: se marca 'error' con el motivo, el equipo lo ve en el CRM y Lucía contesta
+// igual. Quedarse sin respuesta por un archivo roto sería mucho peor que quedarse sin el archivo.
+export async function bajarMediosPendientes(db: Db, d: Dependencias, conversacionId: string): Promise<{ listos: number; fallados: number; quedan: number }> {
+  const pendientes = await db.consulta<{ id: string; tipo: string; adjunto_media_id: string; adjunto_mime: string | null }>(
+    `select id::text as id, tipo, adjunto_media_id, adjunto_mime
+       from mensajes
+      where conversacion_id = $1::uuid and adjunto_estado = 'pendiente'
+      order by enviado_at`,
+    [conversacionId],
+  );
+  if (!pendientes.length) return { listos: 0, fallados: 0, quedan: 0 };
+
+  const marcarError = (id: string, motivo: string) =>
+    db.consulta("update mensajes set adjunto_estado = 'error', adjunto_detalle = $2 where id = $1::uuid", [id, motivo.slice(0, 500)]);
+
+  const arranque = d.ahora().getTime();
+  let listos = 0, fallados = 0, atendidos = 0;
+
+  for (const m of pendientes) {
+    // El tope es por turno, no por siempre: lo que sobra queda 'pendiente' y lo toma el próximo.
+    if (atendidos >= MAX_ADJUNTOS_POR_TURNO || d.ahora().getTime() - arranque > PRESUPUESTO_ADJUNTOS_MS) break;
+    atendidos++;
+
+    // Video y documento todavía no se bajan (pesan y no los pidió nadie), pero se marcan igual
+    // para que en el CRM se vea que el cliente mandó algo. Una burbuja vacía haría que el equipo
+    // conteste como si no hubiera mandado nada.
+    if (!TIPOS_QUE_BAJAMOS.has(m.tipo)) {
+      await marcarError(m.id, `todavía no se bajan los adjuntos de tipo «${m.tipo}»`);
+      fallados++;
+      continue;
+    }
+
+    try {
+      const medio = await bajarMedioDeMeta(d.wa, m.adjunto_media_id, d.fetcher);
+      // El mime del webhook es más específico que el del endpoint de medios ('audio/ogg;
+      // codecs=opus' contra 'audio/ogg'), así que se prefiere el que ya teníamos.
+      const mime = m.adjunto_mime || medio.mime;
+      const ruta = rutaDelAdjunto(conversacionId, m.id, mime);
+      await guardarEnStorage(d.adjuntos, ruta, medio.bytes, mime, d.fetcher);
+      await db.consulta(
+        `update mensajes
+            set adjunto_estado = 'listo', adjunto_path = $2, adjunto_mime = $3,
+                adjunto_bytes = $4, adjunto_segundos = $5, adjunto_detalle = null
+          where id = $1::uuid`,
+        [m.id, ruta, mime, medio.bytes.byteLength, duracionOpusSegundos(medio.bytes)],
+      );
+      listos++;
+    } catch (e) {
+      // Recuperable: el media id sigue guardado y sirve ~30 días, así que alguien puede volver a
+      // ponerlo en 'pendiente' desde el panel y el próximo turno lo reintenta.
+      await marcarError(m.id, mensajeDeError(e));
+      fallados++;
+    }
+  }
+
+  const quedan = pendientes.length - atendidos;
+  await evento(db, conversacionId, fallados > 0 ? "error" : "ok", {
+    etapa: "adjuntos",
+    listos,
+    fallados,
+    ...(quedan > 0 ? { quedan_para_el_proximo_turno: quedan } : {}),
+  });
+  return { listos, fallados, quedan };
+}
+
 export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Promise<void> {
   const conv = await estadoDeLaCharla(db, t.conversacion_id);
   if (!conv) throw new Error(`conversación ${t.conversacion_id}: no existe`);
 
   if (t.payload?.tipo === "mostrador") return await enviarDelMostrador(db, d, t, conv.telefono);
+  if (t.payload?.tipo === "mostrador_foto") return await enviarFotoDelMostrador(db, d, t, conv.telefono);
 
   // El botón "Confirmo" lo resuelve el código, con la charla activa o derivada (1.14).
   const boton = botonDeTurno(t.payload?.mensaje);
   if (boton?.accion === "confirmar") return await confirmarPorBoton(db, d, t, boton.turnoId, conv.telefono);
+
+  // Ya pensó y se está reintentando (0044): se retoma el envío, no se vuelve a correr el turno.
+  // Va antes del chequeo de estado a propósito: una respuesta ya pensada se termina de mandar
+  // aunque alguien haya tomado la charla en el medio (decisión de Mateo, 16/9: lo que está en
+  // vuelo no se corta).
+  const [yaPenso] = await db.consulta<{ respondido_at: Date | string | null }>(
+    "select respondido_at from cola_trabajos where id = $1::uuid",
+    [t.id],
+  );
+  if (yaPenso?.respondido_at) {
+    const retomado = await retomarEnvio(db, d, t, conv.telefono);
+    await evento(db, t.conversacion_id, "ok", { etapa: "worker-retoma", ...retomado });
+    return;
+  }
 
   // La derivaron entre que se encoló y ahora: la tiene una persona, Lucía no contesta.
   if (conv.estado !== "activa") {
@@ -338,7 +619,15 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     return;
   }
 
+  // Los audios y fotos de esta ráfaga, bajados a nuestro Storage antes de pensar la respuesta:
+  // el turno los necesita para poder leerlos, y el CRM para poder mostrarlos. Si algo falla,
+  // queda marcado y el turno sigue igual.
+  await bajarMediosPendientes(db, d, t.conversacion_id);
+
   const ahora = d.ahora();
+  // De la base, no del archivo que se publicó: lo que la dueña cambia en el panel tiene que estar
+  // en boca de Lucía en menos de un minuto (0050).
+  const prompt = await promptDeLucia(db, ahora);
   const resultado = await d.turno(db, {
     clienteId: conv.cliente_id,
     telefono: conv.telefono,
@@ -347,7 +636,12 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     tz: d.tz,
     calendario: d.calendario,
     derivacionTel: d.derivacionTel,
+    prompt: prompt.texto,
   });
+  // El turno ya guardó sus mensajes (paso 9). Se marca ANTES de mandarlos: si se corta en el
+  // medio del envío, el reintento retoma mandando en vez de pensar de nuevo (0044).
+  await db.consulta("update cola_trabajos set respondido_at = now() where id = $1::uuid", [t.id]);
+
   const entrega = await entregar(db, d, t.conversacion_id, conv.telefono, resultado);
 
   // Los trabajos de los mensajes que entraron en esta ráfaga ya tienen respuesta. Si esto falla,
@@ -359,7 +653,7 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   } catch (e) {
     console.error("worker: cola_absorber falló", mensajeDeError(e));
   }
-  await evento(db, t.conversacion_id, "ok", { etapa: "worker-lucia", ...entrega, absorbidos });
+  await evento(db, t.conversacion_id, "ok", { etapa: "worker-lucia", ...entrega, absorbidos, prompt: prompt.origen });
 }
 
 export async function atenderCola(db: Db, d: Dependencias, worker: string): Promise<number> {

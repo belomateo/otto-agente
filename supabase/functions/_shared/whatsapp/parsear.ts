@@ -4,7 +4,7 @@
 // (TIPOS_SIN_TRABAJO).
 export type MensajeEntrante = {
   waMessageId: string;
-  // Formato de Meta: E.164 sin "+", ej. 5493417519525.
+  // Formato de Meta: E.164 sin "+", ej. 5490000000000.
   telefono: string;
   nombre: string | null;
   // Como se guarda en la base: 'texto' para el texto de Meta ('text'), el resto con su nombre

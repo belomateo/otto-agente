@@ -10,21 +10,26 @@ import { useState } from 'react';
 export function EditorTexto({
   label,
   valorInicial,
+  borradorInicial,
   multiline = false,
   onGuardar,
+  onVersionAnterior,
 }: {
   label: string;
   valorInicial: string;
+  /** para arrancar ya con cambios sin guardar (galería, borradores restaurados) */
+  borradorInicial?: string;
   multiline?: boolean;
   onGuardar?: (valor: string) => void;
+  onVersionAnterior?: () => void;
 }) {
-  const [valor, setValor] = useState(valorInicial);
+  const [valor, setValor] = useState(borradorInicial ?? valorInicial);
   const sucio = valor !== valorInicial;
   const Campo = multiline ? 'textarea' : 'input';
 
   return (
     <div className="rounded-otto border border-borde bg-lino p-5">
-      <div className="mb-2 text-[13px] font-medium text-grafito">{label}</div>
+      <div className="mb-2 text-[14px] font-medium text-grafito md:text-[13px]">{label}</div>
       <Campo
         value={valor}
         onChange={(e) => setValor(e.target.value)}
@@ -33,25 +38,31 @@ export function EditorTexto({
           sucio ? 'border-cobre' : 'border-borde'
         }`}
       />
-      <div className="mt-3 flex items-center gap-2.5">
+      <div className="mt-3 flex flex-wrap items-center gap-2.5">
         <button
+          type="button"
           onClick={() => onGuardar?.(valor)}
           className="rounded-otto bg-cobre px-[18px] py-2.5 text-sm font-medium text-lino"
         >
           Guardar
         </button>
         <button
+          type="button"
           onClick={() => setValor(valorInicial)}
           className="rounded-otto border border-borde bg-lino px-3.5 py-2.5 text-sm font-medium text-grafito"
         >
           Deshacer
         </button>
-        <a className="ml-auto cursor-pointer text-[13px] text-tinta underline-offset-2 hover:underline">
+        <button
+          type="button"
+          onClick={onVersionAnterior}
+          className="ml-auto text-[14px] text-tinta underline-offset-2 hover:underline md:text-[13px]"
+        >
           Ver versión anterior
-        </a>
+        </button>
       </div>
       {sucio && (
-        <div className="mt-2.5 border-t border-borde-suave pt-2.5 text-xs text-grafito">
+        <div className="mt-2.5 border-t border-borde-suave pt-2.5 text-[14px] text-grafito md:text-xs">
           Borde cobre = hay cambios sin guardar.
         </div>
       )}

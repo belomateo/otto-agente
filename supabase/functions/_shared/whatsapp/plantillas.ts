@@ -9,12 +9,12 @@ import { fechaLarga, horaLocal } from "../tiempo.ts";
 import { PAYLOAD, payload } from "./botones.ts";
 import type { PlantillaAEnviar } from "./enviar.ts";
 
-export const TIPOS_ENVIO = ["recordatorio_24h", "agradecimiento_resena", "recontacto_1", "recontacto_2"] as const;
+export const TIPOS_ENVIO = ["recordatorio_18h", "agradecimiento_resena", "recontacto_1", "recontacto_2"] as const;
 export type TipoEnvio = typeof TIPOS_ENVIO[number];
 export const esTipoEnvio = (v: unknown): v is TipoEnvio => (TIPOS_ENVIO as readonly unknown[]).includes(v);
 
 export const NOMBRE_PLANTILLA: Record<TipoEnvio, string> = {
-  recordatorio_24h: "recordatorio_turno_24h",
+  recordatorio_18h: "recordatorio_turno_18h",
   agradecimiento_resena: "agradecimiento_resena",
   recontacto_1: "recontacto_turno_pendiente",
   recontacto_2: "recontacto_turno_pendiente",
@@ -42,7 +42,7 @@ export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string): Plan
   if (!nombre) return { falta: "el nombre del cliente" };
   const base = { nombre: NOMBRE_PLANTILLA[tipo], idioma: IDIOMA_PLANTILLAS };
 
-  if (tipo === "recordatorio_24h") {
+  if (tipo === "recordatorio_18h") {
     if (!d.inicio) return { falta: "la hora del turno" };
     const dia = fechaLarga(d.inicio, tz);
     const hora = horaLocal(d.inicio, tz);
