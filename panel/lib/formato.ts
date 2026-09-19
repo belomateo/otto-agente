@@ -41,6 +41,30 @@ export function esFecha(fecha: string): boolean {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
 
+/** 'YYYY-MM' (vista Mensual, pedido de Mateo 19/9). */
+export function esMes(mes: string): boolean {
+  if (!/^\d{4}-\d{2}$/.test(mes)) return false;
+  const m = Number(mes.slice(5, 7));
+  return m >= 1 && m <= 12;
+}
+
+/** Cantidad de días de 'YYYY-MM'. */
+export function diasEnMes(mes: string): number {
+  const [y, m] = mes.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/** Inicio y fin (ISO en UTC) de 'YYYY-MM' en la zona del negocio, semiabierto [desde, hasta). */
+export function rangoDelMes(mes: string): { desde: string; hasta: string } {
+  const [y, m] = mes.split('-').map(Number);
+  // El desfase se mide a mitad de mes, lejos de un eventual cambio de hora.
+  const desfase = desfaseMinutos(new Date(Date.UTC(y, m - 1, 15, 12)));
+  return {
+    desde: new Date(Date.UTC(y, m - 1, 1) - desfase * 60000).toISOString(),
+    hasta: new Date(Date.UTC(y, m, 1) - desfase * 60000).toISOString(),
+  };
+}
+
 export function sumarDias(fecha: string, dias: number): string {
   const [y, m, d] = fecha.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + dias)).toISOString().slice(0, 10);

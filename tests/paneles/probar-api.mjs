@@ -435,7 +435,7 @@ try {
 
   const GETS = [
     "/api/bandeja", `/api/bandeja/${conv}`, "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/turnos/semana?desde=2031-01-15",
-    "/api/clientes", `/api/clientes/${cli}`, "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
+    "/api/turnos/mes?desde=2031-01", "/api/clientes", `/api/clientes/${cli}`, "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
     "/api/configuracion", "/api/accesos", `/api/historial?tabla=clientes&id=${cli}`, "/api/configuracion/prompt-base",
   ];
 
@@ -818,6 +818,45 @@ try {
     ok(malFormada.status === 400, `Semana de Turnos › fecha mal formada → 400 (${malFormada.status})`);
   }
   {
+    // Vista Mensual (pedido de Mateo, 19/9): mes dedicado y lejano (2032-06) para no
+    // interferir con nada más del arnés ni con datos reales. Se borran acá mismo (no vía
+    // turnosExtra/limpiar): otras pruebas más abajo cuentan los turnos de `cli` y esperan
+    // un número exacto — dejarlos hasta el final les rompería el conteo.
+    const nuevoMes = async (dia, probador, estado = "sin-confirmar") =>
+      (
+        await q(
+          `insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin, estado)
+           values ($1, 'invitado', 45, $2, $3::timestamptz, $3::timestamptz + interval '45 minutes', $4)
+           returning id`,
+          [cli, probador, `2032-06-${dia}T15:00:00-03:00`, estado]
+        )
+      )[0].id;
+    const idsMes = [await nuevoMes("05", 1, "sin-confirmar"), await nuevoMes("05", 2, "confirmado"), await nuevoMes("20", 1, "cancelado")];
+
+    const mes = await api(sa, "GET", "/api/turnos/mes?desde=2032-06");
+    const dia5 = mes.datos.dias?.find((d) => d.fecha === "2032-06-05");
+    const dia20 = mes.datos.dias?.find((d) => d.fecha === "2032-06-20");
+    const dia1 = mes.datos.dias?.find((d) => d.fecha === "2032-06-01");
+    ok(
+      mes.status === 200 &&
+        mes.datos.mes === "2032-06" &&
+        mes.datos.dias?.length === 30 &&
+        dia5?.total === 2 &&
+        dia5?.sin_confirmar === 1 &&
+        dia20?.total === 0 && // cancelado no cuenta por defecto
+        dia1?.total === 0 &&
+        dia1?.sin_confirmar === 0,
+      `Vista Mensual: conteo por día, cancelado no cuenta por defecto, días sin turnos en 0 (${mes.status}, dias:${mes.datos.dias?.length}, 05:${dia5?.total}/${dia5?.sin_confirmar}, 20:${dia20?.total})`
+    );
+    const mesConCancelados = await api(sa, "GET", "/api/turnos/mes?desde=2032-06&cancelados=1");
+    const dia20Cancelados = mesConCancelados.datos.dias?.find((d) => d.fecha === "2032-06-20");
+    ok(dia20Cancelados?.total === 1, `con cancelados=1, el cancelado sí cuenta (${dia20Cancelados?.total})`);
+    const mesInvalido = await api(sa, "GET", "/api/turnos/mes?desde=15-2031");
+    ok(mesInvalido.status === 400, `Vista Mensual › mes mal formado → 400 (${mesInvalido.status})`);
+    await q("delete from historial_ediciones where fila_id = any($1::uuid[])", [idsMes]);
+    await q("delete from turnos where id = any($1::uuid[])", [idsMes]);
+  }
+  {
     const x = await api(sa, "GET", "/api/clientes");
     const c = x.datos.clientes?.find((v) => v.n === MARCA);
     ok(
@@ -919,11 +958,17 @@ try {
       `un 'equipo' no ve Clientes, Catálogo, Conocimiento, Bitácora ni Configuración (${bloqueadas.map((x) => x.status).join(",")})`
     );
     const siguen = await Promise.all(
-      ["/api/bandeja", "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/turnos/semana?desde=2031-01-15"].map((r) => api(sn, "GET", r))
+      [
+        "/api/bandeja",
+        "/api/atencion",
+        "/api/turnos?fecha=2031-01-15",
+        "/api/turnos/semana?desde=2031-01-15",
+        "/api/turnos/mes?desde=2031-01",
+      ].map((r) => api(sn, "GET", r))
     );
     ok(
       siguen.every((x) => x.status === 200),
-      `pero sigue viendo Bandeja, Atención humana y Turnos (día y semana), su trabajo diario (${siguen.map((x) => x.status).join(",")})`
+      `pero sigue viendo Bandeja, Atención humana y Turnos (día, semana y mes), su trabajo diario (${siguen.map((x) => x.status).join(",")})`
     );
     const ficha = await api(sn, "GET", `/api/bandeja/${conv}`);
     ok(

@@ -4,7 +4,7 @@
 import 'server-only';
 import type { TurnoDelDia } from '@/lib/mock-data';
 import { ESTILO_ESTADO_TURNO, ETIQUETA_TIPO_TURNO } from '@/lib/etiquetas';
-import { diaDeLaSemana, fechaEnZona, fechaLarga, hora, rangoDelDia, sumarDias } from '@/lib/formato';
+import { diaDeLaSemana, diasEnMes, fechaEnZona, fechaLarga, hora, rangoDelDia, rangoDelMes, sumarDias } from '@/lib/formato';
 import { ESTADOS_LIBERAN, nombreDe, type ClienteDb } from './comun';
 
 export type FilaTurno = TurnoDelDia & {
@@ -161,4 +161,43 @@ export async function turnosDeLaSemana(
   const fechas = Array.from({ length: 7 }, (_, i) => sumarDias(lunes, i));
   const dias = await Promise.all(fechas.map((f) => turnosDelDia(db, f, o)));
   return { semana: { desde: fechas[0], hasta: fechas[6] }, dias };
+}
+
+export type DiaDelMes = {
+  fecha: string;
+  /** Turnos que ocupan la agenda ese día (sin cancelados/no-vino, salvo incluirCancelados). */
+  total: number;
+  sin_confirmar: number;
+};
+
+export type AgendaMes = {
+  mes: string;
+  dias: DiaDelMes[];
+};
+
+// Vista Mensual (pedido de Mateo, 19/9): un conteo por día, no los turnos completos — 30 días
+// con su ficha sería demasiado dato para pintar una grilla. Una sola consulta liviana (sin
+// joins) para todo el mes, agregada acá; todos los días del mes salen en `dias`, con 0 los que
+// no tienen turnos (así front no tiene que calcular cuántos días tiene el mes).
+export async function turnosDelMes(db: ClienteDb, mes: string, o: { incluirCancelados?: boolean } = {}): Promise<AgendaMes> {
+  const { desde, hasta } = rangoDelMes(mes);
+  let q = db.from('turnos').select('inicio, estado').gte('inicio', desde).lt('inicio', hasta);
+  if (!o.incluirCancelados) q = q.not('estado', 'in', ESTADOS_LIBERAN);
+  const { data, error } = await q;
+  if (error) throw error;
+
+  const porDia = new Map<string, { total: number; sin_confirmar: number }>();
+  for (const t of data ?? []) {
+    const fecha = fechaEnZona(new Date(t.inicio));
+    const actual = porDia.get(fecha) ?? { total: 0, sin_confirmar: 0 };
+    actual.total++;
+    if (t.estado === 'sin-confirmar') actual.sin_confirmar++;
+    porDia.set(fecha, actual);
+  }
+
+  const dias = Array.from({ length: diasEnMes(mes) }, (_, i) => {
+    const fecha = `${mes}-${String(i + 1).padStart(2, '0')}`;
+    return { fecha, ...(porDia.get(fecha) ?? { total: 0, sin_confirmar: 0 }) };
+  });
+  return { mes, dias };
 }
