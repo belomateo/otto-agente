@@ -17,7 +17,8 @@ type Contexto = {
   cargando: boolean;
   error: string | null;
   recargar: () => void;
-  aprobar: (id: string) => Promise<string | null>;
+  /** Sin `rol`, el servidor aprueba como 'equipo' — nunca admin por default. */
+  aprobar: (id: string, rol?: 'admin' | 'equipo') => Promise<string | null>;
   rechazar: (id: string) => Promise<string | null>;
 };
 
@@ -26,9 +27,9 @@ const AccesosCtx = createContext<Contexto | null>(null);
 export function AccesosProvider({ children }: { children: React.ReactNode }) {
   const { datos, cargando, error, recargar } = useDatos<{ solicitudes: SolicitudAcceso[] }>('/api/accesos?estado=pendiente');
 
-  async function resolver(id: string, accion: 'aprobar' | 'rechazar') {
+  async function resolver(id: string, accion: 'aprobar' | 'rechazar', rol?: 'admin' | 'equipo') {
     try {
-      await enviar(`/api/accesos/${id}`, 'POST', { accion });
+      await enviar(`/api/accesos/${id}`, 'POST', accion === 'aprobar' && rol ? { accion, rol } : { accion });
       recargar();
       return null;
     } catch (e) {
@@ -43,7 +44,7 @@ export function AccesosProvider({ children }: { children: React.ReactNode }) {
         cargando,
         error,
         recargar,
-        aprobar: (id) => resolver(id, 'aprobar'),
+        aprobar: (id, rol) => resolver(id, 'aprobar', rol),
         rechazar: (id) => resolver(id, 'rechazar'),
       }}
     >
