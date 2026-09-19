@@ -68,6 +68,11 @@ const tiene = (o, claves) => Boolean(o) && claves.every((k) => k in o);
 
 const admin = createClient(SB_URL, SERVICE, { auth: { persistSession: false, autoRefreshToken: false } });
 const db = new pg.Client({ connectionString: DB_URL });
+// Sin esto, un corte de red (pasó de verdad, dos veces seguidas) tira un 'error' no manejado en
+// el Client y mata el proceso ENTERO antes de que el try/catch/finally de más abajo llegue a
+// limpiar() — con clientes reales en la misma base (Lucía en producción, 18/9), eso significa
+// dejar residuo de prueba sin avisar en vez de, como mínimo, intentar la limpieza igual.
+db.on("error", (e) => console.error("  ⚠️  la conexión de control se cortó (seguimos, la consulta en curso va a fallar y el flujo normal la va a manejar):", e.message));
 const q = async (s, p = []) => (await db.query(s, p)).rows;
 
 // ---------- panel ----------
@@ -429,8 +434,8 @@ try {
   const sq = await iniciarSesion(Q.email, Q.password);
 
   const GETS = [
-    "/api/bandeja", `/api/bandeja/${conv}`, "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/clientes",
-    `/api/clientes/${cli}`, "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
+    "/api/bandeja", `/api/bandeja/${conv}`, "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/turnos/semana?desde=2031-01-15",
+    "/api/clientes", `/api/clientes/${cli}`, "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
     "/api/configuracion", "/api/accesos", `/api/historial?tabla=clientes&id=${cli}`, "/api/configuracion/prompt-base",
   ];
 
@@ -783,6 +788,36 @@ try {
     ok(y.status === 400, `Turnos › fecha mal formada → 400 (${y.status})`);
   }
   {
+    // Semana de Turnos (pedido de Mateo, 17/9): reusa turnosDelDia 7 veces. 2031-01-15 es
+    // miércoles (arriba): la semana esperada es 13 (lunes) a 19 (domingo) de enero, ya probados
+    // uno por uno más arriba.
+    const LUNES = "2031-01-13", DOMINGO = "2031-01-19";
+    const fechasSemana = Array.from({ length: 7 }, (_, i) => `2031-01-${13 + i}`);
+    const miercoles = await api(sa, "GET", `/api/turnos?fecha=2031-01-15`);
+    const desdeMiercoles = await api(sa, "GET", "/api/turnos/semana?desde=2031-01-15");
+    ok(
+      desdeMiercoles.status === 200 &&
+        desdeMiercoles.datos.semana?.desde === LUNES &&
+        desdeMiercoles.datos.semana?.hasta === DOMINGO &&
+        desdeMiercoles.datos.dias?.length === 7 &&
+        desdeMiercoles.datos.dias.map((d) => d.fecha).join(",") === fechasSemana.join(",") &&
+        JSON.stringify(desdeMiercoles.datos.dias[2]) === JSON.stringify(miercoles.datos),
+      `Semana de Turnos: pedida desde un miércoles, normaliza al lunes de esa semana (${desdeMiercoles.status}, ${desdeMiercoles.datos.semana?.desde}–${desdeMiercoles.datos.semana?.hasta})`
+    );
+    const desdeDomingo = await api(sa, "GET", "/api/turnos/semana?desde=2031-01-19");
+    ok(
+      desdeDomingo.status === 200 && desdeDomingo.datos.semana?.desde === LUNES && desdeDomingo.datos.semana?.hasta === DOMINGO,
+      `pedida desde el domingo, es la MISMA semana (no la siguiente) (${desdeDomingo.datos.semana?.desde}–${desdeDomingo.datos.semana?.hasta})`
+    );
+    const desdeLunes = await api(sa, "GET", "/api/turnos/semana?desde=2031-01-13");
+    ok(
+      desdeLunes.status === 200 && desdeLunes.datos.semana?.desde === LUNES,
+      `pedida ya desde un lunes, no cambia nada (${desdeLunes.datos.semana?.desde})`
+    );
+    const malFormada = await api(sa, "GET", "/api/turnos/semana?desde=15-01-2031");
+    ok(malFormada.status === 400, `Semana de Turnos › fecha mal formada → 400 (${malFormada.status})`);
+  }
+  {
     const x = await api(sa, "GET", "/api/clientes");
     const c = x.datos.clientes?.find((v) => v.n === MARCA);
     ok(
@@ -883,10 +918,12 @@ try {
       bloqueadas.every((x) => x.status === 403),
       `un 'equipo' no ve Clientes, Catálogo, Conocimiento, Bitácora ni Configuración (${bloqueadas.map((x) => x.status).join(",")})`
     );
-    const siguen = await Promise.all(["/api/bandeja", "/api/atencion", "/api/turnos?fecha=2031-01-15"].map((r) => api(sn, "GET", r)));
+    const siguen = await Promise.all(
+      ["/api/bandeja", "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/turnos/semana?desde=2031-01-15"].map((r) => api(sn, "GET", r))
+    );
     ok(
       siguen.every((x) => x.status === 200),
-      `pero sigue viendo Bandeja, Atención humana y Turnos, su trabajo diario (${siguen.map((x) => x.status).join(",")})`
+      `pero sigue viendo Bandeja, Atención humana y Turnos (día y semana), su trabajo diario (${siguen.map((x) => x.status).join(",")})`
     );
     const ficha = await api(sn, "GET", `/api/bandeja/${conv}`);
     ok(

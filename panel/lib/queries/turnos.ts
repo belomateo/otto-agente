@@ -47,6 +47,12 @@ export type AgendaDelDia = {
   sin_confirmar_manana: number;
 };
 
+export type AgendaSemana = {
+  /** Lunes y domingo de la semana, ambos inclusive (convención Argentina). */
+  semana: { desde: string; hasta: string };
+  dias: AgendaDelDia[];
+};
+
 const hhmm = (t: string | null) => (t ? t.slice(0, 5) : null);
 
 export async function turnosDelDia(
@@ -138,4 +144,21 @@ export async function turnosDelDia(
       };
     }),
   };
+}
+
+// Vista Semana de Turnos (pedido de Mateo, 17/9): no repite la consulta, la corre 7 veces.
+// `desde` se normaliza al lunes de esa semana (convención Argentina, lunes a domingo) antes de
+// armar el rango — quien llama no tiene que calcularlo. diaDeLaSemana() da 0=domingo..6=sábado
+// (0007/horarios): si cae domingo, el lunes de ESA semana quedó 6 días atrás; cualquier otro
+// día, dow - 1 días atrás.
+export async function turnosDeLaSemana(
+  db: ClienteDb,
+  desde: string,
+  o: { incluirCancelados?: boolean } = {}
+): Promise<AgendaSemana> {
+  const dow = diaDeLaSemana(desde);
+  const lunes = sumarDias(desde, dow === 0 ? -6 : -(dow - 1));
+  const fechas = Array.from({ length: 7 }, (_, i) => sumarDias(lunes, i));
+  const dias = await Promise.all(fechas.map((f) => turnosDelDia(db, f, o)));
+  return { semana: { desde: fechas[0], hasta: fechas[6] }, dias };
 }
