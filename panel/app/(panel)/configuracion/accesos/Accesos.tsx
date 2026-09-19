@@ -175,22 +175,46 @@ function InvitacionesEnviadas({
   );
 }
 
-function FilaSolicitud({ s, onAprobar, onRechazar, ocupado }: { s: SolicitudAcceso; onAprobar: () => void; onRechazar: () => void; ocupado: boolean }) {
+// Aprobar sigue el rol que la persona pidió (Colaborador si no pidió nada — nunca Admin por
+// default); "aprobar como Administrador" es aparte y solo aparece cuando hace falta subir de
+// lo pedido, para que darle más de lo que pidieron sea una decisión aparte, no la de siempre.
+function FilaSolicitud({
+  s,
+  onAprobar,
+  onAprobarComoAdmin,
+  onRechazar,
+  ocupado,
+}: {
+  s: SolicitudAcceso;
+  onAprobar: () => void;
+  onAprobarComoAdmin: () => void;
+  onRechazar: () => void;
+  ocupado: boolean;
+}) {
+  const pidioAdmin = s.rol_solicitado === 'admin';
   return (
     <div className="flex flex-col gap-2.5 border-t border-borde-suave py-3 first:border-t-0 md:flex-row md:items-center md:gap-3">
       <div className="min-w-0 flex-1">
         <div className="font-serif text-[15.5px] font-semibold">{s.nombre ?? 'Sin nombre'}</div>
         <div className="truncate text-[14px] text-grafito md:text-[13px]">
           {s.email ?? '—'} · <span className="tabular-nums">{s.hace}</span>
+          {s.rol_solicitado && <> · Pidió: {ETIQUETA_ROL[s.rol_solicitado]}</>}
         </div>
       </div>
-      <div className="flex gap-2">
-        <button type="button" onClick={onAprobar} disabled={ocupado} className="flex-1 rounded-otto bg-cobre px-4 py-2.5 text-sm font-medium text-lino disabled:opacity-50 md:flex-none">
-          Aprobar
-        </button>
-        <button type="button" onClick={onRechazar} disabled={ocupado} className="flex-1 rounded-otto border border-borde bg-lino px-4 py-2.5 text-sm font-medium text-grafito disabled:opacity-50 md:flex-none">
-          Rechazar
-        </button>
+      <div className="flex flex-col gap-1.5 md:items-end">
+        <div className="flex gap-2">
+          <button type="button" onClick={onAprobar} disabled={ocupado} className="flex-1 rounded-otto bg-cobre px-4 py-2.5 text-sm font-medium text-lino disabled:opacity-50 md:flex-none">
+            Aprobar{pidioAdmin ? ' como Administrador' : ''}
+          </button>
+          <button type="button" onClick={onRechazar} disabled={ocupado} className="flex-1 rounded-otto border border-borde bg-lino px-4 py-2.5 text-sm font-medium text-grafito disabled:opacity-50 md:flex-none">
+            Rechazar
+          </button>
+        </div>
+        {!pidioAdmin && (
+          <button type="button" onClick={onAprobarComoAdmin} disabled={ocupado} className="px-1 text-[14px] font-medium text-grafito underline-offset-2 hover:underline disabled:opacity-50 md:text-[12.5px]">
+            aprobar como Administrador
+          </button>
+        )}
       </div>
     </div>
   );
@@ -207,12 +231,12 @@ export function Accesos() {
   if (cargando && pendientes.length === 0 && !error) return <Cargando />;
   if (error) return <EstadoError mensaje={`No se pudo abrir Accesos: ${error}`} />;
 
-  async function resolver(id: string, nombre: string, accion: 'aprobar' | 'rechazar') {
+  async function resolver(id: string, nombre: string, accion: 'aprobar' | 'rechazar', rolAprobado?: RolInvitacion) {
     setOcupadoId(id);
-    const err = await (accion === 'aprobar' ? aprobar(id) : rechazar(id));
+    const err = await (accion === 'aprobar' ? aprobar(id, rolAprobado) : rechazar(id));
     setOcupadoId(null);
     if (err) mostrar(err, true);
-    else mostrar(accion === 'aprobar' ? `${nombre} ya puede entrar · Equipo` : `Solicitud de ${nombre} rechazada`, false);
+    else mostrar(accion === 'aprobar' ? `${nombre} ya puede entrar · ${ETIQUETA_ROL[rolAprobado ?? 'equipo']}` : `Solicitud de ${nombre} rechazada`, false);
   }
 
   async function quitar(perfilId: string, nombre: string) {
@@ -246,7 +270,8 @@ export function Accesos() {
               key={s.id}
               s={s}
               ocupado={ocupadoId === s.id}
-              onAprobar={() => resolver(s.id, s.nombre ?? 'La persona', 'aprobar')}
+              onAprobar={() => resolver(s.id, s.nombre ?? 'La persona', 'aprobar', s.rol_solicitado ?? 'equipo')}
+              onAprobarComoAdmin={() => resolver(s.id, s.nombre ?? 'La persona', 'aprobar', 'admin')}
               onRechazar={() => resolver(s.id, s.nombre ?? 'La persona', 'rechazar')}
             />
           ))
