@@ -257,3 +257,16 @@ prueba("derivar_a_persona sin mensaje_al_cliente (motivo que sí lo permite) cae
   esOk(r);
   assertEquals(r.efectos?.mensajesAlCliente, ["Te paso con alguien del equipo para que te ayude con esto. En un rato te escriben."]);
 });
+
+// Hallazgo de logica, 19/9, auditando la entrega de arriba: los 4 textos de derivación salen de
+// contexto_agente, editable desde el panel — si el dueño deja una fila en blanco (por error, o
+// mientras la edita), no puede volver el silencio que se acaba de cerrar. Se vacía la fila
+// DENTRO de esta transacción (rollback al final, no afecta la fila real) para probar el respaldo
+// de código sin pisar el texto real de nadie.
+prueba("derivar_a_persona con la fila de contexto_agente vacía cae al respaldo de código, no queda muda", async ({ ctx, sql }) => {
+  await sql.query("update contexto_agente set valor = '' where clave = 'texto_derivacion_reclamo'");
+  const r = await ejecutarHerramienta("derivar_a_persona", { motivo: "reclamo", mensaje_al_cliente: "Le paso tu consulta al equipo." }, ctx);
+  esOk(r);
+  assertEquals(r.efectos?.mensajesAlCliente, ["Te leo. Esto lo sigue alguien del local: en un rato te escriben."]);
+  assertMatch(String(r.datos?.falta ?? ""), /vacía/);
+});

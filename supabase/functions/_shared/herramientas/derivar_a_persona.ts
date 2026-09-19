@@ -41,11 +41,8 @@
 
 import { MOTIVOS_DERIVACION_LLM, MOTIVOS_SIN_MENSAJE, MOTIVOS_SOLO_CODIGO, type MotivoDerivacion } from "../enums.ts";
 import { llamoA } from "../traza.ts";
-import { registrarDerivacion, textoDeContexto } from "./derivacion.ts";
+import { CLAVE_TEXTO_DERIVACION_DURA_GENERICA, CLAVE_TEXTO_DERIVACION_RECLAMO, registrarDerivacion, textoDeDerivacion } from "./derivacion.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
-
-const CLAVE_TEXTO_DERIVACION_RECLAMO = "texto_derivacion_reclamo";
-const CLAVE_TEXTO_DERIVACION_DURA_GENERICA = "texto_derivacion_dura_generica";
 
 type Args = { motivo: MotivoDerivacion; mensaje_al_cliente: string | null };
 
@@ -97,10 +94,18 @@ export const derivarAPersona: Herramienta<Args> = {
     // Pedido de Mateo, 19/9: nunca mudo. Con reclamo/cliente_enojado/descuento, el texto fijo de
     // "no se discute" reemplaza lo que haya escrito el modelo (si escribió algo). Si el motivo
     // permite despedida propia pero no llegó ninguna (o quedó en blanco), el genérico de siempre
-    // hace de red de contención — antes eso quedaba en [] sin más.
-    const textoAlCliente = sinDespedida
-      ? await textoDeContexto(ctx.db, CLAVE_TEXTO_DERIVACION_RECLAMO)
-      : mensaje ?? await textoDeContexto(ctx.db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
+    // hace de red de contención — antes eso quedaba en [] sin más. textoDeDerivacion nunca
+    // devuelve vacío (hallazgo de logica, 19/9): si la fila de contexto_agente está en blanco,
+    // cae al respaldo de código en vez de dejar al cliente mudo de nuevo.
+    let textoAlCliente: string;
+    let usoRespaldo = false;
+    if (sinDespedida) {
+      ({ texto: textoAlCliente, usoRespaldo } = await textoDeDerivacion(ctx.db, CLAVE_TEXTO_DERIVACION_RECLAMO));
+    } else if (mensaje) {
+      textoAlCliente = mensaje;
+    } else {
+      ({ texto: textoAlCliente, usoRespaldo } = await textoDeDerivacion(ctx.db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA));
+    }
     const datos: Record<string, unknown> = {
       derivacion_id: id,
       nota: sinDespedida
@@ -108,12 +113,13 @@ export const derivarAPersona: Herramienta<Args> = {
         : "La charla quedó en manos del equipo. No escribas nada más.",
     };
     if (yaEstaba) datos.ya_estaba_derivada = true;
+    if (usoRespaldo) datos.falta = "la fila de contexto_agente de esta derivación está vacía: se usó el respaldo de código";
     return {
       ok: true,
       datos,
       efectos: {
         cortaTurno: true,
-        mensajesAlCliente: textoAlCliente ? [textoAlCliente] : [],
+        mensajesAlCliente: [textoAlCliente],
         avisoEquipo: { motivo: args.motivo, derivacionId: id },
       },
     };

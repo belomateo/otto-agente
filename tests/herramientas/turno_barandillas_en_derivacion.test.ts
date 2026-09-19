@@ -318,6 +318,35 @@ prueba("reclamo por palabra clave (código, sin LLM) también deriva con el text
   assertEquals([der?.motivo, der?.estado], ["reclamo", "pendiente"]);
 });
 
+// Mismo hallazgo de logica (19/9, auditando la entrega de arriba), pero por el camino de
+// derivar() en turno.ts (no derivar_a_persona.ts): si contexto_agente.texto_derivacion_reclamo
+// queda vacío, antes volvía el silencio que se acaba de cerrar. Se vacía la fila DENTRO de esta
+// transacción (rollback al final) para probar el respaldo sin pisar el texto real de nadie.
+prueba("reclamo por palabra clave con la fila de contexto_agente vacía también cae al respaldo, no muda", async ({ ctx, sql, conversacionId }) => {
+  await sql.query("update contexto_agente set valor = '' where clave = 'texto_derivacion_reclamo'");
+  await insertarEntrante(sql, conversacionId, "quiero hacer un reclamo por el traje que me dieron");
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    if (body.response_format?.json_schema?.name === "ficha") {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({
+          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+        }),
+      }));
+    }
+    throw new Error("la derivación dura por palabra clave no debería llamar al clasificador ni al principal");
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assertEquals(resultado.derivo, true);
+  assertEquals(resultado.mensajesAlCliente, ["Te leo. Esto lo sigue alguien del local: en un rato te escriben."]);
+});
+
 // Verificación pedida por logica, 16/9: cuando una barandilla de "rehacer" (acá,
 // precio_sin_herramienta) vuelve a saltar después del reintento, ¿el turno manda un texto vacío
 // sin avisarle a nadie, o deriva de verdad? Fuerza al principal a decir SIEMPRE un precio sin

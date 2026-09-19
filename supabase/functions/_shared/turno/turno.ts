@@ -15,7 +15,14 @@ import { aplicarBarandillas } from "../barandillas/index.ts";
 import type { Db } from "../db.ts";
 import type { MotivoDerivacion } from "../enums.ts";
 import { actualizarFicha, leerFicha } from "../herramientas/ficha.ts";
-import { registrarDerivacion, textoDeContexto } from "../herramientas/derivacion.ts";
+import {
+  CLAVE_TEXTO_DERIVACION_DURA_GENERICA,
+  CLAVE_TEXTO_DERIVACION_FALLO,
+  CLAVE_TEXTO_DERIVACION_RECLAMO,
+  registrarDerivacion,
+  textoDeContexto,
+  textoDeDerivacion,
+} from "../herramientas/derivacion.ts";
 import { definicionesParaElModelo } from "../herramientas/index.ts";
 import type { Calendario } from "../herramientas/tipos.ts";
 import { clasificar } from "../llm/clasificador.ts";
@@ -31,7 +38,6 @@ import { eventosDeLaTraza, registrarConsumo, registrarEventos, type EventoAgente
 import { prepararParaEnviar } from "../whatsapp/preparar.ts";
 
 export const LIMITE_TURNO_MS = 25_000;
-const CLAVE_TEXTO_DERIVACION_DURA = "texto_derivacion_dura_generica";
 const CLAVE_TEXTO_MENSAJE_NO_SOPORTADO = "texto_mensaje_no_soportado";
 // Pedido de Mateo, 19/9: toda derivación le tiene que dejar algo al cliente, no importa quién la
 // haya decidido. Estos dos motivos, en cambio, son la excepción a propósito: es el CLIENTE el
@@ -45,12 +51,10 @@ const MOTIVOS_QUE_QUEDAN_MUDOS: readonly MotivoDerivacion[] = ["sin_respuesta", 
 // reclamo/cliente_enojado: mismo texto fijo, decida esto el código (palabra clave o
 // clasificador) o el modelo por derivar_a_persona.ts — para que la charla se vea igual del lado
 // del cliente sin importar quién detectó el motivo.
-const CLAVE_TEXTO_DERIVACION_RECLAMO = "texto_derivacion_reclamo";
 const MOTIVOS_CON_TEXTO_RECLAMO: readonly MotivoDerivacion[] = ["reclamo", "cliente_enojado"];
 // barandilla_doble: dos saltos del mismo turno son un problema DEL SISTEMA (Lucía no logró
 // escribir algo que pasara las barandillas), no del cliente ni de su reclamo — texto propio, con
 // tono de disculpa, en vez del genérico o el de reclamo.
-const CLAVE_TEXTO_DERIVACION_FALLO = "texto_derivacion_fallo";
 const MOTIVOS_CON_TEXTO_FALLO: readonly MotivoDerivacion[] = ["barandilla_doble"];
 
 export type ResultadoTurno = {
@@ -77,12 +81,23 @@ async function derivar(
   let mensajesAlCliente: string[];
   if (MOTIVOS_QUE_QUEDAN_MUDOS.includes(p.motivo)) {
     mensajesAlCliente = [];
-  } else if (MOTIVOS_CON_TEXTO_RECLAMO.includes(p.motivo)) {
-    mensajesAlCliente = prepararParaEnviar([await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_RECLAMO)]);
-  } else if (MOTIVOS_CON_TEXTO_FALLO.includes(p.motivo)) {
-    mensajesAlCliente = prepararParaEnviar([await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_FALLO)]);
   } else {
-    mensajesAlCliente = prepararParaEnviar([p.mensaje]);
+    const clave = MOTIVOS_CON_TEXTO_RECLAMO.includes(p.motivo)
+      ? CLAVE_TEXTO_DERIVACION_RECLAMO
+      : MOTIVOS_CON_TEXTO_FALLO.includes(p.motivo)
+      ? CLAVE_TEXTO_DERIVACION_FALLO
+      : null;
+    if (clave) {
+      // textoDeDerivacion nunca devuelve vacío: si la fila de contexto_agente está en blanco, cae
+      // al respaldo de código (hallazgo de logica, 19/9) en vez de repetir el silencio que se
+      // acaba de cerrar. usoRespaldo solo se loguea (no hay a quién devolvérselo desde acá: esta
+      // derivación la decidió el código, no una herramienta con `datos` propio).
+      const { texto, usoRespaldo } = await textoDeDerivacion(db, clave);
+      if (usoRespaldo) console.error(`derivar(${p.motivo}): la fila de contexto_agente (${clave}) está vacía, se usó el respaldo de código`);
+      mensajesAlCliente = prepararParaEnviar([texto]);
+    } else {
+      mensajesAlCliente = prepararParaEnviar([p.mensaje]);
+    }
   }
   return { mensajesAlCliente, imagenes: [], derivo: true, motivoDerivacion: p.motivo, avisoEquipo: { motivo: p.motivo, derivacionId: id }, bloqueadoPorVentana: false };
 }
@@ -149,7 +164,8 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     const dura = derivacionDuraPorPalabraClave(mensaje) ?? derivacionDuraPorEventoInminente(ficha.fecha_evento, p.ahora, p.tz);
     if (dura) {
       eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivacion-dura-codigo", motivo: dura.motivo, porQue: dura.porQue } });
-      const texto = await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_DURA);
+      const { texto, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
+      if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "derivacion-dura-codigo", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
       resultado = await derivar(db, { conversacionId: p.conversacionId, motivo: dura.motivo, mensaje: texto, derivacionTel: p.derivacionTel });
       eventos.push({ tipo: "derivacion", detalle: { motivo: dura.motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "codigo" } });
       return resultado;
@@ -173,7 +189,8 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       });
       if (clasificacion.clasificacion.derivar_duro && clasificacion.clasificacion.motivo_derivacion) {
         const motivo = clasificacion.clasificacion.motivo_derivacion;
-        const texto = await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_DURA);
+        const { texto, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
+        if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "clasificar", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
         resultado = await derivar(db, { conversacionId: p.conversacionId, motivo, mensaje: texto, derivacionTel: p.derivacionTel });
         eventos.push({ tipo: "derivacion", detalle: { motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "clasificador" } });
         return resultado;
@@ -231,8 +248,9 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
         else if (b.decision !== "bloquear") seDescartoAlgo = true;
       }
       if (seDescartoAlgo) {
-        const textoSeguro = await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_DURA);
-        if (textoSeguro) textosRevisados.push(textoSeguro);
+        const { texto: textoSeguro, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
+        if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "barandilla-en-derivacion", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
+        textosRevisados.push(textoSeguro);
       }
       resultado = {
         // prepararParaEnviar de una sola vez sobre todo lo que sale (decisión #17, hito 2.3): no
