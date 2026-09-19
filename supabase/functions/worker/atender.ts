@@ -12,6 +12,13 @@ import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts"
 import { botonDeTurno } from "../_shared/whatsapp/botones.ts";
 import { type ConfigWhatsapp, enviarImagen, enviarImagenPorId, enviarTexto, subirMedia } from "../_shared/whatsapp/enviar.ts";
 import { type Adjuntos, bajarAdjunto, nombreDeArchivo } from "./adjuntos.ts";
+import {
+  bajarMedioDeMeta,
+  duracionOpusSegundos,
+  guardarEnStorage,
+  rutaDelAdjunto,
+  TIPOS_QUE_BAJAMOS,
+} from "../_shared/whatsapp/medios.ts";
 import { promptDeLucia } from "./prompt.ts";
 import { prepararParaEnviar } from "../_shared/whatsapp/preparar.ts";
 import { puedeTextoLibre } from "../_shared/whatsapp/ventana.ts";
@@ -62,6 +69,13 @@ export function urlDeFoto(baseCatalogo: string, foto: string): string {
 export function esperaDeRafagaMs(ultimoMensajeAt: Date, ahora: Date): number {
   return Math.max(0, QUIETUD_RAFAGA_MS - (ahora.getTime() - ultimoMensajeAt.getTime()));
 }
+
+// Cuántos adjuntos se bajan antes de un turno, y cuánto tiempo se les da en total. El turno
+// entero tiene 25 s (LIMITE_TURNO_MS): si bajar los archivos se comiera ese presupuesto, el
+// cliente se quedaría sin respuesta, que es peor que quedarse sin el audio. Lo que no entra en
+// el presupuesto queda 'pendiente' y lo levanta el turno siguiente.
+export const MAX_ADJUNTOS_POR_TURNO = 4;
+export const PRESUPUESTO_ADJUNTOS_MS = 10_000;
 
 export type Dependencias = {
   wa: ConfigWhatsapp;
@@ -487,6 +501,76 @@ async function estadoDeLaCharla(db: Db, conversacionId: string) {
   return f ?? null;
 }
 
+// Baja a nuestro Storage los audios y fotos que mandó el cliente y todavía no se bajaron (0055,
+// 0056). Corre ANTES del turno, después de esperar la quietud de la ráfaga: así los mensajes de
+// una misma tanda ya entraron todos y se bajan juntos.
+//
+// Nada de lo que pase acá puede tumbar el turno. Un audio que no se pudo bajar es un audio que
+// no se pudo bajar: se marca 'error' con el motivo, el equipo lo ve en el CRM y Lucía contesta
+// igual. Quedarse sin respuesta por un archivo roto sería mucho peor que quedarse sin el archivo.
+export async function bajarMediosPendientes(db: Db, d: Dependencias, conversacionId: string): Promise<{ listos: number; fallados: number; quedan: number }> {
+  const pendientes = await db.consulta<{ id: string; tipo: string; adjunto_media_id: string; adjunto_mime: string | null }>(
+    `select id::text as id, tipo, adjunto_media_id, adjunto_mime
+       from mensajes
+      where conversacion_id = $1::uuid and adjunto_estado = 'pendiente'
+      order by enviado_at`,
+    [conversacionId],
+  );
+  if (!pendientes.length) return { listos: 0, fallados: 0, quedan: 0 };
+
+  const marcarError = (id: string, motivo: string) =>
+    db.consulta("update mensajes set adjunto_estado = 'error', adjunto_detalle = $2 where id = $1::uuid", [id, motivo.slice(0, 500)]);
+
+  const arranque = d.ahora().getTime();
+  let listos = 0, fallados = 0, atendidos = 0;
+
+  for (const m of pendientes) {
+    // El tope es por turno, no por siempre: lo que sobra queda 'pendiente' y lo toma el próximo.
+    if (atendidos >= MAX_ADJUNTOS_POR_TURNO || d.ahora().getTime() - arranque > PRESUPUESTO_ADJUNTOS_MS) break;
+    atendidos++;
+
+    // Video y documento todavía no se bajan (pesan y no los pidió nadie), pero se marcan igual
+    // para que en el CRM se vea que el cliente mandó algo. Una burbuja vacía haría que el equipo
+    // conteste como si no hubiera mandado nada.
+    if (!TIPOS_QUE_BAJAMOS.has(m.tipo)) {
+      await marcarError(m.id, `todavía no se bajan los adjuntos de tipo «${m.tipo}»`);
+      fallados++;
+      continue;
+    }
+
+    try {
+      const medio = await bajarMedioDeMeta(d.wa, m.adjunto_media_id, d.fetcher);
+      // El mime del webhook es más específico que el del endpoint de medios ('audio/ogg;
+      // codecs=opus' contra 'audio/ogg'), así que se prefiere el que ya teníamos.
+      const mime = m.adjunto_mime || medio.mime;
+      const ruta = rutaDelAdjunto(conversacionId, m.id, mime);
+      await guardarEnStorage(d.adjuntos, ruta, medio.bytes, mime, d.fetcher);
+      await db.consulta(
+        `update mensajes
+            set adjunto_estado = 'listo', adjunto_path = $2, adjunto_mime = $3,
+                adjunto_bytes = $4, adjunto_segundos = $5, adjunto_detalle = null
+          where id = $1::uuid`,
+        [m.id, ruta, mime, medio.bytes.byteLength, duracionOpusSegundos(medio.bytes)],
+      );
+      listos++;
+    } catch (e) {
+      // Recuperable: el media id sigue guardado y sirve ~30 días, así que alguien puede volver a
+      // ponerlo en 'pendiente' desde el panel y el próximo turno lo reintenta.
+      await marcarError(m.id, mensajeDeError(e));
+      fallados++;
+    }
+  }
+
+  const quedan = pendientes.length - atendidos;
+  await evento(db, conversacionId, fallados > 0 ? "error" : "ok", {
+    etapa: "adjuntos",
+    listos,
+    fallados,
+    ...(quedan > 0 ? { quedan_para_el_proximo_turno: quedan } : {}),
+  });
+  return { listos, fallados, quedan };
+}
+
 export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Promise<void> {
   const conv = await estadoDeLaCharla(db, t.conversacion_id);
   if (!conv) throw new Error(`conversación ${t.conversacion_id}: no existe`);
@@ -534,6 +618,11 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${despues?.estado}: Lucía no contesta` });
     return;
   }
+
+  // Los audios y fotos de esta ráfaga, bajados a nuestro Storage antes de pensar la respuesta:
+  // el turno los necesita para poder leerlos, y el CRM para poder mostrarlos. Si algo falla,
+  // queda marcado y el turno sigue igual.
+  await bajarMediosPendientes(db, d, t.conversacion_id);
 
   const ahora = d.ahora();
   // De la base, no del archivo que se publicó: lo que la dueña cambia en el panel tiene que estar
