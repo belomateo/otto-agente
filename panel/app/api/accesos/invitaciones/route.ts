@@ -7,6 +7,7 @@ import { requerirSesion } from '@/lib/api/sesion';
 import { desdeErrorDeBase, json } from '@/lib/api/respuestas';
 import { leerCuerpo } from '@/lib/api/validar';
 import { crearInvitacion, listarInvitaciones } from '@/lib/queries/accesos';
+import { mandarMailInvitacion } from '@/lib/mail-invitacion';
 
 const esquema = z.strictObject({
   email: z
@@ -37,5 +38,8 @@ export async function POST(request: Request) {
 
   const { data, error: e } = await crearInvitacion(s, cuerpo.email, cuerpo.rol);
   if (e) return desdeErrorDeBase(e);
+  // La invitación ya está creada (la garantía real): el mail es una comodidad, nunca puede
+  // convertir esto en un error para el admin que la mandó.
+  await mandarMailInvitacion(cuerpo.email, cuerpo.rol);
   return json({ invitacion: data }, 201);
 }

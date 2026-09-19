@@ -23,13 +23,17 @@ export type SolicitudAcceso = {
   hace: string;
   resuelto_at: string | null;
   resuelto_por: string | null;
+  /** Lo que la persona pidió al registrarse (0054): puramente informativo, nunca se auto-
+   *  otorga — null en solicitudes viejas y en las que entraron por invitación (0053, ahí el
+   *  rol ya lo puso quien invitó). El rol real lo sigue eligiendo un admin al aprobar. */
+  rol_solicitado: 'admin' | 'equipo' | null;
 };
 
 export async function listarSolicitudes(sesion: Sesion, estado: EstadoSolicitud): Promise<SolicitudAcceso[]> {
   const { data, error } = await sesion.supabase
     .from('solicitudes_acceso')
     .select(
-      'id, perfil_id, estado, solicitado_at, resuelto_at, resuelto_por, perfil:perfiles!solicitudes_acceso_perfil_id_fkey(nombre)'
+      'id, perfil_id, estado, solicitado_at, resuelto_at, resuelto_por, rol_solicitado, perfil:perfiles!solicitudes_acceso_perfil_id_fkey(nombre)'
     )
     .eq('estado', estado)
     .order('solicitado_at', { ascending: true });
@@ -45,6 +49,7 @@ export async function listarSolicitudes(sesion: Sesion, estado: EstadoSolicitud)
     hace: haceCuanto(s.solicitado_at, ahora),
     resuelto_at: s.resuelto_at,
     resuelto_por: s.resuelto_por,
+    rol_solicitado: s.rol_solicitado as 'admin' | 'equipo' | null,
   }));
 }
 
