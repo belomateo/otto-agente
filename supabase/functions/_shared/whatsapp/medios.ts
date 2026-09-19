@@ -10,6 +10,8 @@
 // El media id, en cambio, dura ~30 días y sirve para pedir una URL nueva. Es lo que hace que una
 // descarga fallida se pueda reintentar, y por eso se guarda en mensajes.adjunto_media_id (0055).
 
+import type { Db } from "../db.ts";
+
 export type ConfigMedios = { token: string; version?: string };
 // Misma forma que worker/adjuntos.ts: <SUPABASE_URL>/storage/v1/object/adjuntos/ + la clave de
 // servicio. Se declara acá para no importar nada de worker/ desde _shared/.
@@ -159,6 +161,54 @@ export async function leerDeStorage(
   });
   if (!res.ok) throw new Error(`no se pudo leer el adjunto del bucket (${res.status})`);
   return new Uint8Array(await res.arrayBuffer());
+}
+
+// El adjunto de un mensaje, listo para usar: los bytes si están, y si no, POR QUÉ no están.
+//
+// Los tres estados son distintos y la diferencia importa para qué contestarle al cliente:
+//   'listo'     → los bytes, el mime y la duración si se pudo calcular.
+//   'pendiente' → todavía no se bajó. El worker baja hasta MAX_ADJUNTOS_POR_TURNO por turno, así
+//                 que en una ráfaga con muchos adjuntos los últimos quedan para el turno que
+//                 viene. NO es un fallo: el archivo va a estar. Contestar «no pude leerlo» acá
+//                 sería mentir.
+//   'error'     → no se pudo bajar y no se va a bajar solo. Hace falta que alguien lo reintente
+//                 desde el panel (el media id sigue guardado y sirve ~30 días).
+//   null        → el mensaje no tiene adjunto: es texto común.
+export type AdjuntoDeMensaje =
+  | { estado: "listo"; bytes: Uint8Array<ArrayBuffer>; mime: string; segundos: number | null; esVoz: boolean }
+  | { estado: "pendiente" | "error"; detalle: string | null }
+  | { estado: "sin_adjunto" };
+
+export async function leerAdjunto(db: Db, a: AccesoStorage, mensajeId: string, fetcher: typeof fetch = fetch): Promise<AdjuntoDeMensaje> {
+  const [m] = await db.consulta<{
+    adjunto_estado: string | null;
+    adjunto_path: string | null;
+    adjunto_mime: string | null;
+    adjunto_segundos: number | null;
+    adjunto_voz: boolean | null;
+    adjunto_detalle: string | null;
+  }>(
+    `select adjunto_estado, adjunto_path, adjunto_mime, adjunto_segundos, adjunto_voz, adjunto_detalle
+       from mensajes where id = $1::uuid`,
+    [mensajeId],
+  );
+  if (!m || !m.adjunto_estado) return { estado: "sin_adjunto" };
+  if (m.adjunto_estado !== "listo" || !m.adjunto_path) {
+    return { estado: m.adjunto_estado === "pendiente" ? "pendiente" : "error", detalle: m.adjunto_detalle };
+  }
+  try {
+    return {
+      estado: "listo",
+      bytes: await leerDeStorage(a, m.adjunto_path, fetcher),
+      mime: m.adjunto_mime ?? "application/octet-stream",
+      segundos: m.adjunto_segundos,
+      esVoz: m.adjunto_voz === true,
+    };
+  } catch (e) {
+    // La fila dice 'listo' pero el archivo no está: alguien lo borró del bucket, o la subida
+    // mintió. Se devuelve como error en vez de explotar, porque el turno tiene que seguir.
+    return { estado: "error", detalle: String((e as Error)?.message ?? e) };
+  }
 }
 
 // Dónde vive el archivo de un mensaje. Se deriva del id del mensaje y no de un nombre al azar:
