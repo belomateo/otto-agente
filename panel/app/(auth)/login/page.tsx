@@ -6,7 +6,7 @@
 
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { crearClienteNavegador } from '@/lib/supabase/client';
 
 // Traduce el error de Supabase Auth a algo que el equipo pueda accionar. Antes
@@ -38,7 +38,18 @@ function mensajeDeError(error: { message: string; status?: number }, modo: 'entr
 type RolPedido = 'equipo' | 'admin';
 const ETIQUETA_ROL: Record<RolPedido, string> = { equipo: 'Colaborador', admin: 'Administrador' };
 
+// useSearchParams() saca a la página del prerenderizado estático salvo que esté dentro de un
+// Suspense (Next.js App Router): sin esto, `next build` falla al armar /login como página
+// estática — typecheck no lo agarra, solo el build real.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInterior />
+    </Suspense>
+  );
+}
+
+function LoginPageInterior() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Link del mail de invitación (paneles, H1.10): .../login?modo=crear-cuenta&email=<email> —
