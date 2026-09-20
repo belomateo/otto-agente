@@ -84,7 +84,9 @@ export const TIPOS_TURNO = ["graduado", "novio", "invitado", "doble", "triple", 
 export type TipoTurno = typeof TIPOS_TURNO[number];
 
 // AGENTE.md § 4 (enviar_link). enlaces no tiene columna de tipo: ver herramientas/enlaces.ts.
-export const TIPOS_LINK = ["mapa", "resena", "web"] as const;
+// web-venta (pedido de Mateo, 20/9: Lucía deriva de más por venta) es el link de la tienda
+// online (mrotto.com.ar), distinto de "web" (la web de alquiler, mrottocollection.com.ar).
+export const TIPOS_LINK = ["mapa", "resena", "web", "web-venta"] as const;
 export type TipoLink = typeof TIPOS_LINK[number];
 
 // AGENTE.md § 7 · clientes_evento_check, clientes_rol_check, clientes_dia_o_noche_check (0023).

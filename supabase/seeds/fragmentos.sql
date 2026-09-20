@@ -88,8 +88,12 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
    'seed H1.6'),
 
   ('a9f10000-0000-4000-8000-000000001201', 'que-no-hacemos', 'Fuera del alquiler',
-   'El alquiler es solo en el local de España 764, Rosario: no hacemos envíos ni te lo mandamos a tu casa, porque la prueba final y los ajustes se hacen acá. Si venís de otra ciudad, coordinamos el turno pensando en la fecha del evento. Los uniformes y los pedidos para empresas los atiende otro equipo de Mr Otto, y la venta de ropa es de otra área: en esos casos lo ve la persona que corresponde.',
-   'seed H1.6'),
+   'El alquiler es solo en el local de España 764, Rosario: no hacemos envíos ni te lo mandamos a tu casa, porque la prueba final y los ajustes se hacen acá. Si venís de otra ciudad, coordinamos el turno pensando en la fecha del evento. Los uniformes y los pedidos para empresas los atiende otro equipo de Mr Otto.',
+   'seed H1.6, recortado 20/9 (la venta pasó a su propio fragmento: mezclada acá, la subía de largo y le hacía perder contra otros temas)'),
+
+  ('a9f10000-0000-4000-8000-000000001202', 'que-no-hacemos', 'Comprar en vez de alquilar',
+   'Mr Otto también vende trajes, no solo alquila: la compra se hace por la web de venta, no acá en el chat — si le interesa comprar, se le pasa ese link. El alquiler es distinto y lo maneja Lucía directamente por acá: turnos, medidas y trajes a medida, así que si lo suyo es alquilar, sigue la charla normal.',
+   'nuevo 20/9 (Mateo: Lucía derivaba de más por venta, sin ofrecer nada — antes esto vivía mezclado en "Fuera del alquiler" como "es de otra área", lo que empujaba a derivar en vez de contestar)'),
 
   ('a9f10000-0000-4000-8000-000000001301', 'descuentos', 'Descuentos',
    'Alquilando con nosotros, las prendas para completar el look se pueden comprar con descuento. Sobre el alquiler en sí, cualquier rebaja, promo o descuento especial lo decide una persona del equipo, no se define por este canal.',

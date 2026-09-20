@@ -152,7 +152,7 @@ function bloqueDeReglas(prompt) {
     registrar("5b. AGENTE.md § 8 tiene 16 secciones", "16", `${secciones.length}`, secciones.length === 16);
     const faltanH = herramientas.filter((h) => !new RegExp(`\\b${h}\\b`).test(p));
     registrar("5c. las 14 herramientas están en el prompt", "ninguna falta", faltanH.length ? `faltan: ${faltanH.join(", ")}` : "ninguna falta", faltanH.length === 0);
-    const permitidos = new Set([...herramientas, "mensaje_al_cliente", "pedir_mail", "prenda_danada"]);
+    const permitidos = new Set([...herramientas, "mensaje_al_cliente", "pedir_mail", "prenda_danada", "dato_no_encontrado"]);
     const identificadores = [...new Set([...p.matchAll(/\b[a-z]+(?:_[a-z]+)+\b/g)].map((m) => m[0]))];
     const extras = identificadores.filter((x) => !permitidos.has(x));
     registrar("5d. el prompt no nombra herramientas que no existen", "ninguna", extras.length ? extras.join(", ") : "ninguna", extras.length === 0);
