@@ -16,10 +16,10 @@ export default function BandejaPage() {
 
   return (
     <>
-      <div className="hidden flex-1 md:flex">
+      <div className="hidden min-h-0 flex-1 md:flex">
         <BandejaSplit conversaciones={conversaciones} cargando={cargando} error={error} onReintentar={recargar} />
       </div>
-      <div className="flex flex-1 md:hidden">
+      <div className="flex min-h-0 flex-1 md:hidden">
         <ConversationList variante="mobile" conversaciones={conversaciones} cargando={cargando} error={error} onReintentar={recargar} />
       </div>
     </>
