@@ -733,6 +733,14 @@ export type Database = {
       }
       mensajes: {
         Row: {
+          adjunto_bytes: number | null
+          adjunto_detalle: string | null
+          adjunto_estado: string | null
+          adjunto_media_id: string | null
+          adjunto_mime: string | null
+          adjunto_path: string | null
+          adjunto_segundos: number | null
+          adjunto_voz: boolean | null
           contenido: string | null
           conversacion_id: string
           direccion: string
@@ -740,9 +748,18 @@ export type Database = {
           id: string
           no_enviado_motivo: string | null
           tipo: string
+          transcripcion: string | null
           wa_message_id: string | null
         }
         Insert: {
+          adjunto_bytes?: number | null
+          adjunto_detalle?: string | null
+          adjunto_estado?: string | null
+          adjunto_media_id?: string | null
+          adjunto_mime?: string | null
+          adjunto_path?: string | null
+          adjunto_segundos?: number | null
+          adjunto_voz?: boolean | null
           contenido?: string | null
           conversacion_id: string
           direccion: string
@@ -750,9 +767,18 @@ export type Database = {
           id?: string
           no_enviado_motivo?: string | null
           tipo?: string
+          transcripcion?: string | null
           wa_message_id?: string | null
         }
         Update: {
+          adjunto_bytes?: number | null
+          adjunto_detalle?: string | null
+          adjunto_estado?: string | null
+          adjunto_media_id?: string | null
+          adjunto_mime?: string | null
+          adjunto_path?: string | null
+          adjunto_segundos?: number | null
+          adjunto_voz?: boolean | null
           contenido?: string | null
           conversacion_id?: string
           direccion?: string
@@ -760,6 +786,7 @@ export type Database = {
           id?: string
           no_enviado_motivo?: string | null
           tipo?: string
+          transcripcion?: string | null
           wa_message_id?: string | null
         }
         Relationships: [

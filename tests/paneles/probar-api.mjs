@@ -435,8 +435,8 @@ try {
 
   const GETS = [
     "/api/bandeja", `/api/bandeja/${conv}`, "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/turnos/semana?desde=2031-01-15",
-    "/api/turnos/mes?desde=2031-01", "/api/turnos/huecos?fecha=2031-01-15&tipo=invitado", "/api/clientes", `/api/clientes/${cli}`,
-    "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
+    "/api/turnos/mes?desde=2031-01", "/api/turnos/huecos?fecha=2031-01-15&tipo=invitado", "/api/medios/11111111-1111-1111-1111-111111111111",
+    "/api/clientes", `/api/clientes/${cli}`, "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
     "/api/configuracion", "/api/accesos", `/api/historial?tabla=clientes&id=${cli}`, "/api/configuracion/prompt-base",
   ];
 
@@ -603,6 +603,75 @@ try {
       `Charla › no_enviado_motivo (0042, logica) sale en el mensaje marcado y en ningún otro (${m?.no_enviado_motivo})`
     );
     await q("update mensajes set no_enviado_motivo = null where id = $1", [idMsj]);
+  }
+  {
+    // Medios (0055, logica): audios/fotos que manda el cliente. No hay forma de disparar al
+    // worker real desde el arnés, así que se simula un adjunto 'listo' directo en la base
+    // (como el worker) y se sube el archivo real a Storage — el punto que importa (aviso de
+    // logica, "hoy a los golpes"): un 200 con el reproductor vacío es el modo de falla real
+    // acá, así que la prueba baja la URL firmada y compara los BYTES, no solo el código.
+    const AUDIO = Buffer.from("PRUEBA paneles: esto no es un ogg de verdad, son bytes de prueba para comparar");
+    const pathAdjunto = `entrantes/${conv}/prueba-paneles-medio.ogg`;
+    const { error: eSubir } = await admin.storage.from("adjuntos").upload(pathAdjunto, AUDIO, { contentType: "audio/ogg", upsert: true });
+    if (eSubir) throw new Error("no se pudo subir el adjunto de prueba: " + eSubir.message);
+    const idListo = (
+      await q(
+        `insert into mensajes (conversacion_id, direccion, tipo, adjunto_media_id, adjunto_path, adjunto_mime, adjunto_bytes, adjunto_voz, adjunto_segundos, adjunto_estado, transcripcion)
+         values ($1, 'entrante', 'audio', 'PRUEBA-PANELES-MEDIA-ID-1', $2, 'audio/ogg', $3, true, 5, 'listo', 'PRUEBA paneles: hola, esto es una prueba')
+         returning id`,
+        [conv, pathAdjunto, AUDIO.length]
+      )
+    )[0].id;
+    const idPendiente = (
+      await q(
+        `insert into mensajes (conversacion_id, direccion, tipo, adjunto_media_id, adjunto_mime, adjunto_voz, adjunto_estado)
+         values ($1, 'entrante', 'audio', 'PRUEBA-PANELES-MEDIA-ID-2', 'audio/ogg', true, 'pendiente') returning id`,
+        [conv]
+      )
+    )[0].id;
+    const idSinAdjunto = (await q("select id from mensajes where conversacion_id = $1 and adjunto_mime is null limit 1", [conv]))[0].id;
+
+    const sinSesion = await api(null, "GET", `/api/medios/${idListo}`);
+    ok(sinSesion.status === 401, `GET /api/medios sin sesión → 401 (${sinSesion.status})`);
+    const malFormado = await api(sa, "GET", "/api/medios/no-es-un-uuid");
+    ok(malFormado.status === 400, `medios › id mal formado → 400 (${malFormado.status})`);
+    const sinAdjunto = await api(sa, "GET", `/api/medios/${idSinAdjunto}`);
+    ok(sinAdjunto.status === 404, `un mensaje de texto (sin adjunto) → 404 (${sinAdjunto.status})`);
+    const noListo = await api(sa, "GET", `/api/medios/${idPendiente}`);
+    ok(
+      noListo.status === 409 && noListo.datos.detalle?.motivo === "pendiente",
+      `un adjunto todavía no descargado → 409 con el motivo (${noListo.status}: ${noListo.datos.detalle?.motivo})`
+    );
+
+    const listo = await api(sn, "GET", `/api/medios/${idListo}`);
+    ok(
+      listo.status === 200 && typeof listo.datos.url === "string" && listo.datos.mime === "audio/ogg",
+      `un 'equipo' baja la URL firmada de un adjunto listo (${listo.status}, ${listo.datos.mime})`
+    );
+    const bajado = await fetch(listo.datos.url);
+    const bytesBajados = Buffer.from(await bajado.arrayBuffer());
+    ok(
+      bajado.status === 200 && bytesBajados.length === AUDIO.length && bytesBajados.equals(AUDIO),
+      `la URL firmada baja los bytes de verdad, no solo un 200 (${bajado.status}, ${bytesBajados.length} de ${AUDIO.length} bytes)`
+    );
+
+    const charlaConAdjunto = await api(sa, "GET", `/api/bandeja/${conv}`);
+    const crudo = JSON.stringify(charlaConAdjunto.datos);
+    const mAdjunto = charlaConAdjunto.datos.mensajes.find((m) => m.id === idListo);
+    ok(
+      mAdjunto?.adjunto?.mime === "audio/ogg" &&
+        mAdjunto.adjunto.bytes === AUDIO.length &&
+        mAdjunto.adjunto.voz === true &&
+        mAdjunto.adjunto.segundos === 5 &&
+        mAdjunto.adjunto.estado === "listo" &&
+        mAdjunto.adjunto.transcripcion?.startsWith("PRUEBA paneles") &&
+        !crudo.includes("PRUEBA-PANELES-MEDIA-ID") &&
+        !crudo.includes(pathAdjunto),
+      `Charla › trae mime/bytes/voz/segundos/estado/transcripción del adjunto, pero nunca adjunto_path ni el media_id (${JSON.stringify(mAdjunto?.adjunto)})`
+    );
+
+    await admin.storage.from("adjuntos").remove([pathAdjunto]);
+    await q("delete from mensajes where id = any($1::uuid[])", [[idListo, idPendiente]]);
   }
   let derivId;
   {

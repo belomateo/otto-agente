@@ -88,6 +88,19 @@ export type MensajeCharla = {
   hora: string;
   /** 'YYYY-MM-DD' en la zona del negocio, para separar por día. */
   fecha: string;
+  /** Adjunto de WhatsApp (audio o foto entrante, 0055 de logica). null = mensaje de texto
+   *  normal. adjunto_path y el media_id de Meta NO salen acá — son internos, GET
+   *  /api/medios/[id] los usa server-side para firmar la URL. */
+  adjunto: {
+    mime: string;
+    bytes: number;
+    voz: boolean;
+    /** Puede ser null: no viene en el webhook, se calcula al bajar (aviso de logica). */
+    segundos: number | null;
+    estado: 'pendiente' | 'listo' | 'error';
+    detalle: string | null;
+    transcripcion: string | null;
+  } | null;
 };
 export type EventoCharla = { id: string; tipo: string; detalle: Json; hora: string; creado_at: string };
 export type Charla = {
@@ -114,7 +127,9 @@ export async function obtenerCharla(db: ClienteDb, id: string): Promise<Charla |
   const [mensajes, eventos, turno] = await Promise.all([
     db
       .from('mensajes')
-      .select('id, direccion, tipo, contenido, enviado_at, no_enviado_motivo')
+      .select(
+        'id, direccion, tipo, contenido, enviado_at, no_enviado_motivo, adjunto_mime, adjunto_bytes, adjunto_voz, adjunto_segundos, adjunto_estado, adjunto_detalle, transcripcion'
+      )
       .eq('conversacion_id', id)
       .order('enviado_at', { ascending: true })
       .limit(LIMITE_HILO),
@@ -151,6 +166,17 @@ export async function obtenerCharla(db: ClienteDb, id: string): Promise<Charla |
       no_enviado_motivo: m.no_enviado_motivo as 'ventana_cerrada' | 'error_al_enviar' | null,
       hora: hora(m.enviado_at),
       fecha: fechaEnZona(new Date(m.enviado_at)),
+      adjunto: m.adjunto_mime
+        ? {
+            mime: m.adjunto_mime,
+            bytes: m.adjunto_bytes as number,
+            voz: Boolean(m.adjunto_voz),
+            segundos: m.adjunto_segundos,
+            estado: m.adjunto_estado as 'pendiente' | 'listo' | 'error',
+            detalle: m.adjunto_detalle,
+            transcripcion: m.transcripcion,
+          }
+        : null,
     })),
     eventos: (eventos.data ?? []).map((e) => ({
       id: e.id,
