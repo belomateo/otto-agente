@@ -577,6 +577,17 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
 
   if (t.payload?.tipo === "mostrador") return await enviarDelMostrador(db, d, t, conv.telefono);
   if (t.payload?.tipo === "mostrador_foto") return await enviarFotoDelMostrador(db, d, t, conv.telefono);
+  // Alguien del local apretó "reintentar" sobre un adjunto que no se pudo bajar (0058). Solo se
+  // baja lo que quedó pendiente y se termina: Lucía NO piensa ni contesta. El cliente no dijo
+  // nada nuevo, así que mandarle un mensaje porque alguien tocó un botón sería escribirle sin
+  // que lo haya pedido. Va antes del chequeo de estado de la charla a propósito, igual que las
+  // dos ramas de arriba: un adjunto se tiene que poder recuperar aunque la charla ya la tenga
+  // una persona — de hecho es justo cuando más falta hace, porque la está leyendo alguien.
+  if (t.payload?.tipo === "adjuntos") {
+    const r = await bajarMediosPendientes(db, d, t.conversacion_id);
+    await evento(db, t.conversacion_id, r.fallados > 0 ? "error" : "ok", { etapa: "adjuntos-reintento", ...r });
+    return;
+  }
 
   // El botón "Confirmo" lo resuelve el código, con la charla activa o derivada (1.14).
   const boton = botonDeTurno(t.payload?.mensaje);
