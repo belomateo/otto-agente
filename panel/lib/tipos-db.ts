@@ -1152,6 +1152,10 @@ export type Database = {
       }
     }
     Functions: {
+      adjunto_reintentar: {
+        Args: { p_mensaje: string }
+        Returns: Json
+      }
       atencion_resolver: {
         Args: { p_accion: string; p_conversacion: string }
         Returns: Json

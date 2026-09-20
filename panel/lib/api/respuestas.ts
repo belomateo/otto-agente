@@ -33,6 +33,7 @@ const POR_CODIGO: Record<string, { status: number; mensaje: string }> = {
   '55000': { status: 409, mensaje: 'Ya estaba resuelto' },
   '55001': { status: 409, mensaje: 'Esa persona ya tiene cuenta: cambiale el rol desde la lista, no hace falta invitarla' },
   '55002': { status: 409, mensaje: 'Ya hay una invitación pendiente para ese mail' },
+  '55003': { status: 404, mensaje: 'Ese mensaje no tiene un adjunto' },
 };
 
 // Restricciones que comparten código con otras y necesitan su propio mensaje: el 23P01 de

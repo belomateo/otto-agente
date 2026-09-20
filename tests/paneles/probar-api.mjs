@@ -670,8 +670,58 @@ try {
       `Charla › trae mime/bytes/voz/segundos/estado/transcripción del adjunto, pero nunca adjunto_path ni el media_id (${JSON.stringify(mAdjunto?.adjunto)})`
     );
 
+    // Reintentar (adjunto_reintentar, logica): no es un simple UPDATE, encola un trabajo
+    // 'adjuntos' — se verifica contra la base, no solo la respuesta de la función.
+    const idError = (
+      await q(
+        `insert into mensajes (conversacion_id, direccion, tipo, adjunto_media_id, adjunto_mime, adjunto_voz, adjunto_estado, adjunto_detalle)
+         values ($1, 'entrante', 'audio', 'PRUEBA-PANELES-MEDIA-ID-3', 'audio/ogg', true, 'error', 'PRUEBA paneles: se cortó la descarga') returning id`,
+        [conv]
+      )
+    )[0].id;
+
+    const reintentoSinSesion = await api(null, "PATCH", `/api/medios/${idListo}`);
+    ok(reintentoSinSesion.status === 401, `PATCH /api/medios sin sesión → 401 (${reintentoSinSesion.status})`);
+    const reintentoMalFormado = await api(sa, "PATCH", "/api/medios/no-es-un-uuid");
+    ok(reintentoMalFormado.status === 400, `reintentar › id mal formado → 400 (${reintentoMalFormado.status})`);
+    const reintentoSinAdjunto = await api(sa, "PATCH", `/api/medios/${idSinAdjunto}`);
+    ok(reintentoSinAdjunto.status === 404, `reintentar un mensaje sin adjunto → 404 (${reintentoSinAdjunto.status})`);
+    const reintentoNoExiste = await api(sa, "PATCH", "/api/medios/11111111-1111-1111-1111-111111111111");
+    ok(reintentoNoExiste.status === 404, `reintentar un mensaje que no existe → 404 (${reintentoNoExiste.status})`);
+
+    const reintentoListo = await api(sn, "PATCH", `/api/medios/${idListo}`);
+    ok(
+      reintentoListo.status === 200 && reintentoListo.datos.ya_estaba === true && reintentoListo.datos.estado === "listo",
+      `un 'equipo' reintenta un adjunto 'listo' → no hace nada, ya_estaba true (${reintentoListo.status}, ${JSON.stringify(reintentoListo.datos)})`
+    );
+    const listoSigueIgual = (await q("select adjunto_estado, transcripcion from mensajes where id = $1", [idListo]))[0];
+    ok(
+      listoSigueIgual.adjunto_estado === "listo" && listoSigueIgual.transcripcion?.startsWith("PRUEBA paneles"),
+      `reintentar un 'listo' no le borra la transcripción ni le cambia el estado (${listoSigueIgual.adjunto_estado}, ${listoSigueIgual.transcripcion})`
+    );
+
+    const reintentoPendiente = await api(sa, "PATCH", `/api/medios/${idPendiente}`);
+    ok(
+      reintentoPendiente.status === 200 && reintentoPendiente.datos.ya_estaba === true && reintentoPendiente.datos.estado === "pendiente",
+      `reintentar uno que ya está 'pendiente' → ya_estaba true, no lo encola de nuevo (${reintentoPendiente.status}, ${JSON.stringify(reintentoPendiente.datos)})`
+    );
+
+    const reintentoError = await api(sa, "PATCH", `/api/medios/${idError}`);
+    const filaError = (await q("select adjunto_estado, adjunto_detalle from mensajes where id = $1", [idError]))[0];
+    const trabajo = (await q("select payload from cola_trabajos where conversacion_id = $1 and payload->>'mensaje_id' = $2", [conv, idError]))[0];
+    ok(
+      reintentoError.status === 200 &&
+        reintentoError.datos.ya_estaba === false &&
+        reintentoError.datos.estado === "pendiente" &&
+        filaError.adjunto_estado === "pendiente" &&
+        filaError.adjunto_detalle === null &&
+        trabajo?.payload?.tipo === "adjuntos",
+      `reintentar uno en 'error' lo pone 'pendiente', limpia el detalle y encola un trabajo 'adjuntos' de verdad (${reintentoError.status}, ${JSON.stringify(reintentoError.datos)}, encolado: ${Boolean(trabajo)})`
+    );
+
+    await q("delete from cola_trabajos where conversacion_id = $1 and payload->>'mensaje_id' = any($2::text[])", [conv, [idError]]);
     await admin.storage.from("adjuntos").remove([pathAdjunto]);
-    await q("delete from mensajes where id = any($1::uuid[])", [[idListo, idPendiente]]);
+    await q("delete from mensajes where id = any($1::uuid[])", [[idListo, idPendiente, idError]]);
   }
   let derivId;
   {

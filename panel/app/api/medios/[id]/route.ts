@@ -4,6 +4,12 @@
 // por Next. adjunto_path y adjunto_media_id son internos: nunca salen de este archivo. El
 // mensaje se lee con la sesión (RLS, 0007): si no lo puede leer, tampoco existe para firmar —
 // misma barrera que ya protege /api/bandeja, no una vía nueva (aviso de logica).
+//
+// PATCH reintenta un adjunto en 'error': adjunto_reintentar() (logica) no es un simple UPDATE
+// de estado — encola el trabajo que el worker necesita para bajarlo de nuevo y lo despierta.
+// 'listo' no se reintenta a propósito (bajaría el archivo de nuevo por nada y borraría la
+// transcripción); 'pendiente' u otro reintento mientras ya está en cola devuelve ya_estaba:
+// true en vez de error, así que un doble clic no rompe nada.
 import { requerirSesion } from '@/lib/api/sesion';
 import { desdeErrorDeBase, error, json } from '@/lib/api/respuestas';
 import { esUuid } from '@/lib/api/validar';
@@ -35,4 +41,15 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     return error(500, 'No se pudo generar el link del adjunto');
   }
   return json({ url: firmada.signedUrl, mime: data.adjunto_mime });
+}
+
+export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
+  const s = await requerirSesion();
+  if (s instanceof Response) return s;
+  const { id } = await ctx.params;
+  if (!esUuid(id)) return error(400, 'Identificador inválido');
+
+  const { data, error: e } = await s.supabase.rpc('adjunto_reintentar', { p_mensaje: id });
+  if (e) return desdeErrorDeBase(e);
+  return json(data);
 }
