@@ -428,6 +428,20 @@ Deno.test("anuncia_sin_derivar no salta si derivó de verdad, ni con «el equipo
   await noSalta(anunciaSinDerivar, entrada("Para verlo puesto, te reservo un turno y el equipo te asesora con el calce."));
 });
 
+// Hallazgo de logica probando en vivo, 20/9: una variante MÁS SUAVE de anunciar un pase ("te
+// puede orientar el equipo del local" en vez de "te paso con alguien") no estaba en la lista, y
+// quedaba como un pase silencioso — ni derivación registrada ni el link que sí podía mandar. Es
+// "lo peor de los dos mundos" (logica): ahora el código lo agarra igual y deriva de verdad.
+Deno.test("anuncia_sin_derivar salta con variantes más suaves («te puede orientar», hallazgo de logica en vivo, 20/9)", async () => {
+  await salta(anunciaSinDerivar, entrada("Para compra de trajes te puede orientar el equipo del local."));
+  await salta(anunciaSinDerivar, entrada("Para eso te puede ayudar mejor el equipo del local."));
+  await salta(anunciaSinDerivar, entrada("En ese caso lo ve la persona que corresponde."));
+});
+
+Deno.test("anuncia_sin_derivar no confunde una variante suave con «eso te lo confirma el equipo del local» (caso parecido)", async () => {
+  await noSalta(anunciaSinDerivar, entrada("Eso te lo confirma el equipo del local."));
+});
+
 Deno.test("no_a_secas salta con una negativa sola", async () => {
   await salta(noASecas, entrada("No, no hacemos envíos."));
   await salta(noASecas, entrada("Lamentablemente no tenemos ese color."));
