@@ -206,12 +206,13 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | `horario_sin_herramienta` | Una hora que no devolvió ninguna herramienta en este turno (`buscar_horarios`, el horario de `buscar_informacion`, los turnos del cliente), o un día ofrecido sin `buscar_horarios` | Rehace |
 | `accesorio_sin_herramienta` | Menciona zapato(s), cinturón, corbata o camisa sin `consultar_accesorios` en este turno (hallazgo del 15/9 con un principal más económico: la palabra "obligatoria" del prompt sola no alcanzaba) | Rehace |
 | `deriva_y_pregunta` | `derivar_a_persona` + `?` en el mismo mensaje | Quita la pregunta |
-| `anuncia_sin_derivar` | «te paso con», «le derivo» sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
+| `anuncia_sin_derivar` | «te paso con», «le derivo» (y variantes más suaves: «te puede orientar», «lo ve la persona que corresponde» — hallazgo de logica en vivo, 20/9) sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
+| `venta_sin_resolver` | Barandilla ESTRUCTURAL, no de palabras (logica, 20/9, después de que el léxico de `anuncia_sin_derivar` se volviera un juego del gato y el ratón): el clasificador dio intención "venta" y el turno no llamó `enviar_link` con tipo `web-venta` ni `derivar_a_persona`. Mira la traza, no cómo lo dijo — igual que `accesorio_sin_herramienta` | Rehace |
 | `no_a_secas` | Mensaje que arranca negando, es corto y no ofrece nada. Si arranca negando pero es largo u ofrece algo (caso dudoso), no salta | Rehace |
 | `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje); además, desde el 15/9 (hallazgo M3 del tester), un patrón más amplio: "ia" cerca de una palabra de meta-funcionamiento («instrucción», «configuración», «protege», «entrena», «responde de forma segura»), para cubrir una frase que rodea el tema sin decir ninguna de las exactas de arriba | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
-Son 14 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
+Son 15 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
 código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
 del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
 el segundo del mismo turno deriva con motivo `barandilla_doble` — desde el 19/9, con un texto

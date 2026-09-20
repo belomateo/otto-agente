@@ -6,8 +6,8 @@ import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { aplicarBarandillas, BARANDILLAS } from "../../supabase/functions/_shared/barandillas/index.ts";
 import { AHORA, entrada, HORA_MS } from "./_ayuda.ts";
 
-Deno.test("son 14 y van en orden formato → contenido → reglas", () => {
-  assertEquals(BARANDILLAS.length, 14);
+Deno.test("son 15 y van en orden formato → contenido → reglas", () => {
+  assertEquals(BARANDILLAS.length, 15);
   const orden = { formato: 0, contenido: 1, reglas: 2 } as const;
   const etapas = BARANDILLAS.map((b) => orden[b.etapa]);
   assertEquals(etapas, [...etapas].sort((a, b) => a - b));

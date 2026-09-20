@@ -18,6 +18,8 @@ import { sinMarkdown } from "../../supabase/functions/_shared/barandillas/sin_ma
 import { sinRelleno } from "../../supabase/functions/_shared/barandillas/sin_relleno.ts";
 import type { Barandilla, EntradaBarandilla, ResultadoBarandilla } from "../../supabase/functions/_shared/barandillas/tipos.ts";
 import { unaPregunta } from "../../supabase/functions/_shared/barandillas/una_pregunta.ts";
+import { ventaSinResolver } from "../../supabase/functions/_shared/barandillas/venta_sin_resolver.ts";
+import { trazaNueva } from "../../supabase/functions/_shared/traza.ts";
 import { AHORA, entrada, HORA_MS, traza } from "./_ayuda.ts";
 
 async function salta(b: Barandilla, e: EntradaBarandilla): Promise<Extract<ResultadoBarandilla, { salta: true }>> {
@@ -440,6 +442,28 @@ Deno.test("anuncia_sin_derivar salta con variantes más suaves («te puede orien
 
 Deno.test("anuncia_sin_derivar no confunde una variante suave con «eso te lo confirma el equipo del local» (caso parecido)", async () => {
   await noSalta(anunciaSinDerivar, entrada("Eso te lo confirma el equipo del local."));
+});
+
+// venta_sin_resolver (pedido de logica, 20/9, segunda vuelta): el modelo esquivó CADA frase que
+// se le bloqueó en anuncia_sin_derivar mudándose a otra ("eso te lo confirma el equipo del
+// local", la forma aprobada para otra cosa). Barandilla ESTRUCTURAL en vez de léxica: mira si el
+// turno resolvió una consulta de venta (enviar_link tipo web-venta, o derivó), no cómo lo dijo.
+function trazaConEnviarLink(tipo: string) {
+  const t = trazaNueva();
+  t.llamadas.push({ herramienta: "enviar_link", argumentos: { tipo }, ok: true });
+  return t;
+}
+
+Deno.test("venta_sin_resolver salta si el clasificador dio 'venta' y no se mandó el link de venta ni se derivó", async () => {
+  await salta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.", { intencion: "venta" }));
+  await salta(ventaSinResolver, entrada("Mr Otto también vende trajes.", { intencion: "venta", traza: trazaConEnviarLink("mapa") }));
+});
+
+Deno.test("venta_sin_resolver no salta si mandó el link de venta, si derivó, o si la intención no es venta (caso parecido)", async () => {
+  await noSalta(ventaSinResolver, entrada("Te paso el link de la tienda online.", { intencion: "venta", traza: trazaConEnviarLink("web-venta") }));
+  await noSalta(ventaSinResolver, entrada("Te leo. Esto lo sigue alguien del local.", { intencion: "venta", traza: traza({ herramientas: ["derivar_a_persona"] }) }));
+  await noSalta(ventaSinResolver, entrada("Contale, ¿para qué evento es el traje?", { intencion: "alquiler" }));
+  await noSalta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.")); // sin clasificación, no se puede saber: no salta
 });
 
 Deno.test("no_a_secas salta con una negativa sola", async () => {

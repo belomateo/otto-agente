@@ -21,6 +21,12 @@ export type EntradaBarandilla = {
   ahora: Date;
   ultimoMensajeClienteAt: Date | null;
   esPrimerMensaje: boolean;
+  // La intención que dio el clasificador en este turno (paso 4b), si corrió y contestó. Es lo
+  // único de acá que no sale del texto ni de la traza de herramientas: venta_sin_resolver.ts la
+  // necesita para una barandilla ESTRUCTURAL (mira si se resolvió, no cómo se dijo — pedido de
+  // logica, 20/9, después de que el léxico de anuncia_sin_derivar se volviera un juego del
+  // gato y el ratón). null si el clasificador no corrió o no contestó.
+  intencion?: string | null;
 };
 
 export type ResultadoBarandilla =

@@ -429,3 +429,43 @@ prueba(
     assertEquals(resultado.mensajesAlCliente, [`Tu turno es a las ${hora}, te esperamos.`]);
   },
 );
+
+// venta_sin_resolver de punta a punta (pedido de logica, 20/9, segunda vuelta: el léxico de
+// anuncia_sin_derivar es un juego perdido, el modelo siempre tiene otra frase). Fuerza al
+// clasificador a decir intención "venta" y al principal a contestar SIEMPRE con una frase que no
+// resuelve nada (ni enviar_link ni derivar_a_persona), en el primer intento y en el reintento —
+// el camino de aplicarBarandillas hacia barandilla_doble, igual que el de precio_sin_herramienta
+// más arriba. El cliente nunca se queda sin nada: si el modelo no resuelve, deriva de verdad.
+prueba("una consulta de venta que el modelo no resuelve (ni link ni derivación) termina en barandilla_doble, no muda", async ({ ctx, sql, conversacionId }) => {
+  await insertarEntrante(sql, conversacionId, "hola, quiero comprar un traje");
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    const esClasificador = body.response_format?.json_schema?.name === "clasificacion";
+    const esExtractor = body.response_format?.json_schema?.name === "ficha";
+    if (esClasificador) {
+      return Promise.resolve(respuestaChat({ contenido: JSON.stringify({ intencion: "venta", urgencia: "baja", derivar_duro: false, motivo_derivacion: null }) }));
+    }
+    if (esExtractor) {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({
+          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+        }),
+      }));
+    }
+    // El principal: nunca llama a enviar_link ni a derivar_a_persona, ni en el primer intento ni
+    // en el reintento — una despedida vaga que no resuelve nada.
+    return Promise.resolve(respuestaChat({ contenido: "Eso te lo confirma el equipo del local." }));
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assertEquals(resultado.derivo, true);
+  assertEquals(resultado.motivoDerivacion, "barandilla_doble");
+  assertEquals(resultado.mensajesAlCliente, ["Se me complicó de este lado. Ya avisé a alguien del local y en un rato te escriben."]);
+  const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
+  assertEquals([der?.motivo, der?.estado], ["barandilla_doble", "pendiente"]);
+});
