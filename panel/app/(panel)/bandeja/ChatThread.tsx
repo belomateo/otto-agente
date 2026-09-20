@@ -90,10 +90,31 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
   const { enviando, error: errorAccion, motivo: motivoAccion, tomar, devolver, cerrar, responder, enviarFoto } = useAccionesCharla(conversacionId);
   const [texto, setTexto] = useState('');
   const inputFotoRef = useRef<HTMLInputElement>(null);
+  const listaRef = useRef<HTMLDivElement>(null);
+  const primeraCargaRef = useRef(true);
 
   useEffect(() => {
     setTexto('');
+    primeraCargaRef.current = true;
   }, [conversacionId]);
+
+  // Como cualquier chat: abrir una charla arranca en el mensaje más nuevo, y un mensaje
+  // nuevo (propio o del sondeo) empuja para abajo solo si ya se estaba mirando el fondo —
+  // si alguien se corrió para arriba a leer el historial, un mensaje entrante no lo interrumpe.
+  useEffect(() => {
+    const el = listaRef.current;
+    if (!el || !charla) return;
+    const alFondo = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (primeraCargaRef.current || alFondo) {
+      el.scrollTo({ top: el.scrollHeight, behavior: primeraCargaRef.current ? 'auto' : 'smooth' });
+    }
+    primeraCargaRef.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [charla?.mensajes.length, conversacionId]);
+
+  function irAlFondo() {
+    listaRef.current?.scrollTo({ top: listaRef.current.scrollHeight, behavior: 'smooth' });
+  }
 
   if (!conversacionId) return <div className="flex-1 bg-hueso" />;
   if (cargando && !charla) return <Cargando />;
@@ -119,20 +140,24 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
     if (await responder(t)) {
       setTexto('');
       recargar();
+      irAlFondo();
     }
   }
   async function onFotoElegida(e: React.ChangeEvent<HTMLInputElement>) {
     const archivo = e.target.files?.[0];
     e.target.value = ''; // permite volver a elegir el mismo archivo después
     if (!archivo) return;
-    if (await enviarFoto(archivo)) recargar();
+    if (await enviarFoto(archivo)) {
+      recargar();
+      irAlFondo();
+    }
   }
 
   let fechaAnterior = '';
 
   return (
     // min-w-0: sin esto el texto truncado de abajo fija el ancho mínimo del hilo y la página desborda de costado.
-    <div className="flex min-w-0 flex-1 flex-col bg-hueso">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-hueso">
       <div className={`flex items-center gap-4 border-b border-borde bg-lino ${compacto ? 'p-3.5' : 'px-6 py-3.5'}`}>
         {compacto && (
           <Link href="/bandeja" aria-label="Volver a la bandeja" className="text-xl text-grafito">
@@ -231,7 +256,7 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
         </div>
       )}
 
-      <div className={`flex flex-1 flex-col gap-3.5 overflow-y-auto ${compacto ? 'p-4' : 'px-7 py-5.5'}`}>
+      <div ref={listaRef} className={`flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto ${compacto ? 'p-4' : 'px-7 py-5.5'}`}>
         {charla.mensajes.length === 0 ? (
           <EstadoVacio titulo="Todavía no hay mensajes" texto="Cuando el cliente escriba, los mensajes aparecen acá." />
         ) : (

@@ -17,10 +17,10 @@ export default function CharlaMobilePage() {
 
   return (
     <>
-      <div className="hidden flex-1 md:flex">
+      <div className="hidden min-h-0 flex-1 md:flex">
         <BandejaSplit conversaciones={datos?.conversaciones ?? []} cargando={cargando} error={error} onReintentar={recargar} idInicial={id} />
       </div>
-      <div className="flex flex-1 md:hidden">
+      <div className="flex min-h-0 flex-1 md:hidden">
         <ChatThread variante="mobile" conversacionId={id} />
       </div>
     </>

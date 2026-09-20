@@ -90,7 +90,7 @@ export default function AtencionPage() {
   return (
     <>
       {/* Escritorio */}
-      <div className="hidden flex-1 md:flex">
+      <div className="hidden min-h-0 flex-1 md:flex">
         <div className="flex w-[420px] flex-none flex-col gap-3.5 border-r border-borde p-5">
           <div>
             <h1 className="font-serif text-[22px] font-semibold">Atención humana</h1>
@@ -129,7 +129,7 @@ export default function AtencionPage() {
           )}
         </div>
         {principal ? (
-          <div className="flex flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
             <div className="border-b border-borde bg-lino px-6 py-3.5">
               <div className="flex items-center gap-2.5">
                 <Chip bg={principal.cb} fg={principal.cf} className="px-2.5 py-[3px]">
