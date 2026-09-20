@@ -27,7 +27,7 @@ import {
 } from '../../../supabase/functions/_shared/agenda/huecos.ts';
 import type { Hueco } from '../../../supabase/functions/_shared/herramientas/tipos.ts';
 
-const TIPOS_TURNO = ['graduado', 'novio', 'invitado', 'doble', 'triple', 'prueba_final'] as const;
+export const TIPOS_TURNO = ['graduado', 'novio', 'invitado', 'doble', 'triple', 'prueba_final'] as const;
 
 export const ESQUEMA_ALTA_TURNO = z
   .strictObject({
@@ -117,6 +117,43 @@ export async function altaTurno(sesion: Sesion, request: Request) {
   const reintento = await validarHueco(sesion, datos.tipo, duracion.duracion_min, fecha, fechaEvento, pisarUrgencia);
   const alternativas = reintento instanceof Response ? [] : reintento.huecos.slice(0, 5);
   return error(409, 'Ese horario se ocupó justo ahora', { motivo: 'agenda_ocupada', alternativas });
+}
+
+export type HuecoConUrgencia = Hueco & { dentro_urgencia: boolean };
+
+// GET /api/turnos/huecos: la lista de horarios reservables, para "Nuevo turno" (front,
+// decisión de Mateo 19/9) — así el mostrador no le promete a nadie un horario que el POST
+// después rechaza. cliente_id es opcional: sin cliente elegido todavía (walk-in que ni
+// siquiera tiene ficha), no hay fecha_evento que aplique el margen de confección — el POST
+// vuelve a validar con el cliente real al confirmar, esto es una vista previa.
+export async function huecosDelDia(
+  sesion: Sesion,
+  tipo: string,
+  fecha: string,
+  clienteId?: string
+): Promise<{ huecos: HuecoConUrgencia[] } | Response> {
+  const { data: duracion, error: e1 } = await sesion.supabase.from('duraciones_turno').select('duracion_min').eq('tipo', tipo).maybeSingle();
+  if (e1) return desdeErrorDeBase(e1);
+  if (!duracion) return error(400, `No hay una duración cargada para "${tipo}" en Configuración › Agenda`);
+
+  let fechaEvento: string | null = null;
+  if (clienteId) {
+    const { data, error: e2 } = await sesion.supabase.from('clientes').select('fecha_evento').eq('id', clienteId).maybeSingle();
+    if (e2) return desdeErrorDeBase(e2);
+    if (!data) return error(409, 'Ese cliente no existe', { motivo: 'cliente_no_existe' });
+    fechaEvento = data.fecha_evento;
+  }
+
+  const [sinPisar, conPisar] = await Promise.all([
+    validarHueco(sesion, tipo, duracion.duracion_min, fecha, fechaEvento, false),
+    validarHueco(sesion, tipo, duracion.duracion_min, fecha, fechaEvento, true),
+  ]);
+  if (sinPisar instanceof Response) return sinPisar;
+  if (conPisar instanceof Response) return conPisar;
+
+  const clave = (h: Hueco) => `${h.inicio}|${h.probador}`;
+  const libres = new Set(sinPisar.huecos.map(clave));
+  return { huecos: conPisar.huecos.map((h) => ({ ...h, dentro_urgencia: !libres.has(clave(h)) })) };
 }
 
 async function validarHueco(

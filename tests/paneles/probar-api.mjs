@@ -435,7 +435,8 @@ try {
 
   const GETS = [
     "/api/bandeja", `/api/bandeja/${conv}`, "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/turnos/semana?desde=2031-01-15",
-    "/api/turnos/mes?desde=2031-01", "/api/clientes", `/api/clientes/${cli}`, "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
+    "/api/turnos/mes?desde=2031-01", "/api/turnos/huecos?fecha=2031-01-15&tipo=invitado", "/api/clientes", `/api/clientes/${cli}`,
+    "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
     "/api/configuracion", "/api/accesos", `/api/historial?tabla=clientes&id=${cli}`, "/api/configuracion/prompt-base",
   ];
 
@@ -1351,6 +1352,20 @@ try {
     // llegar a su propia limpieza de más abajo, la corrida siguiente no chocaría con un
     // 409 de "ya existe" por un cliente que quedó de la vez anterior.
     const TEL_AGENDA = `+549341${String(Date.now()).slice(-7)}`;
+
+    const huecosAntes = await api(sn, "GET", `/api/turnos/huecos?fecha=2031-01-08&tipo=invitado`);
+    ok(
+      huecosAntes.status === 200 &&
+        huecosAntes.datos.huecos?.some((h) => h.inicio === "2031-01-08T13:00:00.000Z" && h.probador === 1 && h.dentro_urgencia === false),
+      `GET /api/turnos/huecos (equipo): el día vacío trae el horario que va a usar a1, sin marca de urgencia (${huecosAntes.status}, ${huecosAntes.datos.huecos?.length} huecos)`
+    );
+    const huecosMalFecha = await api(sa, "GET", "/api/turnos/huecos?fecha=08-01-2031&tipo=invitado");
+    ok(huecosMalFecha.status === 400, `huecos › fecha mal formada → 400 (${huecosMalFecha.status})`);
+    const huecosMalTipo = await api(sa, "GET", "/api/turnos/huecos?fecha=2031-01-08&tipo=no-existe");
+    ok(huecosMalTipo.status === 400, `huecos › tipo fuera del enum → 400 (${huecosMalTipo.status})`);
+    const huecosSinTipo = await api(sa, "GET", "/api/turnos/huecos?fecha=2031-01-08");
+    ok(huecosSinTipo.status === 400, `huecos › sin tipo → 400 (${huecosSinTipo.status})`);
+
     const a1 = await api(sa, "POST", "/api/turnos", {
       cliente_nuevo: { telefono: TEL_AGENDA, nombre: `${MARCA} agenda` },
       tipo: "invitado",
@@ -1365,6 +1380,11 @@ try {
     ok(
       clienteReal?.telefono === TEL_AGENDA.replace(/\D/g, ""),
       `el cliente nuevo quedó guardado de verdad, con el teléfono normalizado (${clienteReal?.telefono})`
+    );
+    const huecosDespues = await api(sa, "GET", "/api/turnos/huecos?fecha=2031-01-08&tipo=invitado");
+    ok(
+      huecosDespues.status === 200 && !huecosDespues.datos.huecos?.some((h) => h.inicio === "2031-01-08T13:00:00.000Z"),
+      `el horario recién ocupado ya no aparece en los huecos (${huecosDespues.status}, sigue: ${huecosDespues.datos.huecos?.some((h) => h.inicio === "2031-01-08T13:00:00.000Z")})`
     );
 
     // A la MISMA hora exacta que a1, ni pidiendo un probador puntual ni dejando que la agenda
@@ -1419,6 +1439,12 @@ try {
     ok(
       bloqueadoPorReserva.status === 409 && bloqueadoPorReserva.datos.detalle?.motivo === "sin_hueco",
       `sin pisar_urgencia, la reserva agrandada tapa un hueco real dentro de la ventana (${bloqueadoPorReserva.status}: ${bloqueadoPorReserva.datos.detalle?.motivo})`
+    );
+    const huecosUrgencia = await api(sa, "GET", `/api/turnos/huecos?fecha=${fechaUrgencia}&tipo=invitado`);
+    const huecoMarcado = huecosUrgencia.datos.huecos?.find((h) => h.inicio === new Date(FECHA2).toISOString());
+    ok(
+      huecosUrgencia.status === 200 && Boolean(huecoMarcado) && huecoMarcado.dentro_urgencia === true,
+      `GET huecos marca dentro_urgencia: true en el horario que solo se puede pisando (${huecosUrgencia.status}, ${huecoMarcado?.dentro_urgencia})`
     );
     const pisando = await api(sa, "POST", "/api/turnos", { cliente_id: cli, tipo: "invitado", inicio: FECHA2, pisar_urgencia: true });
     if (pisando.datos?.fila) turnosExtra.push(pisando.datos.fila.id);
