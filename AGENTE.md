@@ -84,8 +84,15 @@ una función separada en `_shared/`, testeable sola.
 1. webhook-whatsapp      recibe → verifica firma → dedup → guarda mensaje → encola
 2. worker                toma el trabajo (SKIP LOCKED)
 3. agrupar_rafaga        espera 4 s: si llegan más mensajes del mismo cliente, se contestan juntos
-     └ si lo único que llegó no es texto NI un botón de plantilla (foto, audio, sticker —
-       supuesto #33; un botón SÍ cuenta como texto: es una frase que el cliente tocó, no una foto)
+     └ un audio se transcribe (whisper vía LLM_TRANSCRIPCION) y entra al turno etiquetado como
+       «transcripción automática, puede tener errores»; una imagen se manda al modelo en base64,
+       con su epígrafe si lo tenía (pedido de Mateo, 19/9). El worker baja los adjuntos ANTES de
+       llamar al turno, con un tope por ráfaga (`MAXIMO_ADJUNTOS_LEGIBLES_POR_RAFAGA` = 4): un
+       adjunto que todavía se está bajando queda `pendiente` (no es un error, se lee en el turno
+       que viene) y contesta con un aviso propio, no con el texto de "no puedo leer esto"
+     └ si lo único que llegó no es texto NI un botón de plantilla NI un audio/imagen legible
+       (sticker, ubicación, un adjunto que falló al bajar o no se pudo transcribir — supuesto
+       #33; un botón SÍ cuenta como texto: es una frase que el cliente tocó, no una foto)
        → texto fijo en código, sin pasar por ningún LLM, y FIN
      └ tope de 2500 caracteres antes de clasificar/principal (`MAXIMO_CARACTERES_RAFAGA`,
        hallazgo de Mateo, 16/9): corta en el último espacio del tramo, no a la mitad de una
