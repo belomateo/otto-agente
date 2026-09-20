@@ -223,7 +223,7 @@ prueba("supuesto #33 resuelto: solo una foto (sin texto) contesta con el texto f
   // texto fijo se saca ahí, no en contexto_agente (el dueño lo sigue editando con buena
   // ortografía en el panel).
   assertEquals(resultado.mensajesAlCliente, [
-    sinSignosDeApertura("Por ahora todavía no puedo leer fotos, audios ni stickers. ¿Me contás en un mensaje de texto qué necesitás? Así te ayudo enseguida."),
+    sinSignosDeApertura("Por ahora no puedo leer esto. ¿Me contás en un mensaje de texto qué necesitás? Así te ayudo enseguida."),
   ]);
 });
 

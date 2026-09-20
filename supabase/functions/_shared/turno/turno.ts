@@ -27,8 +27,9 @@ import { definicionesParaElModelo } from "../herramientas/index.ts";
 import type { Calendario } from "../herramientas/tipos.ts";
 import { clasificar } from "../llm/clasificador.ts";
 import { extraer } from "../llm/extractor.ts";
-import { correrPrincipal, type LlamadaLlm, type MensajeLlm, type ResultadoPrincipal } from "../llm/principal.ts";
+import { correrPrincipal, type ContenidoLlm, type LlamadaLlm, type MensajeLlm, type ResultadoPrincipal } from "../llm/principal.ts";
 import { trazaNueva } from "../traza.ts";
+import type { AccesoStorage } from "../whatsapp/medios.ts";
 import { contextoDeHerramientas } from "./contexto_herramientas.ts";
 import { armarContextoDelTurno } from "./contexto.ts";
 import { derivacionDuraPorEventoInminente, derivacionDuraPorPalabraClave } from "./derivacion_dura.ts";
@@ -39,6 +40,12 @@ import { prepararParaEnviar } from "../whatsapp/preparar.ts";
 
 export const LIMITE_TURNO_MS = 25_000;
 const CLAVE_TEXTO_MENSAJE_NO_SOPORTADO = "texto_mensaje_no_soportado";
+// Pedido de Mateo, 19/9: un adjunto que TODAVÍA se está bajando no es un error (bajarMediosPendientes,
+// en el worker, le pone un tope de tiempo/cantidad al turno) — decir "no pude leerlo" acá sería
+// mentir, porque sí se va a leer. No necesita respaldo en código como los textos de derivación
+// (textoDeDerivacion): si la fila queda vacía, como mucho no se manda nada, la charla sigue sin
+// pausar y el cliente puede volver a escribir — mismo criterio que texto_mensaje_no_soportado.
+const CLAVE_TEXTO_ADJUNTO_PENDIENTE = "texto_adjunto_pendiente";
 // Pedido de Mateo, 19/9: toda derivación le tiene que dejar algo al cliente, no importa quién la
 // haya decidido. Estos dos motivos, en cambio, son la excepción a propósito: es el CLIENTE el
 // que dejó de escribir (sin_respuesta/timeout), así que "en breve te contestan" sería un mensaje
@@ -124,6 +131,11 @@ export type ParametrosTurno = {
   // que lo que la dueña edita en el panel le llegue a Lucía sin volver a publicar. Si no viene, se
   // usa el prompt.md que viaja adentro de la función.
   prompt?: string;
+  // El bucket privado de adjuntos (mismo `d.adjuntos` que ya usa el worker para las fotos del
+  // mostrador), para leer los audios/imágenes que mandó el cliente (medios.ts). Sin esto (el
+  // emulador no tiene Storage ni Meta), cualquier adjunto queda como "no legible" — mismo
+  // comportamiento que antes del 19/9.
+  acceso?: AccesoStorage;
   fetcher?: typeof fetch;
 };
 
@@ -137,22 +149,42 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
   let historial: MensajeChat[] = [];
 
   // Paso 3 — agrupar ráfaga: todo lo que el cliente mandó desde la última respuesta de Lucía
-  // (o desde el principio) hasta ahora, ya insertado en `mensajes` por quien llamó a esto.
-  const rafaga = await agruparRafaga(db, p.conversacionId, p.ahora);
+  // (o desde el principio) hasta ahora, ya insertado en `mensajes` por quien llamó a esto. Desde
+  // el 19/9 esto también transcribe audios y prepara imágenes (rafaga.ts): sale con lo que hay
+  // para pasarle al modelo, y lo que costó (llamadasLlm) para la bitácora.
+  const rafaga = await agruparRafaga(db, p.conversacionId, p.ahora, { acceso: p.acceso, fetcher: p.fetcher });
   const mensaje = rafaga.texto;
+  const hayImagenes = rafaga.imagenes.length > 0;
   const ultimoMensajeClienteAt = rafaga.ultimoEnviadoAt ?? p.ahora;
+  llamadasLlm.push(...rafaga.llamadasLlm);
   if (rafaga.recortada) {
     eventos.push({ tipo: "error", detalle: { etapa: "agrupar-rafaga", error: `ráfaga recortada a ${MAXIMO_CARACTERES_RAFAGA} caracteres antes del clasificador y el principal` } });
   }
+  if (rafaga.hayAdjuntoNoLegible) {
+    eventos.push({ tipo: "pensamiento", detalle: { etapa: "adjuntos", nota: "algún adjunto de esta ráfaga no se pudo leer (tipo no soportado, bajada fallida o transcripción vacía)" } });
+  }
+  if (rafaga.adjuntosDeMas > 0) {
+    eventos.push({ tipo: "pensamiento", detalle: { etapa: "adjuntos", nota: `${rafaga.adjuntosDeMas} adjunto(s) de más en la ráfaga, no procesados (tope por turno)` } });
+  }
 
   try {
-    if (!mensaje) {
-      // Supuesto #33: llegó algo (foto, audio, sticker, ubicación...) pero no hay nada de texto
-      // para leer — no es lo mismo que "no pasó nada" (rafaga.soloNoTexto lo distingue). No tiene
-      // sentido gastar el clasificador ni el principal en esto: no hay una palabra que entender,
-      // así que el texto es fijo, en código, como el de una derivación dura.
+    if (!mensaje && !hayImagenes) {
+      // Pedido de Mateo, 19/9: un adjunto que TODAVÍA se está bajando no es un error — el worker
+      // le puso un tope de tiempo/cantidad a bajarMediosPendientes, y este va a estar listo en el
+      // turno que viene. Decir "no pude leerlo" acá sería mentir.
+      if (rafaga.hayAdjuntoPendiente) {
+        eventos.push({ tipo: "pensamiento", detalle: { etapa: "adjuntos", nota: "adjunto todavía bajándose: se lee en el próximo turno, no es un error" } });
+        const texto = await textoDeContexto(db, CLAVE_TEXTO_ADJUNTO_PENDIENTE);
+        resultado = { mensajesAlCliente: prepararParaEnviar([texto]), imagenes: [], derivo: false, bloqueadoPorVentana: false };
+        return resultado;
+      }
+      // Supuesto #33: llegó algo (sticker, ubicación, un adjunto que no se pudo leer...) pero no
+      // hay nada de texto ni imagen para leer — no es lo mismo que "no pasó nada" (rafaga.
+      // soloNoTexto lo distingue). No tiene sentido gastar el clasificador ni el principal en
+      // esto: no hay una palabra que entender, así que el texto es fijo, en código, como el de
+      // una derivación dura.
       if (rafaga.soloNoTexto) {
-        eventos.push({ tipo: "pensamiento", detalle: { etapa: "no-es-texto", nota: "mensaje entrante sin texto (foto/audio/sticker/otro): contesta con el texto fijo, sin pasar por el modelo" } });
+        eventos.push({ tipo: "pensamiento", detalle: { etapa: "no-es-texto", nota: "mensaje entrante sin nada legible: contesta con el texto fijo, sin pasar por el modelo" } });
         const texto = await textoDeContexto(db, CLAVE_TEXTO_MENSAJE_NO_SOPORTADO);
         resultado = { mensajesAlCliente: prepararParaEnviar([texto]), imagenes: [], derivo: false, bloqueadoPorVentana: false };
         return resultado;
@@ -207,11 +239,28 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       p.prompt ?? leerPrompt(),
       definicionesParaElModelo(db),
     ]);
+    // Pedido de Mateo, 19/9: que Lucía vea las fotos que manda el cliente. Con imágenes, el
+    // mensaje del cliente pasa de string a un array de bloques (formato de visión de Chat
+    // Completions): el texto primero, y por cada imagen su epígrafe (si el cliente puso uno) y
+    // la imagen en base64 — el bucket de adjuntos es privado, no hay para qué generarle una URL
+    // firmada a OpenAI (rafaga.ts ya la arma como data: URI).
+    const mensajeDelCliente: MensajeLlm = hayImagenes
+      ? {
+        role: "user",
+        content: [
+          ...(mensaje ? [{ type: "text" as const, text: mensaje }] : []),
+          ...rafaga.imagenes.flatMap((img) => [
+            ...(img.epigrafe ? [{ type: "text" as const, text: `(el cliente mandó esta foto con el comentario: "${img.epigrafe}")` }] : []),
+            { type: "image_url" as const, image_url: { url: img.url } },
+          ]),
+        ],
+      }
+      : { role: "user", content: mensaje };
     const mensajesLlm: MensajeLlm[] = [
       { role: "system", content: prompt },
       { role: "system", content: contexto.texto },
       ...historial,
-      { role: "user", content: mensaje },
+      mensajeDelCliente,
     ];
     // traza.ts y horario_sin_herramienta.ts prometen horasDevueltas sembrada con los turnos del
     // cliente y el horario de hoy que ya le pasamos en el contexto: si el modelo repite una hora
