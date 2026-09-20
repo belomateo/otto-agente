@@ -435,7 +435,8 @@ try {
 
   const GETS = [
     "/api/bandeja", `/api/bandeja/${conv}`, "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/turnos/semana?desde=2031-01-15",
-    "/api/clientes", `/api/clientes/${cli}`, "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
+    "/api/turnos/mes?desde=2031-01", "/api/turnos/huecos?fecha=2031-01-15&tipo=invitado", "/api/clientes", `/api/clientes/${cli}`,
+    "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
     "/api/configuracion", "/api/accesos", `/api/historial?tabla=clientes&id=${cli}`, "/api/configuracion/prompt-base",
   ];
 
@@ -818,6 +819,45 @@ try {
     ok(malFormada.status === 400, `Semana de Turnos › fecha mal formada → 400 (${malFormada.status})`);
   }
   {
+    // Vista Mensual (pedido de Mateo, 19/9): mes dedicado y lejano (2032-06) para no
+    // interferir con nada más del arnés ni con datos reales. Se borran acá mismo (no vía
+    // turnosExtra/limpiar): otras pruebas más abajo cuentan los turnos de `cli` y esperan
+    // un número exacto — dejarlos hasta el final les rompería el conteo.
+    const nuevoMes = async (dia, probador, estado = "sin-confirmar") =>
+      (
+        await q(
+          `insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin, estado)
+           values ($1, 'invitado', 45, $2, $3::timestamptz, $3::timestamptz + interval '45 minutes', $4)
+           returning id`,
+          [cli, probador, `2032-06-${dia}T15:00:00-03:00`, estado]
+        )
+      )[0].id;
+    const idsMes = [await nuevoMes("05", 1, "sin-confirmar"), await nuevoMes("05", 2, "confirmado"), await nuevoMes("20", 1, "cancelado")];
+
+    const mes = await api(sa, "GET", "/api/turnos/mes?desde=2032-06");
+    const dia5 = mes.datos.dias?.find((d) => d.fecha === "2032-06-05");
+    const dia20 = mes.datos.dias?.find((d) => d.fecha === "2032-06-20");
+    const dia1 = mes.datos.dias?.find((d) => d.fecha === "2032-06-01");
+    ok(
+      mes.status === 200 &&
+        mes.datos.mes === "2032-06" &&
+        mes.datos.dias?.length === 30 &&
+        dia5?.total === 2 &&
+        dia5?.sin_confirmar === 1 &&
+        dia20?.total === 0 && // cancelado no cuenta por defecto
+        dia1?.total === 0 &&
+        dia1?.sin_confirmar === 0,
+      `Vista Mensual: conteo por día, cancelado no cuenta por defecto, días sin turnos en 0 (${mes.status}, dias:${mes.datos.dias?.length}, 05:${dia5?.total}/${dia5?.sin_confirmar}, 20:${dia20?.total})`
+    );
+    const mesConCancelados = await api(sa, "GET", "/api/turnos/mes?desde=2032-06&cancelados=1");
+    const dia20Cancelados = mesConCancelados.datos.dias?.find((d) => d.fecha === "2032-06-20");
+    ok(dia20Cancelados?.total === 1, `con cancelados=1, el cancelado sí cuenta (${dia20Cancelados?.total})`);
+    const mesInvalido = await api(sa, "GET", "/api/turnos/mes?desde=15-2031");
+    ok(mesInvalido.status === 400, `Vista Mensual › mes mal formado → 400 (${mesInvalido.status})`);
+    await q("delete from historial_ediciones where fila_id = any($1::uuid[])", [idsMes]);
+    await q("delete from turnos where id = any($1::uuid[])", [idsMes]);
+  }
+  {
     const x = await api(sa, "GET", "/api/clientes");
     const c = x.datos.clientes?.find((v) => v.n === MARCA);
     ok(
@@ -919,11 +959,17 @@ try {
       `un 'equipo' no ve Clientes, Catálogo, Conocimiento, Bitácora ni Configuración (${bloqueadas.map((x) => x.status).join(",")})`
     );
     const siguen = await Promise.all(
-      ["/api/bandeja", "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/turnos/semana?desde=2031-01-15"].map((r) => api(sn, "GET", r))
+      [
+        "/api/bandeja",
+        "/api/atencion",
+        "/api/turnos?fecha=2031-01-15",
+        "/api/turnos/semana?desde=2031-01-15",
+        "/api/turnos/mes?desde=2031-01",
+      ].map((r) => api(sn, "GET", r))
     );
     ok(
       siguen.every((x) => x.status === 200),
-      `pero sigue viendo Bandeja, Atención humana y Turnos (día y semana), su trabajo diario (${siguen.map((x) => x.status).join(",")})`
+      `pero sigue viendo Bandeja, Atención humana y Turnos (día, semana y mes), su trabajo diario (${siguen.map((x) => x.status).join(",")})`
     );
     const ficha = await api(sn, "GET", `/api/bandeja/${conv}`);
     ok(
@@ -1291,6 +1337,151 @@ try {
     if (alta.datos?.fila) {
       turnosExtra.splice(turnosExtra.indexOf(alta.datos.fila.id), 1);
       await q("delete from turnos where id = $1", [alta.datos.fila.id]);
+    }
+  }
+
+  seccion("Alta de turno con huecos reales (decisión de Mateo, 19/9)");
+  {
+    // Miércoles lejano, distinto del 2031-01-15 que ya usa el resto del arnés: franjas
+    // conocidas (10-14 con 2 probadores, 14-19 con 3), sin reserva de urgencia (está a años).
+    // ANTES del 2031-01-20 (fecha_evento de `cli`, sembrar()): calcularHuecos recorta la
+    // agenda hasta el margen de confección antes del evento del cliente, así que una fecha
+    // posterior al 20 no ofrece nada para `cli` — no es un bug, es la promesa del traje.
+    const FECHA = "2031-01-08T10:00:00-03:00";
+    // Teléfono único por corrida (no un literal fijo): si esta prueba fallara antes de
+    // llegar a su propia limpieza de más abajo, la corrida siguiente no chocaría con un
+    // 409 de "ya existe" por un cliente que quedó de la vez anterior.
+    const TEL_AGENDA = `+549341${String(Date.now()).slice(-7)}`;
+
+    const huecosAntes = await api(sn, "GET", `/api/turnos/huecos?fecha=2031-01-08&tipo=invitado`);
+    ok(
+      huecosAntes.status === 200 &&
+        huecosAntes.datos.huecos?.some((h) => h.inicio === "2031-01-08T13:00:00.000Z" && h.probador === 1 && h.dentro_urgencia === false),
+      `GET /api/turnos/huecos (equipo): el día vacío trae el horario que va a usar a1, sin marca de urgencia (${huecosAntes.status}, ${huecosAntes.datos.huecos?.length} huecos)`
+    );
+    const huecosMalFecha = await api(sa, "GET", "/api/turnos/huecos?fecha=08-01-2031&tipo=invitado");
+    ok(huecosMalFecha.status === 400, `huecos › fecha mal formada → 400 (${huecosMalFecha.status})`);
+    const huecosMalTipo = await api(sa, "GET", "/api/turnos/huecos?fecha=2031-01-08&tipo=no-existe");
+    ok(huecosMalTipo.status === 400, `huecos › tipo fuera del enum → 400 (${huecosMalTipo.status})`);
+    const huecosSinTipo = await api(sa, "GET", "/api/turnos/huecos?fecha=2031-01-08");
+    ok(huecosSinTipo.status === 400, `huecos › sin tipo → 400 (${huecosSinTipo.status})`);
+
+    const a1 = await api(sa, "POST", "/api/turnos", {
+      cliente_nuevo: { telefono: TEL_AGENDA, nombre: `${MARCA} agenda` },
+      tipo: "invitado",
+      inicio: FECHA,
+    });
+    const clienteNuevoId = a1.datos?.fila?.cliente_id;
+    ok(
+      a1.status === 201 && a1.datos.fila.probador === 1 && a1.datos.fila.estado === "sin-confirmar",
+      `cliente_nuevo: da de alta al cliente y el turno en el mismo paso, sin pedir probador (${a1.status}, probador ${a1.datos.fila?.probador})`
+    );
+    const clienteReal = clienteNuevoId ? (await q("select telefono from clientes where id = $1", [clienteNuevoId]))[0] : null;
+    ok(
+      clienteReal?.telefono === TEL_AGENDA.replace(/\D/g, ""),
+      `el cliente nuevo quedó guardado de verdad, con el teléfono normalizado (${clienteReal?.telefono})`
+    );
+    const huecosDespues = await api(sa, "GET", "/api/turnos/huecos?fecha=2031-01-08&tipo=invitado");
+    ok(
+      huecosDespues.status === 200 && !huecosDespues.datos.huecos?.some((h) => h.inicio === "2031-01-08T13:00:00.000Z"),
+      `el horario recién ocupado ya no aparece en los huecos (${huecosDespues.status}, sigue: ${huecosDespues.datos.huecos?.some((h) => h.inicio === "2031-01-08T13:00:00.000Z")})`
+    );
+
+    // A la MISMA hora exacta que a1, ni pidiendo un probador puntual ni dejando que la agenda
+    // elija: el escalonado (0030, decisión #7) bloquea todo el horario para cualquier
+    // probador una vez que alguien ya lo ocupa ("a cada hora se ofrece un solo probador, el
+    // primero libre"). Las dos formas de pedirlo tienen que chocar igual.
+    const chocaProbador1 = await api(sa, "POST", "/api/turnos", { cliente_id: cli, tipo: "invitado", probador: 1, inicio: FECHA });
+    ok(
+      chocaProbador1.status === 409 && Array.isArray(chocaProbador1.datos.detalle?.alternativas) && chocaProbador1.datos.detalle.alternativas.length > 0,
+      `pedir el probador que ya está ocupado a esa hora → 409 con alternativas (${chocaProbador1.status}, ${chocaProbador1.datos.detalle?.alternativas?.length} alternativa(s))`
+    );
+    const siguienteHueco = chocaProbador1.datos.detalle.alternativas[0];
+    const a2 = await api(sa, "POST", "/api/turnos", { cliente_id: cli, tipo: "invitado", inicio: siguienteHueco.inicio });
+    if (a2.datos?.fila) turnosExtra.push(a2.datos.fila.id);
+    ok(
+      a2.status === 201 && a2.datos.fila.probador === siguienteHueco.probador,
+      `sin pedir probador, en el siguiente horario (distinto al ocupado) la agenda asigna uno libre sola (${a2.status}, probador ${a2.datos.fila?.probador})`
+    );
+
+    const sinHueco = await api(sa, "POST", "/api/turnos", { cliente_id: cli, tipo: "invitado", inicio: FECHA });
+    ok(sinHueco.status === 409 && sinHueco.datos.detalle?.motivo === "sin_hueco", `los dos probadores de esa franja ya están ocupados a esa hora → 409 (${sinHueco.status}: ${sinHueco.datos.detalle?.motivo})`);
+
+    const conLosDos = await api(sa, "POST", "/api/turnos", { cliente_id: cli, cliente_nuevo: { telefono: "123" }, tipo: "invitado", inicio: FECHA });
+    ok(conLosDos.status === 400, `cliente_id y cliente_nuevo juntos → 400 (${conLosDos.status})`);
+    const conNinguno = await api(sa, "POST", "/api/turnos", { tipo: "invitado", inicio: FECHA });
+    ok(conNinguno.status === 400, `ni cliente_id ni cliente_nuevo → 400 (${conNinguno.status})`);
+
+    // Pisar la reserva de urgencia (explícito, decisión de Mateo 19/9): dias_reserva_urgencia
+    // tiene un máximo real de 365 (entidades.ts), así que no se puede "tapar" una fecha de
+    // 2031 con esto — se agranda a 300 y se prueba contra una fecha real dentro de esa
+    // ventana (~250 días), con las franjas reales de ese día de la semana (puede no ser
+    // miércoles). Se restaura después.
+    const cfgAntes = (await q("select id, version, dias_reserva_urgencia from configuracion_agenda"))[0];
+    const agrandar = await api(sa, "PATCH", "/api/configuracion/agenda", { version: cfgAntes.version, dias_reserva_urgencia: 300 });
+    ok(agrandar.status === 200, `(preparación) la reserva de urgencia se agranda a 300 días (${agrandar.status})`);
+
+    let fechaUrgencia, franjaUrgencia;
+    for (let i = 250; i < 260 && !franjaUrgencia; i++) {
+      const candidata = new Date(Date.now() + i * 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const fr = (
+        await q("select desde, hasta, probadores from franjas_turnos where dia_semana = extract(dow from $1::date) order by desde limit 1", [candidata])
+      )[0];
+      if (fr) {
+        fechaUrgencia = candidata;
+        franjaUrgencia = fr;
+      }
+    }
+    ok(Boolean(franjaUrgencia), `(preparación) encontró un día con franjas dentro de la ventana agrandada (${fechaUrgencia})`);
+
+    const FECHA2 = `${fechaUrgencia}T${franjaUrgencia.desde.slice(0, 5)}:00-03:00`;
+    const bloqueadoPorReserva = await api(sa, "POST", "/api/turnos", { cliente_id: cli, tipo: "invitado", inicio: FECHA2 });
+    ok(
+      bloqueadoPorReserva.status === 409 && bloqueadoPorReserva.datos.detalle?.motivo === "sin_hueco",
+      `sin pisar_urgencia, la reserva agrandada tapa un hueco real dentro de la ventana (${bloqueadoPorReserva.status}: ${bloqueadoPorReserva.datos.detalle?.motivo})`
+    );
+    const huecosUrgencia = await api(sa, "GET", `/api/turnos/huecos?fecha=${fechaUrgencia}&tipo=invitado`);
+    const huecoMarcado = huecosUrgencia.datos.huecos?.find((h) => h.inicio === new Date(FECHA2).toISOString());
+    ok(
+      huecosUrgencia.status === 200 && Boolean(huecoMarcado) && huecoMarcado.dentro_urgencia === true,
+      `GET huecos marca dentro_urgencia: true en el horario que solo se puede pisando (${huecosUrgencia.status}, ${huecoMarcado?.dentro_urgencia})`
+    );
+    const pisando = await api(sa, "POST", "/api/turnos", { cliente_id: cli, tipo: "invitado", inicio: FECHA2, pisar_urgencia: true });
+    if (pisando.datos?.fila) turnosExtra.push(pisando.datos.fila.id);
+    ok(pisando.status === 201, `con pisar_urgencia: true, el mismo hueco se puede tomar (${pisando.status})`);
+
+    const cfgDespues = (await q("select version from configuracion_agenda"))[0];
+    const restaurar = await api(sa, "PATCH", "/api/configuracion/agenda", { version: cfgDespues.version, dias_reserva_urgencia: cfgAntes.dias_reserva_urgencia });
+    ok(
+      restaurar.status === 200 && restaurar.datos.fila.dias_reserva_urgencia === cfgAntes.dias_reserva_urgencia,
+      `(limpieza) la reserva de urgencia vuelve a lo que estaba (${restaurar.datos.fila?.dias_reserva_urgencia})`
+    );
+
+    // Dos altas a la vez sobre el mismo hueco (la carrera que resuelve la base, no el código):
+    // una gana limpio, la otra recibe 409 con una alternativa ya calculada, nunca un 500.
+    const FECHA3 = "2031-01-08T18:00:00-03:00"; // franja de 3 probadores, sin usar todavía
+    const carrera = await Promise.all([
+      api(sa, "POST", "/api/turnos", { cliente_id: cli, tipo: "invitado", inicio: FECHA3 }),
+      api(sa, "POST", "/api/turnos", { cliente_id: cli, tipo: "invitado", inicio: FECHA3 }),
+    ]);
+    const ganador = carrera.find((r) => r.status === 201);
+    const perdedor = carrera.find((r) => r.status === 409);
+    if (ganador?.datos?.fila) turnosExtra.push(ganador.datos.fila.id);
+    ok(
+      Boolean(ganador) && Boolean(perdedor) && Array.isArray(perdedor?.datos.detalle?.alternativas) && perdedor.datos.detalle.alternativas.length > 0,
+      `dos altas a la vez sobre el mismo horario: una gana (201), la otra 409 con una alternativa, ninguna explota (${carrera.map((r) => r.status).join(",")})`
+    );
+
+    // cliente_nuevo no es `cli`: turnos.cliente_id es ON DELETE RESTRICT, así que su turno se
+    // borra antes que él, y acá mismo — el genérico de creados.filas/turnosExtra no sabe de
+    // esta relación cruzada (asume que todo turnosExtra cuelga de `cli`, ver limpiar()).
+    if (a1.datos?.fila) {
+      await q("delete from historial_ediciones where fila_id = $1", [a1.datos.fila.id]);
+      await q("delete from turnos where id = $1", [a1.datos.fila.id]);
+    }
+    if (clienteNuevoId) {
+      await q("delete from historial_ediciones where fila_id = $1", [clienteNuevoId]);
+      await q("delete from clientes where id = $1", [clienteNuevoId]);
     }
   }
 

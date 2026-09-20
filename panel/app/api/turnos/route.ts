@@ -1,6 +1,6 @@
 // Turnos: GET /api/turnos?fecha=YYYY-MM-DD[&cancelados=1] (H1.8). Sin fecha, hoy en la zona
-// del negocio. POST: alta manual (decisión de Mateo, 16/9 — turno por teléfono), lib/edicion/
-// turno-alta.ts.
+// del negocio. POST: alta manual (16/9, turno por teléfono; 19/9, alta desde la pestaña con
+// huecos reales) — lib/edicion/turno-alta.ts, un solo lugar que valida la agenda.
 import { rutaConsulta } from '@/lib/api/consulta';
 import { requerirSesion } from '@/lib/api/sesion';
 import { error } from '@/lib/api/respuestas';

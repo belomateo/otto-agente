@@ -47,7 +47,7 @@ const entero = (min: number, max: number) =>
 // formato que usa el webhook (E.164 sin "+", p. ej. 5493411234567), para que si esa persona
 // después escribe por WhatsApp caiga en la misma ficha. Se limpia lo que se pueda tipear
 // (espacios, guiones, paréntesis, el "+") y se valida el largo de lo que queda.
-const telefonoAlta = z
+export const telefonoAlta = z
   .string()
   .trim()
   .transform((v) => v.replace(/\D/g, ''))
