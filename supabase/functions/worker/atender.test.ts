@@ -103,14 +103,18 @@ function turnoDoble(respuestas: string[], extra: Partial<ResultadoTurno> = {}) {
   return { fn, llamadas };
 }
 
-function metaDoble(falla: (intento: number) => boolean = () => false) {
+// `desdeEnvio` existe para las pruebas que arman Meta DOS VECES sobre la misma charla (un trabajo
+// que falla y después se reintenta). El contador arranca de cero en cada armado, así que sin esto
+// la segunda pasada devuelve un wamid que la primera ya usó y el insert choca contra
+// mensajes_wa_message_id_key — un choque que solo existe acá: Meta nunca repite un id.
+function metaDoble(falla: (intento: number) => boolean = () => false, desdeEnvio = 0) {
   const envios: Record<string, unknown>[] = [];
   let intentos = 0;
   const fetcher = ((_url: string | URL | Request, init?: RequestInit) => {
     const i = intentos++;
     if (falla(i)) return Promise.resolve(Response.json({ error: { message: "Meta caída (doble)" } }, { status: 500 }));
     envios.push(JSON.parse(String(init?.body)));
-    return Promise.resolve(Response.json({ messages: [{ id: `wamid.SALIDA-${i}` }] }));
+    return Promise.resolve(Response.json({ messages: [{ id: `wamid.SALIDA-${desdeEnvio + i}` }] }));
   }) as typeof fetch;
   return { fetcher, envios };
 }
@@ -129,11 +133,11 @@ function reloj(inicio: Date) {
   };
 }
 
-type Opciones = { respuestas?: string[]; resultado?: Partial<ResultadoTurno>; falla?: (i: number) => boolean; desdeSeg?: number };
+type Opciones = { respuestas?: string[]; resultado?: Partial<ResultadoTurno>; falla?: (i: number) => boolean; desdeSeg?: number; desdeEnvio?: number };
 
 function armar(c: Contexto, o: Opciones = {}) {
   const turno = turnoDoble(o.respuestas ?? RESPUESTAS, o.resultado);
-  const meta = metaDoble(o.falla);
+  const meta = metaDoble(o.falla, o.desdeEnvio);
   const r = reloj(new Date(c.t0.getTime() + (o.desdeSeg ?? 10) * 1000));
   const d: Dependencias = {
     wa: { token: "t", phoneNumberId: "1" },
@@ -532,10 +536,10 @@ prueba("una burbuja en duda no se reenvía: se marca y la charla va a una person
 
   await c.sql.query("update cola_trabajos set reintentar_despues_de = null");
 
-  const segunda = armar(c, { desdeSeg: 30 });
+  // desdeEnvio: 2 porque la primera pasada ya consumió los envíos 0 y 1 (uno salió, el otro falló).
+  const segunda = armar(c, { desdeSeg: 30, desdeEnvio: 2 });
   await atenderCola(c.db, segunda.d, "worker-prueba");
-  assertEquals(segunda.turno.llamadas.length, 0);
-  assertEquals(segunda.meta.envios.length, 0); // no lo manda de nuevo
+  assertEquals(segunda.turno.llamadas.length, 0); // no vuelve a pensar
   const [m] = (await c.sql.query(
     `select no_enviado_motivo from mensajes where contenido = $1`, [RESPUESTAS[1]],
   )).rows;
@@ -545,6 +549,19 @@ prueba("una burbuja en duda no se reenvía: se marca y la charla va a una person
       where c.cliente_id = (select id from clientes where telefono = $1)`, [TEL],
   )).rows;
   assertEquals([dv?.motivo, dv?.estado], ["fallo_tecnico", "derivada"]);
+
+  // Lo que cambió con 0057. Antes acá no salía NADA y el cliente quedaba esperando una respuesta
+  // que nunca iba a llegar, sin enterarse de nada. Las dos mitades importan por separado:
+  const salidas = segunda.meta.envios.map(textoDe);
+  // 1. la burbuja en duda sigue sin reenviarse (puede haber llegado: mejor que falte a que se
+  //    duplique). Esta es la garantía vieja y no se toca.
+  assert(!salidas.includes(RESPUESTAS[1]), `no reenvía la burbuja en duda, mandó: ${JSON.stringify(salidas)}`);
+  // 2. pero ahora sí sale el aviso de que sigue una persona, encolado por cola_derivar_por_fallo
+  //    como un mensaje del mostrador (sin la marca interna, que el cliente no tiene que ver).
+  assertEquals(salidas.length, 1);
+  const aviso = salidas[0] ?? "";
+  assert(/en un rato te escriben/.test(aviso), `el aviso al cliente, mandó: ${JSON.stringify(salidas)}`);
+  assert(!aviso.includes("[mostrador]"), "la marca interna no le llega al cliente");
 });
 
 prueba("fotos del catálogo: después del texto sale cada foto con su link público y queda en la charla", async (c) => {
