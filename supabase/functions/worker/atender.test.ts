@@ -217,6 +217,13 @@ prueba("Lucía contesta: corre el turno una vez, manda cada burbuja por Meta y g
   assertEquals(await atenderCola(c.db, d, "worker-prueba"), 1);
   assertEquals(turno.llamadas.length, 1);
   assertEquals(turno.llamadas[0].calendario, calendarioPropio);
+  // El turno tiene que recibir con qué leer los adjuntos del bucket. Son parámetros OPCIONALES
+  // (el emulador de agente corre sin ellos y ahí está bien), así que olvidarlos no rompe el
+  // tipado ni ninguna prueba con doble: el síntoma aparece recién en producción, y es que a un
+  // cliente se le contesta «no puedo leer esto» sobre un audio que sí está bajado y guardado.
+  // Pasó exactamente así el 19/9. Por eso se afirma acá, que es el único lado donde se ve.
+  assertEquals(turno.llamadas[0].acceso, d.adjuntos);
+  assertEquals(turno.llamadas[0].fetcher, d.fetcher);
   assertEquals(meta.envios.map((e) => [e.to, textoDe(e)]), RESPUESTAS.map((r) => [TEL, r]));
   assertEquals((await salientes(c, TEL)).map((s) => [s.contenido, s.wa_message_id]), [
     [RESPUESTAS[0], "wamid.SALIDA-0"],

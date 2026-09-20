@@ -637,6 +637,14 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     calendario: d.calendario,
     derivacionTel: d.derivacionTel,
     prompt: prompt.texto,
+    // Sin estos dos, agruparRafaga no puede leer los adjuntos del bucket y TODO audio o foto
+    // queda como "no legible", aunque ya esté bajado y en 'listo'. Son opcionales a propósito
+    // —el emulador de agente corre sin ellos y ahí no leer adjuntos es lo correcto—, y esa
+    // misma opcionalidad hace que olvidarlos acá no rompa ni el tipado ni ninguna prueba con
+    // doble: se ve solo en producción, como un cliente al que le contestan que no le pueden
+    // leer el audio que sí está guardado.
+    acceso: d.adjuntos,
+    fetcher: d.fetcher,
   });
   // El turno ya guardó sus mensajes (paso 9). Se marca ANTES de mandarlos: si se corta en el
   // medio del envío, el reintento retoma mandando en vez de pensar de nuevo (0044).
