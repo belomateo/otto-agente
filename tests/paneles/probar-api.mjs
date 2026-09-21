@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import net from "node:net";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Rutas relativas a este archivo (tests/paneles/ → raíz del repo).
 const RAIZ = fileURLToPath(new URL("../../", import.meta.url));
@@ -21,6 +21,10 @@ const AQUI = fileURLToPath(new URL("./", import.meta.url));
 const ENV_ORIGINAL = { ...process.env };
 const reqPanel = createRequire(PANEL + "package.json");
 const reqRaiz = createRequire(RAIZ + "package.json");
+// Importa un .ts de panel/lib directo (TypeScript nativo de Node, sin bundler — mismo
+// mecanismo que el spike que confirmó que el panel puede importar huecos.ts de verdad):
+// sirve para probar código puro (sin sesión ni red) sin levantar el panel.
+const reqPanelTs = (ruta) => import(pathToFileURL(PANEL + ruta.replace(/^\.\//, "")).href);
 const dotenv = reqRaiz("dotenv");
 dotenv.config({ path: RAIZ + ".env" });
 dotenv.config({ path: PANEL + ".env.local" });
@@ -435,8 +439,8 @@ try {
 
   const GETS = [
     "/api/bandeja", `/api/bandeja/${conv}`, "/api/atencion", "/api/turnos?fecha=2031-01-15", "/api/turnos/semana?desde=2031-01-15",
-    "/api/turnos/mes?desde=2031-01", "/api/turnos/huecos?fecha=2031-01-15&tipo=invitado", "/api/clientes", `/api/clientes/${cli}`,
-    "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
+    "/api/turnos/mes?desde=2031-01", "/api/turnos/huecos?fecha=2031-01-15&tipo=invitado", "/api/medios/11111111-1111-1111-1111-111111111111",
+    "/api/clientes", `/api/clientes/${cli}`, "/api/conocimiento", "/api/conocimiento/buscar?q=talle", "/api/catalogo", "/api/bitacora",
     "/api/configuracion", "/api/accesos", `/api/historial?tabla=clientes&id=${cli}`, "/api/configuracion/prompt-base",
   ];
 
@@ -603,6 +607,125 @@ try {
       `Charla › no_enviado_motivo (0042, logica) sale en el mensaje marcado y en ningún otro (${m?.no_enviado_motivo})`
     );
     await q("update mensajes set no_enviado_motivo = null where id = $1", [idMsj]);
+  }
+  {
+    // Medios (0055, logica): audios/fotos que manda el cliente. No hay forma de disparar al
+    // worker real desde el arnés, así que se simula un adjunto 'listo' directo en la base
+    // (como el worker) y se sube el archivo real a Storage — el punto que importa (aviso de
+    // logica, "hoy a los golpes"): un 200 con el reproductor vacío es el modo de falla real
+    // acá, así que la prueba baja la URL firmada y compara los BYTES, no solo el código.
+    const AUDIO = Buffer.from("PRUEBA paneles: esto no es un ogg de verdad, son bytes de prueba para comparar");
+    const pathAdjunto = `entrantes/${conv}/prueba-paneles-medio.ogg`;
+    const { error: eSubir } = await admin.storage.from("adjuntos").upload(pathAdjunto, AUDIO, { contentType: "audio/ogg", upsert: true });
+    if (eSubir) throw new Error("no se pudo subir el adjunto de prueba: " + eSubir.message);
+    const idListo = (
+      await q(
+        `insert into mensajes (conversacion_id, direccion, tipo, adjunto_media_id, adjunto_path, adjunto_mime, adjunto_bytes, adjunto_voz, adjunto_segundos, adjunto_estado, transcripcion)
+         values ($1, 'entrante', 'audio', 'PRUEBA-PANELES-MEDIA-ID-1', $2, 'audio/ogg', $3, true, 5, 'listo', 'PRUEBA paneles: hola, esto es una prueba')
+         returning id`,
+        [conv, pathAdjunto, AUDIO.length]
+      )
+    )[0].id;
+    const idPendiente = (
+      await q(
+        `insert into mensajes (conversacion_id, direccion, tipo, adjunto_media_id, adjunto_mime, adjunto_voz, adjunto_estado)
+         values ($1, 'entrante', 'audio', 'PRUEBA-PANELES-MEDIA-ID-2', 'audio/ogg', true, 'pendiente') returning id`,
+        [conv]
+      )
+    )[0].id;
+    const idSinAdjunto = (await q("select id from mensajes where conversacion_id = $1 and adjunto_mime is null limit 1", [conv]))[0].id;
+
+    const sinSesion = await api(null, "GET", `/api/medios/${idListo}`);
+    ok(sinSesion.status === 401, `GET /api/medios sin sesión → 401 (${sinSesion.status})`);
+    const malFormado = await api(sa, "GET", "/api/medios/no-es-un-uuid");
+    ok(malFormado.status === 400, `medios › id mal formado → 400 (${malFormado.status})`);
+    const sinAdjunto = await api(sa, "GET", `/api/medios/${idSinAdjunto}`);
+    ok(sinAdjunto.status === 404, `un mensaje de texto (sin adjunto) → 404 (${sinAdjunto.status})`);
+    const noListo = await api(sa, "GET", `/api/medios/${idPendiente}`);
+    ok(
+      noListo.status === 409 && noListo.datos.detalle?.motivo === "pendiente",
+      `un adjunto todavía no descargado → 409 con el motivo (${noListo.status}: ${noListo.datos.detalle?.motivo})`
+    );
+
+    const listo = await api(sn, "GET", `/api/medios/${idListo}`);
+    ok(
+      listo.status === 200 && typeof listo.datos.url === "string" && listo.datos.mime === "audio/ogg",
+      `un 'equipo' baja la URL firmada de un adjunto listo (${listo.status}, ${listo.datos.mime})`
+    );
+    const bajado = await fetch(listo.datos.url);
+    const bytesBajados = Buffer.from(await bajado.arrayBuffer());
+    ok(
+      bajado.status === 200 && bytesBajados.length === AUDIO.length && bytesBajados.equals(AUDIO),
+      `la URL firmada baja los bytes de verdad, no solo un 200 (${bajado.status}, ${bytesBajados.length} de ${AUDIO.length} bytes)`
+    );
+
+    const charlaConAdjunto = await api(sa, "GET", `/api/bandeja/${conv}`);
+    const crudo = JSON.stringify(charlaConAdjunto.datos);
+    const mAdjunto = charlaConAdjunto.datos.mensajes.find((m) => m.id === idListo);
+    ok(
+      mAdjunto?.adjunto?.mime === "audio/ogg" &&
+        mAdjunto.adjunto.bytes === AUDIO.length &&
+        mAdjunto.adjunto.voz === true &&
+        mAdjunto.adjunto.segundos === 5 &&
+        mAdjunto.adjunto.estado === "listo" &&
+        mAdjunto.adjunto.transcripcion?.startsWith("PRUEBA paneles") &&
+        !crudo.includes("PRUEBA-PANELES-MEDIA-ID") &&
+        !crudo.includes(pathAdjunto),
+      `Charla › trae mime/bytes/voz/segundos/estado/transcripción del adjunto, pero nunca adjunto_path ni el media_id (${JSON.stringify(mAdjunto?.adjunto)})`
+    );
+
+    // Reintentar (adjunto_reintentar, logica): no es un simple UPDATE, encola un trabajo
+    // 'adjuntos' — se verifica contra la base, no solo la respuesta de la función.
+    const idError = (
+      await q(
+        `insert into mensajes (conversacion_id, direccion, tipo, adjunto_media_id, adjunto_mime, adjunto_voz, adjunto_estado, adjunto_detalle)
+         values ($1, 'entrante', 'audio', 'PRUEBA-PANELES-MEDIA-ID-3', 'audio/ogg', true, 'error', 'PRUEBA paneles: se cortó la descarga') returning id`,
+        [conv]
+      )
+    )[0].id;
+
+    const reintentoSinSesion = await api(null, "PATCH", `/api/medios/${idListo}`);
+    ok(reintentoSinSesion.status === 401, `PATCH /api/medios sin sesión → 401 (${reintentoSinSesion.status})`);
+    const reintentoMalFormado = await api(sa, "PATCH", "/api/medios/no-es-un-uuid");
+    ok(reintentoMalFormado.status === 400, `reintentar › id mal formado → 400 (${reintentoMalFormado.status})`);
+    const reintentoSinAdjunto = await api(sa, "PATCH", `/api/medios/${idSinAdjunto}`);
+    ok(reintentoSinAdjunto.status === 404, `reintentar un mensaje sin adjunto → 404 (${reintentoSinAdjunto.status})`);
+    const reintentoNoExiste = await api(sa, "PATCH", "/api/medios/11111111-1111-1111-1111-111111111111");
+    ok(reintentoNoExiste.status === 404, `reintentar un mensaje que no existe → 404 (${reintentoNoExiste.status})`);
+
+    const reintentoListo = await api(sn, "PATCH", `/api/medios/${idListo}`);
+    ok(
+      reintentoListo.status === 200 && reintentoListo.datos.ya_estaba === true && reintentoListo.datos.estado === "listo",
+      `un 'equipo' reintenta un adjunto 'listo' → no hace nada, ya_estaba true (${reintentoListo.status}, ${JSON.stringify(reintentoListo.datos)})`
+    );
+    const listoSigueIgual = (await q("select adjunto_estado, transcripcion from mensajes where id = $1", [idListo]))[0];
+    ok(
+      listoSigueIgual.adjunto_estado === "listo" && listoSigueIgual.transcripcion?.startsWith("PRUEBA paneles"),
+      `reintentar un 'listo' no le borra la transcripción ni le cambia el estado (${listoSigueIgual.adjunto_estado}, ${listoSigueIgual.transcripcion})`
+    );
+
+    const reintentoPendiente = await api(sa, "PATCH", `/api/medios/${idPendiente}`);
+    ok(
+      reintentoPendiente.status === 200 && reintentoPendiente.datos.ya_estaba === true && reintentoPendiente.datos.estado === "pendiente",
+      `reintentar uno que ya está 'pendiente' → ya_estaba true, no lo encola de nuevo (${reintentoPendiente.status}, ${JSON.stringify(reintentoPendiente.datos)})`
+    );
+
+    const reintentoError = await api(sa, "PATCH", `/api/medios/${idError}`);
+    const filaError = (await q("select adjunto_estado, adjunto_detalle from mensajes where id = $1", [idError]))[0];
+    const trabajo = (await q("select payload from cola_trabajos where conversacion_id = $1 and payload->>'mensaje_id' = $2", [conv, idError]))[0];
+    ok(
+      reintentoError.status === 200 &&
+        reintentoError.datos.ya_estaba === false &&
+        reintentoError.datos.estado === "pendiente" &&
+        filaError.adjunto_estado === "pendiente" &&
+        filaError.adjunto_detalle === null &&
+        trabajo?.payload?.tipo === "adjuntos",
+      `reintentar uno en 'error' lo pone 'pendiente', limpia el detalle y encola un trabajo 'adjuntos' de verdad (${reintentoError.status}, ${JSON.stringify(reintentoError.datos)}, encolado: ${Boolean(trabajo)})`
+    );
+
+    await q("delete from cola_trabajos where conversacion_id = $1 and payload->>'mensaje_id' = any($2::text[])", [conv, [idError]]);
+    await admin.storage.from("adjuntos").remove([pathAdjunto]);
+    await q("delete from mensajes where id = any($1::uuid[])", [[idListo, idPendiente, idError]]);
   }
   let derivId;
   {
@@ -1504,6 +1627,32 @@ try {
 
   seccion("Invitar por mail (decisión de Mateo, 17/9)");
   {
+    // urlPanel() (hallazgo de logica, 21/9): PANEL_URL primero, VERCEL_PROJECT_PRODUCTION_URL
+    // de respaldo (sin esquema, hay que anteponerle https://), sin barra final ninguna de las
+    // dos. Sin 'server-only' a propósito (lib/url-panel.ts), así se puede importar directo
+    // (TypeScript nativo de Node, sin bundler — mismo mecanismo que el spike de huecos.ts) y
+    // probar sin depender de la red ni del panel vivo, sea cual sea lo que tenga cargado
+    // panel/.env.local en esta máquina.
+    const { urlPanel } = await reqPanelTs("./lib/url-panel.ts");
+    const originales = { PANEL_URL: process.env.PANEL_URL, VERCEL_PROJECT_PRODUCTION_URL: process.env.VERCEL_PROJECT_PRODUCTION_URL };
+    try {
+      delete process.env.PANEL_URL;
+      delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+      ok(urlPanel() === null, `sin PANEL_URL ni el respaldo de Vercel, no hay link (${urlPanel()})`);
+      process.env.PANEL_URL = "https://panel.ejemplo.com/";
+      ok(urlPanel() === "https://panel.ejemplo.com", `PANEL_URL con barra final → sin la barra (${urlPanel()})`);
+      process.env.PANEL_URL = "panel.ejemplo.com";
+      ok(urlPanel() === "https://panel.ejemplo.com", `PANEL_URL sin esquema → se le antepone https:// (${urlPanel()})`);
+      delete process.env.PANEL_URL;
+      process.env.VERCEL_PROJECT_PRODUCTION_URL = "otto-panel.vercel.app";
+      ok(urlPanel() === "https://otto-panel.vercel.app", `sin PANEL_URL, usa el respaldo de Vercel con https:// (${urlPanel()})`);
+    } finally {
+      if (originales.PANEL_URL === undefined) delete process.env.PANEL_URL;
+      else process.env.PANEL_URL = originales.PANEL_URL;
+      if (originales.VERCEL_PROJECT_PRODUCTION_URL === undefined) delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+      else process.env.VERCEL_PROJECT_PRODUCTION_URL = originales.VERCEL_PROJECT_PRODUCTION_URL;
+    }
+
     const EMAIL_INV = `PRUEBA.paneles.invitacion.${SUFIJO}@Example.com`;
     const bloqueadas = await Promise.all([
       api(sn, "GET", "/api/accesos/invitaciones"),
@@ -1516,6 +1665,12 @@ try {
     ok(
       x.status === 201 && x.datos.invitacion?.email === EMAIL_INV.toLowerCase() && x.datos.invitacion?.rol === "equipo" && x.datos.invitacion?.usado_at === null,
       `admin invita por mail, el email se guarda en minúscula (${x.status}, ${x.datos.invitacion?.email})`
+    );
+    // Hallazgo de logica (21/9): un 201 que no dice si el mail salió es un 201 que miente. La
+    // respuesta ahora dice qué pasó de verdad, sin volver esto un error para quien invita.
+    ok(
+      ["enviado", "enviado_sin_link", "no_configurado", "fallo"].includes(x.datos.mail),
+      `la respuesta dice si el mail salió, en vez de un 201 mudo (mail: ${x.datos.mail})`
     );
     const dup = await api(sa, "POST", "/api/accesos/invitaciones", { email: EMAIL_INV, rol: "admin" });
     ok(dup.status === 409 && dup.datos.error.includes("Ya hay una invitación pendiente"), `la misma invitación dos veces → 409 (${dup.status}: ${dup.datos.error})`);
