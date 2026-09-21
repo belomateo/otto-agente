@@ -40,24 +40,30 @@ const ETIQUETA_ROL: Record<RolInvitacion, string> = { equipo: 'Colaborador', adm
 // esa invitación (no es "sin usar" y no va en la lista de "Invitaciones enviadas").
 type Invitacion = { email: string; rol: RolInvitacion; invitado_por: string | null; creado_at: string; usado_at: string | null };
 
-// Pedido de Mateo 17/9: invitar por mail es en realidad pre-aprobación, no un mail real — la
-// persona se registra con ese email y entra directo con el rol elegido, sin pasar por
-// Solicitudes pendientes. Si la pantalla no lo dice, la dueña invita y se queda esperando un
-// mail que no existe (H1.10, contrato con paneles: POST/GET/DELETE /api/accesos/invitaciones).
+// Pedido de Mateo 17/9: invitar por mail es en realidad pre-aprobación — la persona se
+// registra con ese email y entra directo con el rol elegido, sin pasar por Solicitudes
+// pendientes (H1.10, contrato con paneles: POST/GET/DELETE /api/accesos/invitaciones). El mail
+// en sí lo manda paneles por Resend con el link de un solo paso (18/9); acá solo se avisa si
+// no salió (`mail`, sumado 21/9), para que la dueña no crea que ya le llegó a alguien a quien
+// en realidad hay que pasarle el link a mano.
 function InvitarAcceso({ onInvitada }: { onInvitada: () => void }) {
   const [email, setEmail] = useState('');
   const [rol, setRol] = useState<RolInvitacion>('equipo');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { toast, mostrar } = useToastLocal();
 
   async function invitar() {
     setEnviando(true);
     setError(null);
     try {
-      await enviar('/api/accesos/invitaciones', 'POST', { email: email.trim(), rol });
+      const emailInvitado = email.trim();
+      const { invitacion } = await enviar<{ invitacion: { mail: 'enviado' | 'enviado_sin_link' | 'no_configurado' | 'fallo' } }>('/api/accesos/invitaciones', 'POST', { email: emailInvitado, rol });
       setEmail('');
       setRol('equipo');
       onInvitada();
+      if (invitacion.mail === 'enviado') mostrar(`Invitación enviada a ${emailInvitado} por mail.`, false);
+      else mostrar(`La invitación quedó creada, pero el mail a ${emailInvitado} no salió: pasale vos el link del panel.`, true);
     } catch (e) {
       setError(e instanceof ErrorApi ? e.message : 'No se pudo invitar');
     } finally {
@@ -99,7 +105,7 @@ function InvitarAcceso({ onInvitada }: { onInvitada: () => void }) {
         </button>
       </div>
       <div className="mt-2.5 text-[14px] leading-[1.45] text-grafito md:text-[13px]">
-        No se manda ningún mail: pasale vos el link del panel. Cuando se registre con ese mail va a entrar directo como {ETIQUETA_ROL[rol]}, sin esperar aprobación.
+        Se le manda un mail con el link para entrar directo. Cuando se registre con ese mail va a entrar como {ETIQUETA_ROL[rol]}, sin esperar aprobación — si el mail no le llega, pasale vos el link del panel.
       </div>
       {rol === 'admin' && (
         <div className="mt-1.5 text-[14px] font-medium text-ladrillo md:text-[13px]">
@@ -107,6 +113,7 @@ function InvitarAcceso({ onInvitada }: { onInvitada: () => void }) {
         </div>
       )}
       {error && <div className="mt-1.5 text-[14px] text-ladrillo md:text-[13px]">{error}</div>}
+      {toast}
     </section>
   );
 }

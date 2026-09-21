@@ -30,6 +30,14 @@ export function useDatos<T>(ruta: string | null, opciones: { sondeoMs?: number }
     } catch (e) {
       if (rutaActual.current !== r) return;
       setError(e instanceof ErrorApi ? e.message : 'No se pudo conectar con el panel');
+      // Sin esto, a alguien al que le sacan el acceso mientras tiene el panel abierto le
+      // quedaban visibles los datos de la última carga buena debajo del cartel de error —
+      // en una pantalla con sondeo (Bandeja, Atención, una charla), sin límite de tiempo
+      // (auditoría de logica, 21/9). cliente.ts corta con una redirección en los casos
+      // claros (401, o 403 de "no aprobado"); esto cubre cualquier 401/403, incluido lo
+      // que la redirección no toca a propósito (un 403 de "no sos admin" en una ruta
+      // puntual, que cada pantalla explica en el lugar en vez de sacar a nadie).
+      if (e instanceof ErrorApi && (e.status === 401 || e.status === 403)) setDatos(null);
     } finally {
       if (rutaActual.current === r) setCargando(false);
     }
