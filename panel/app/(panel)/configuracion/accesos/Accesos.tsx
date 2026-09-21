@@ -1,19 +1,23 @@
 'use client';
 
 // Solicitudes pendientes: de AccesosContexto (vive en el layout, así el número de la
-// subpestaña se entera junto con Aprobar/Rechazar). Aprobar deja a la persona como 'equipo'
-// (lo decide el servidor si no se manda `rol`); no hay un botón para aprobar como admin — se
-// puede subir el rol después desde la base, PROCESOS.md no pide más que esto por ahora.
+// subpestaña se entera junto con Aprobar/Rechazar).
 //
-// "Usuarios" es una aproximación: GET /api/accesos?estado=aprobada lista solicitudes
-// resueltas, no un directorio de cuentas — no trae el rol actual de cada una (ese dato no se
-// puede listar desde el panel), así que no se muestra un chip Admin/Equipo que sería
-// inventado. "Quitar" pasa por DELETE /api/accesos/usuarios/[id] con el perfil_id de la
-// solicitud (no su propio id): saca el acceso reusando perfiles.estado = 'rechazado'. Solo
-// admin; la base sola frena que alguien se saque el acceso a sí mismo (42501).
+// "Crear usuario" (H1.10, decisión de Mateo 21/9) reemplaza a "Invitar por mail": un admin da
+// de alta la cuenta ya mismo con una clave temporal que genera el servidor, en vez de esperar
+// a que la persona se registre sola. "Invitaciones enviadas" queda solo para lo que ya estaba
+// mandado antes de este cambio (verlas y poder revocarlas), no se puede crear una nueva.
 //
-// Con un usuario 'equipo' (no admin), los dos pedidos dan 403: se explica en vez de mostrar
-// una pantalla a medias.
+// "Usuarios aprobados" es una aproximación: GET /api/accesos?estado=aprobada lista solicitudes
+// resueltas, no un directorio de cuentas — pero desde el 21/9 sí trae el rol VIGENTE de cada
+// una (antes no, por eso el chip Admin/Equipo hubiera sido inventado). "Subir/Bajar" pasa por
+// PATCH /api/accesos/usuarios/[id] {rol}; "Quitar" por DELETE al mismo endpoint con el
+// perfil_id de la solicitud (no su propio id), reusando perfiles.estado = 'rechazado'. Las dos
+// son solo admin; la base sola frena que alguien se toque su propio rol o su propio acceso
+// (42501, mensaje genérico, no hace falta nada especial para ese caso en la UI).
+//
+// Con un usuario 'equipo' (no admin), los pedidos de esta pantalla dan 403: se explica en vez
+// de mostrar una pantalla a medias.
 
 import { useState } from 'react';
 import { enviar, ErrorApi } from '@/components/api/cliente';
@@ -40,41 +44,79 @@ const ETIQUETA_ROL: Record<RolInvitacion, string> = { equipo: 'Colaborador', adm
 // esa invitación (no es "sin usar" y no va en la lista de "Invitaciones enviadas").
 type Invitacion = { email: string; rol: RolInvitacion; invitado_por: string | null; creado_at: string; usado_at: string | null };
 
-// Pedido de Mateo 17/9: invitar por mail es en realidad pre-aprobación — la persona se
-// registra con ese email y entra directo con el rol elegido, sin pasar por Solicitudes
-// pendientes (H1.10, contrato con paneles: POST/GET/DELETE /api/accesos/invitaciones). El mail
-// en sí lo manda paneles por Resend con el link de un solo paso (18/9); acá solo se avisa si
-// no salió (`mail`, sumado 21/9), para que la dueña no crea que ya le llegó a alguien a quien
-// en realidad hay que pasarle el link a mano.
-function InvitarAcceso({ onInvitada }: { onInvitada: () => void }) {
+// Diálogo con la contraseña temporal — se cierra a mano nomás, nunca solo. Es la única vez
+// que ese valor existe en algún lado fuera de la cabeza de quien lo lea: si se cierra sin
+// copiarlo, no hay forma de recuperarlo (hay que dar de baja la cuenta y crearla de nuevo).
+function DialogoClaveTemporal({ email, clave, aviso, onCerrar }: { email: string; clave: string; aviso: string; onCerrar: () => void }) {
+  const [copiado, setCopiado] = useState(false);
+
+  async function copiar() {
+    try {
+      await navigator.clipboard.writeText(clave);
+      setCopiado(true);
+    } catch {
+      // Sin permiso de portapapeles (poco común, pero pasa): el texto ya está seleccionable
+      // a mano en el <code> de abajo, no hace falta más que eso.
+    }
+  }
+
+  return (
+    <div role="dialog" aria-label="Contraseña temporal" className="fixed inset-0 z-50 flex items-center justify-center bg-tinta/[.32] p-4">
+      <div className="w-full max-w-[420px] rounded-otto bg-lino p-5 shadow-otto-pop">
+        <div className="font-serif text-lg font-semibold">Cuenta creada</div>
+        <div className="mt-2.5 text-[14px] text-grafito">
+          {email} · {ETIQUETA_ROL.equipo}
+        </div>
+        <div className="mt-3">
+          <div className={ETIQUETA}>Contraseña temporal</div>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 select-all break-all rounded-otto border border-borde bg-hueso px-3 py-2.5 text-[15px]">{clave}</code>
+            <button type="button" onClick={copiar} className="flex-none rounded-otto border border-cobre bg-lino px-3.5 py-2.5 text-sm font-medium text-cobre">
+              {copiado ? 'Copiada' : 'Copiar'}
+            </button>
+          </div>
+        </div>
+        <div className="mt-3 rounded-otto border border-ambar bg-ambar-suave px-3.5 py-3 text-[14px] font-medium leading-[1.5] text-ambar">
+          {aviso}
+        </div>
+        <button type="button" onClick={onCerrar} className="mt-4 w-full rounded-otto bg-cobre py-2.5 text-sm font-medium text-lino">
+          Ya la copié, cerrar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Reemplaza a "Invitar por mail" (H1.10, decisión de Mateo 21/9, a raíz de una auditoría de
+// seguridad): un admin crea la cuenta ya mismo con una contraseña temporal generada por el
+// servidor, en vez de esperar a que la persona se registre sola con un link. La cuenta nace
+// aprobada pero con debe_cambiar_clave, así que la primera vez que entre el middleware la
+// manda derecho a /cambiar-clave.
+function CrearUsuario({ onCreado }: { onCreado: () => void }) {
   const [email, setEmail] = useState('');
-  const [rol, setRol] = useState<RolInvitacion>('equipo');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { toast, mostrar } = useToastLocal();
+  const [creado, setCreado] = useState<{ email: string; clave: string; aviso: string } | null>(null);
 
-  async function invitar() {
+  async function crear() {
     setEnviando(true);
     setError(null);
     try {
-      const emailInvitado = email.trim();
-      const { invitacion } = await enviar<{ invitacion: { mail: 'enviado' | 'enviado_sin_link' | 'no_configurado' | 'fallo' } }>('/api/accesos/invitaciones', 'POST', { email: emailInvitado, rol });
+      const emailNuevo = email.trim();
+      const { clave_temporal, aviso } = await enviar<{ clave_temporal: string; aviso: string }>('/api/accesos/usuarios', 'POST', { email: emailNuevo });
       setEmail('');
-      setRol('equipo');
-      onInvitada();
-      if (invitacion.mail === 'enviado') mostrar(`Invitación enviada a ${emailInvitado} por mail.`, false);
-      else mostrar(`La invitación quedó creada, pero el mail a ${emailInvitado} no salió: pasale vos el link del panel.`, true);
+      setCreado({ email: emailNuevo, clave: clave_temporal, aviso });
     } catch (e) {
-      setError(e instanceof ErrorApi ? e.message : 'No se pudo invitar');
+      setError(e instanceof ErrorApi ? e.message : 'No se pudo crear la cuenta');
     } finally {
       setEnviando(false);
     }
   }
 
   return (
-    <section className={TARJETA} aria-labelledby="titulo-invitar">
-      <h2 id="titulo-invitar" className={`mb-2.5 ${TITULO}`}>
-        Invitar a alguien
+    <section className={TARJETA} aria-labelledby="titulo-crear">
+      <h2 id="titulo-crear" className={`mb-2.5 ${TITULO}`}>
+        Crear usuario
       </h2>
       <div className="flex flex-col gap-2.5 md:flex-row md:items-end">
         <div className="min-w-0 flex-1">
@@ -88,32 +130,30 @@ function InvitarAcceso({ onInvitada }: { onInvitada: () => void }) {
             className={CAMPO}
           />
         </div>
-        <div className="md:w-[180px]">
-          <label className={ETIQUETA}>Rol</label>
-          <select value={rol} onChange={(e) => setRol(e.target.value as RolInvitacion)} disabled={enviando} className={CAMPO}>
-            <option value="equipo">Colaborador</option>
-            <option value="admin">Administrador</option>
-          </select>
-        </div>
         <button
           type="button"
-          onClick={invitar}
+          onClick={crear}
           disabled={enviando || !email.trim()}
           className="flex-none rounded-otto bg-cobre px-4.5 py-2.5 text-sm font-medium text-lino disabled:opacity-50"
         >
-          {enviando ? 'Invitando…' : 'Invitar'}
+          {enviando ? 'Creando…' : 'Crear usuario'}
         </button>
       </div>
       <div className="mt-2.5 text-[14px] leading-[1.45] text-grafito md:text-[13px]">
-        Se le manda un mail con el link para entrar directo. Cuando se registre con ese mail va a entrar como {ETIQUETA_ROL[rol]}, sin esperar aprobación — si el mail no le llega, pasale vos el link del panel.
+        Entra directo, como Colaborador, con una contraseña temporal que el sistema genera solo — no se manda por mail, se la pasás vos. La primera vez que entre le va a pedir que la cambie.
       </div>
-      {rol === 'admin' && (
-        <div className="mt-1.5 text-[14px] font-medium text-ladrillo md:text-[13px]">
-          Administrador tiene control total del panel, incluido sacarle el acceso a otros.
-        </div>
-      )}
       {error && <div className="mt-1.5 text-[14px] text-ladrillo md:text-[13px]">{error}</div>}
-      {toast}
+      {creado && (
+        <DialogoClaveTemporal
+          email={creado.email}
+          clave={creado.clave}
+          aviso={creado.aviso}
+          onCerrar={() => {
+            setCreado(null);
+            onCreado();
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -260,9 +300,25 @@ export function Accesos() {
     }
   }
 
+  // Solo sobre alguien ya aprobado; el propio trigger de la base frena que un admin se
+  // cambie el rol a sí mismo (403 genérico, "No tenés permiso para esto" — no hay nada
+  // especial para armar en la UI para ese caso, el mensaje ya alcanza).
+  async function promoverRol(perfilId: string, nombre: string, rolNuevo: RolInvitacion) {
+    setOcupadoId(perfilId);
+    try {
+      await enviar(`/api/accesos/usuarios/${perfilId}`, 'PATCH', { rol: rolNuevo });
+      await recargarAprobadas();
+      mostrar(`${nombre} ahora es ${ETIQUETA_ROL[rolNuevo]}`, false);
+    } catch (e) {
+      mostrar(e instanceof ErrorApi ? e.message : 'No se pudo cambiar el rol', true);
+    } finally {
+      setOcupadoId(null);
+    }
+  }
+
   return (
     <>
-      <InvitarAcceso onInvitada={recargarInvitaciones} />
+      <CrearUsuario onCreado={recargarAprobadas} />
       <InvitacionesEnviadas datos={invitaciones} cargando={cargandoInvitaciones} error={errorInvitaciones} recargar={recargarInvitaciones} />
 
       <section className={TARJETA} aria-labelledby="titulo-solicitudes">
@@ -301,7 +357,7 @@ export function Accesos() {
               <div className="min-w-0 flex-1">
                 <div className="truncate font-serif text-[15px] font-semibold">{u.nombre ?? 'Sin nombre'}</div>
                 <div className="truncate text-[14px] text-grafito md:text-[13px]">
-                  {u.email ?? '—'} · aprobado {u.hace}
+                  {u.email ?? '—'} · {ETIQUETA_ROL[u.rol]} · aprobado {u.hace}
                 </div>
               </div>
               {aConfirmar === u.perfil_id ? (
@@ -319,9 +375,19 @@ export function Accesos() {
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={() => setAConfirmar(u.perfil_id)} className="flex-none px-1 text-[14px] font-medium text-ladrillo/70 md:text-[13px]">
-                  Quitar
-                </button>
+                <div className="flex flex-none items-center gap-2.5">
+                  <button
+                    type="button"
+                    disabled={ocupadoId === u.perfil_id}
+                    onClick={() => promoverRol(u.perfil_id, u.nombre ?? 'esta persona', u.rol === 'admin' ? 'equipo' : 'admin')}
+                    className="px-1 text-[14px] font-medium text-grafito underline-offset-2 hover:underline disabled:opacity-50 md:text-[13px]"
+                  >
+                    {u.rol === 'admin' ? 'Bajar a Colaborador' : 'Subir a Administrador'}
+                  </button>
+                  <button type="button" disabled={ocupadoId === u.perfil_id} onClick={() => setAConfirmar(u.perfil_id)} className="flex-none px-1 text-[14px] font-medium text-ladrillo/70 disabled:opacity-50 md:text-[13px]">
+                    Quitar
+                  </button>
+                </div>
               )}
             </div>
           ))
