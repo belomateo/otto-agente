@@ -298,7 +298,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       const textosRevisados: string[] = [];
       let seDescartoAlgo = false;
       for (const pieza of piezas) {
-        const b = await aplicarBarandillas({ texto: pieza, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje, intencion });
+        const b = await aplicarBarandillas({ texto: pieza, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje, intencion, nombreCliente: ficha.nombre });
         for (const s of b.saltos) eventos.push({ tipo: "error", detalle: { etapa: "barandilla-en-derivacion", barandilla: s.barandilla, accion: s.accion, motivo: s.motivo } });
         if (b.decision === "enviar") textosRevisados.push(b.texto);
         else if (b.decision !== "bloquear") seDescartoAlgo = true;
@@ -339,7 +339,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
     // Paso 8 — barandillas sobre lo que escribió Lucía. Hasta un "rehacer".
     const evaluar = (texto: string, saltosPrevios: number) =>
-      aplicarBarandillas({ texto, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje, intencion }, { saltosPrevios });
+      aplicarBarandillas({ texto, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje, intencion, nombreCliente: ficha.nombre }, { saltosPrevios });
 
     let b = await evaluar(r.textoFinal, 0);
     if (b.decision === "rehacer") {

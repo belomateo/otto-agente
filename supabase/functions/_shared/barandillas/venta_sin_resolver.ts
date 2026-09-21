@@ -15,6 +15,15 @@
 // traza: si el clasificador entendió "venta" y el turno no llamó a enviar_link(web-venta) ni a
 // derivar_a_persona, no importa qué haya escrito Lucía — el cliente se quedó sin el link y sin
 // una persona. Mismo patrón que accesorio_sin_herramienta: mira la traza, no el texto.
+//
+// Pedido de Mateo, 21/9 (le llegó por Mateo → logica): el primer pedido era "no derives, mandá el
+// link" (o sea, alcanzaba con una de las dos). Mateo lo afinó: para venta ahora hacen falta las
+// DOS cosas en el mismo turno, no una — el link para que el cliente vaya mirando YA, y la
+// derivación para que alguien del equipo lo siga (así no queda solo con un link y nadie
+// enterado). Antes bastaba mandoElLinkDeVenta(traza) || derivo(traza); ahora hace falta AND.
+// derivar_a_persona corta el turno, pero corta DESPUÉS de ejecutarse: el tools loop permite hasta
+// 6 llamadas por turno (AGENTE.md § "tools loop"), así que el modelo puede llamar enviar_link y
+// recién después derivar_a_persona en la misma vuelta sin problema.
 
 import { type Traza } from "../traza.ts";
 import { type Barandilla, NO_SALTA } from "./tipos.ts";
@@ -35,12 +44,20 @@ export const ventaSinResolver: Barandilla = {
   accion: "rehacer",
   evaluar({ traza, intencion }) {
     if (intencion !== "venta") return NO_SALTA;
-    if (mandoElLinkDeVenta(traza) || derivo(traza)) return NO_SALTA;
+    const link = mandoElLinkDeVenta(traza);
+    const derivada = derivo(traza);
+    if (link && derivada) return NO_SALTA;
+    const falta = !link && !derivada
+      ? "no mandó el link de venta ni derivó"
+      : !link
+      ? "derivó pero no mandó el link de venta"
+      : "mandó el link de venta pero no derivó";
     return {
       salta: true,
       accion: "rehacer",
-      motivo: "el clasificador entendió que la consulta es de venta y el turno no mandó el link de venta ni derivó: " +
-        "llamá a enviar_link con tipo web-venta, o derivá con motivo dato_no_encontrado si no alcanza",
+      motivo: `el clasificador entendió que la consulta es de venta y el turno ${falta}: ` +
+        "para venta hacen falta las dos cosas en el mismo turno — enviar_link con tipo web-venta " +
+        "Y derivar_a_persona con motivo dato_no_encontrado",
     };
   },
 };

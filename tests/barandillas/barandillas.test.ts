@@ -352,6 +352,23 @@ Deno.test("precio_sin_herramienta no confunde un porcentaje con un precio (halla
   await noSalta(precioSinHerramienta, entrada("La seña es del 50 por ciento."));
 });
 
+// Bug real encontrado por los probadores en vivo, 20/9 (logica): un nombre de perfil de
+// WhatsApp con un número chico ("Martin 23") hacía que el PRIMER mensaje de cualquier charla
+// terminara en barandilla_doble, siempre — Lucía saluda por el nombre, la barandilla lee el
+// número como precio, pide rehacer, y el modelo repite el mismo nombre (no puede evitarlo):
+// bucle garantizado. "Juan 10", "Caro 22", "Fer 7" son nombres de WhatsApp comunísimos.
+Deno.test("precio_sin_herramienta no confunde un número del NOMBRE DEL CLIENTE con un precio (bug real, probadores en vivo, 20/9)", async () => {
+  const saludo = "Hola, Martin 23! Soy Lucía, asistente de Mr Otto. En qué puedo ayudarte hoy?";
+  assertEquals(montos(saludo), [23], "sin el nombre, el 23 se lee como precio: así se reproduce el bug");
+  assertEquals(montos(saludo, "Martin 23"), [], "con el nombre, el 23 queda enmascarado");
+  assertEquals(montos("Hola, MARTIN 23! bienvenido.", "Martín 23"), [], "no importan mayúsculas ni tildes distintas");
+  await noSalta(precioSinHerramienta, entrada(saludo, { nombreCliente: "Martin 23" }));
+});
+
+Deno.test("precio_sin_herramienta sigue reconociendo un precio real aunque el cliente tenga un número en el nombre (caso parecido)", async () => {
+  await salta(precioSinHerramienta, entrada("Hola, Martin 23! Un traje te sale 150 con todo incluido.", { nombreCliente: "Martin 23" }));
+});
+
 Deno.test("horario_sin_herramienta salta con una hora ofrecida sin buscar_horarios", async () => {
   await salta(horarioSinHerramienta, entrada("Tengo lugar el jueves a las 16:15."));
   await salta(horarioSinHerramienta, entrada("Te espero a las 16 hs."));
@@ -448,20 +465,30 @@ Deno.test("anuncia_sin_derivar no confunde una variante suave con «eso te lo co
 // se le bloqueó en anuncia_sin_derivar mudándose a otra ("eso te lo confirma el equipo del
 // local", la forma aprobada para otra cosa). Barandilla ESTRUCTURAL en vez de léxica: mira si el
 // turno resolvió una consulta de venta (enviar_link tipo web-venta, o derivó), no cómo lo dijo.
+// Pedido de Mateo, 21/9: ahora hacen falta las DOS cosas en el mismo turno, no una sola.
 function trazaConEnviarLink(tipo: string) {
   const t = trazaNueva();
   t.llamadas.push({ herramienta: "enviar_link", argumentos: { tipo }, ok: true });
   return t;
 }
 
-Deno.test("venta_sin_resolver salta si el clasificador dio 'venta' y no se mandó el link de venta ni se derivó", async () => {
+function trazaConLinkDeVentaYDerivacion() {
+  const t = trazaConEnviarLink("web-venta");
+  t.llamadas.push({ herramienta: "derivar_a_persona", argumentos: {}, ok: true });
+  return t;
+}
+
+Deno.test("venta_sin_resolver salta si el clasificador dio 'venta' y falta el link de venta, la derivación, o las dos", async () => {
   await salta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.", { intencion: "venta" }));
   await salta(ventaSinResolver, entrada("Mr Otto también vende trajes.", { intencion: "venta", traza: trazaConEnviarLink("mapa") }));
+  // Solo el link, sin derivar (pedido viejo, ya no alcanza):
+  await salta(ventaSinResolver, entrada("Te paso el link de la tienda online.", { intencion: "venta", traza: trazaConEnviarLink("web-venta") }));
+  // Solo derivó, sin mandar el link:
+  await salta(ventaSinResolver, entrada("Te leo. Esto lo sigue alguien del local.", { intencion: "venta", traza: traza({ herramientas: ["derivar_a_persona"] }) }));
 });
 
-Deno.test("venta_sin_resolver no salta si mandó el link de venta, si derivó, o si la intención no es venta (caso parecido)", async () => {
-  await noSalta(ventaSinResolver, entrada("Te paso el link de la tienda online.", { intencion: "venta", traza: trazaConEnviarLink("web-venta") }));
-  await noSalta(ventaSinResolver, entrada("Te leo. Esto lo sigue alguien del local.", { intencion: "venta", traza: traza({ herramientas: ["derivar_a_persona"] }) }));
+Deno.test("venta_sin_resolver no salta si mandó el link de venta Y derivó, o si la intención no es venta (caso parecido)", async () => {
+  await noSalta(ventaSinResolver, entrada("Te paso el link y ya te conecto con alguien del equipo.", { intencion: "venta", traza: trazaConLinkDeVentaYDerivacion() }));
   await noSalta(ventaSinResolver, entrada("Contale, ¿para qué evento es el traje?", { intencion: "alquiler" }));
   await noSalta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.")); // sin clasificación, no se puede saber: no salta
 });

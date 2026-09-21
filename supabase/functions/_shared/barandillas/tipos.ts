@@ -27,6 +27,12 @@ export type EntradaBarandilla = {
   // logica, 20/9, después de que el léxico de anuncia_sin_derivar se volviera un juego del
   // gato y el ratón). null si el clasificador no corrió o no contestó.
   intencion?: string | null;
+  // El nombre del cliente (ficha.nombre, de la libreta al empezar el turno). precio_sin_
+  // herramienta.ts lo necesita para no leer como precio un número que viene del NOMBRE DE
+  // PERFIL de WhatsApp ("Martin 23", hallazgo de logica probando en vivo, 20/9: sin esto, ese
+  // cliente queda en un bucle garantizado de barandilla_doble en su primer mensaje, porque
+  // Lucía no puede saludarlo sin repetir el número que la barandilla le pide sacar).
+  nombreCliente?: string | null;
 };
 
 export type ResultadoBarandilla =

@@ -469,3 +469,39 @@ prueba("una consulta de venta que el modelo no resuelve (ni link ni derivación)
   const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
   assertEquals([der?.motivo, der?.estado], ["barandilla_doble", "pendiente"]);
 });
+
+// Bug real de punta a punta (probadores en vivo, 20/9, logica): un cliente cuyo nombre de
+// WhatsApp trae un número chico ("Martin 23") no podía arrancar NINGUNA charla — el primer
+// saludo de Lucía ("Hola, Martin 23!") disparaba precio_sin_herramienta, y como el modelo no
+// puede saludar sin repetir el nombre, el rehacer volvía a saltar: barandilla_doble garantizado
+// en el primer mensaje. Fuerza al principal a saludar por el nombre (como haría de verdad) y
+// confirma que ya no deriva.
+prueba("un cliente con un número en el nombre de WhatsApp puede arrancar la charla (bug real, probadores en vivo, 20/9)", async ({ ctx, sql, conversacionId, clienteId }) => {
+  await sql.query("update clientes set nombre = $1 where id = $2", ["Martin 23", clienteId]);
+  await insertarEntrante(sql, conversacionId, "hola");
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    const esClasificador = body.response_format?.json_schema?.name === "clasificacion";
+    const esExtractor = body.response_format?.json_schema?.name === "ficha";
+    if (esClasificador) {
+      return Promise.resolve(respuestaChat({ contenido: JSON.stringify({ intencion: "otro", urgencia: "baja", derivar_duro: false, motivo_derivacion: null }) }));
+    }
+    if (esExtractor) {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({
+          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+        }),
+      }));
+    }
+    return Promise.resolve(respuestaChat({ contenido: "Hola, Martin 23! Soy Lucía, asistente de Mr Otto. En qué puedo ayudarte hoy?" }));
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assertEquals(resultado.derivo, false, "no tenía que derivar: el 23 es parte del nombre, no un precio");
+  assertEquals(resultado.mensajesAlCliente, ["Hola, Martin 23! Soy Lucía, asistente de Mr Otto. En qué puedo ayudarte hoy?"]);
+});
