@@ -39,7 +39,9 @@ export async function POST(request: Request) {
   const { data, error: e } = await crearInvitacion(s, cuerpo.email, cuerpo.rol);
   if (e) return desdeErrorDeBase(e);
   // La invitación ya está creada (la garantía real): el mail es una comodidad, nunca puede
-  // convertir esto en un error para el admin que la mandó.
-  await mandarMailInvitacion(cuerpo.email, cuerpo.rol);
-  return json({ invitacion: data }, 201);
+  // convertir esto en un error para el admin que la mandó. Pero un 201 que no dice si salió es
+  // un 201 que miente (hallazgo de logica, 21/9) — el resultado va en la respuesta para que
+  // Accesos lo muestre, no solo en el log del servidor.
+  const mail = await mandarMailInvitacion(cuerpo.email, cuerpo.rol);
+  return json({ invitacion: data, mail }, 201);
 }

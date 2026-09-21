@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import net from "node:net";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Rutas relativas a este archivo (tests/paneles/ → raíz del repo).
 const RAIZ = fileURLToPath(new URL("../../", import.meta.url));
@@ -21,6 +21,10 @@ const AQUI = fileURLToPath(new URL("./", import.meta.url));
 const ENV_ORIGINAL = { ...process.env };
 const reqPanel = createRequire(PANEL + "package.json");
 const reqRaiz = createRequire(RAIZ + "package.json");
+// Importa un .ts de panel/lib directo (TypeScript nativo de Node, sin bundler — mismo
+// mecanismo que el spike que confirmó que el panel puede importar huecos.ts de verdad):
+// sirve para probar código puro (sin sesión ni red) sin levantar el panel.
+const reqPanelTs = (ruta) => import(pathToFileURL(PANEL + ruta.replace(/^\.\//, "")).href);
 const dotenv = reqRaiz("dotenv");
 dotenv.config({ path: RAIZ + ".env" });
 dotenv.config({ path: PANEL + ".env.local" });
@@ -1623,6 +1627,32 @@ try {
 
   seccion("Invitar por mail (decisión de Mateo, 17/9)");
   {
+    // urlPanel() (hallazgo de logica, 21/9): PANEL_URL primero, VERCEL_PROJECT_PRODUCTION_URL
+    // de respaldo (sin esquema, hay que anteponerle https://), sin barra final ninguna de las
+    // dos. Sin 'server-only' a propósito (lib/url-panel.ts), así se puede importar directo
+    // (TypeScript nativo de Node, sin bundler — mismo mecanismo que el spike de huecos.ts) y
+    // probar sin depender de la red ni del panel vivo, sea cual sea lo que tenga cargado
+    // panel/.env.local en esta máquina.
+    const { urlPanel } = await reqPanelTs("./lib/url-panel.ts");
+    const originales = { PANEL_URL: process.env.PANEL_URL, VERCEL_PROJECT_PRODUCTION_URL: process.env.VERCEL_PROJECT_PRODUCTION_URL };
+    try {
+      delete process.env.PANEL_URL;
+      delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+      ok(urlPanel() === null, `sin PANEL_URL ni el respaldo de Vercel, no hay link (${urlPanel()})`);
+      process.env.PANEL_URL = "https://panel.ejemplo.com/";
+      ok(urlPanel() === "https://panel.ejemplo.com", `PANEL_URL con barra final → sin la barra (${urlPanel()})`);
+      process.env.PANEL_URL = "panel.ejemplo.com";
+      ok(urlPanel() === "https://panel.ejemplo.com", `PANEL_URL sin esquema → se le antepone https:// (${urlPanel()})`);
+      delete process.env.PANEL_URL;
+      process.env.VERCEL_PROJECT_PRODUCTION_URL = "otto-panel.vercel.app";
+      ok(urlPanel() === "https://otto-panel.vercel.app", `sin PANEL_URL, usa el respaldo de Vercel con https:// (${urlPanel()})`);
+    } finally {
+      if (originales.PANEL_URL === undefined) delete process.env.PANEL_URL;
+      else process.env.PANEL_URL = originales.PANEL_URL;
+      if (originales.VERCEL_PROJECT_PRODUCTION_URL === undefined) delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+      else process.env.VERCEL_PROJECT_PRODUCTION_URL = originales.VERCEL_PROJECT_PRODUCTION_URL;
+    }
+
     const EMAIL_INV = `PRUEBA.paneles.invitacion.${SUFIJO}@Example.com`;
     const bloqueadas = await Promise.all([
       api(sn, "GET", "/api/accesos/invitaciones"),
@@ -1635,6 +1665,12 @@ try {
     ok(
       x.status === 201 && x.datos.invitacion?.email === EMAIL_INV.toLowerCase() && x.datos.invitacion?.rol === "equipo" && x.datos.invitacion?.usado_at === null,
       `admin invita por mail, el email se guarda en minúscula (${x.status}, ${x.datos.invitacion?.email})`
+    );
+    // Hallazgo de logica (21/9): un 201 que no dice si el mail salió es un 201 que miente. La
+    // respuesta ahora dice qué pasó de verdad, sin volver esto un error para quien invita.
+    ok(
+      ["enviado", "enviado_sin_link", "no_configurado", "fallo"].includes(x.datos.mail),
+      `la respuesta dice si el mail salió, en vez de un 201 mudo (mail: ${x.datos.mail})`
     );
     const dup = await api(sa, "POST", "/api/accesos/invitaciones", { email: EMAIL_INV, rol: "admin" });
     ok(dup.status === 409 && dup.datos.error.includes("Ya hay una invitación pendiente"), `la misma invitación dos veces → 409 (${dup.status}: ${dup.datos.error})`);
