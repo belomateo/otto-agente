@@ -607,8 +607,10 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     return;
   }
 
-  // La derivaron entre que se encoló y ahora: la tiene una persona, Lucía no contesta.
-  if (conv.estado !== "activa") {
+  // Cerrada: el equipo dio la charla por terminada y no se reabre sola. (Con un mensaje nuevo
+  // registrar_mensaje_entrante abre una conversación nueva, así que acá casi no llega: queda por
+  // las dudas.)
+  if (conv.estado !== "activa" && conv.estado !== "derivada") {
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${conv.estado}: Lucía no contesta` });
     return;
   }
@@ -623,12 +625,18 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   }
 
   await esperarQuietud(db, d, t.conversacion_id);
-  // Mientras esperaba, alguien pudo tomar la charla desde el panel.
+  // Mientras esperaba, alguien pudo tomar la charla desde el panel. Eso ya no la calla: desde el
+  // pedido de Mateo (21/9) Lucía sigue contestando con la charla derivada, y el turno decide solo
+  // cuándo corresponde callarse (cliente enojado o pidiendo una persona). Lo único que sigue
+  // cortando es que la hayan cerrado.
   const despues = await estadoDeLaCharla(db, t.conversacion_id);
-  if (despues?.estado !== "activa") {
+  if (despues?.estado !== "activa" && despues?.estado !== "derivada") {
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${despues?.estado}: Lucía no contesta` });
     return;
   }
+  // La tiene una persona: el turno corre igual, pero sabiendo que ya hay alguien atendiendo, así
+  // no vuelve a derivar por un motivo nuevo ni abre otra fila en derivaciones.
+  const yaDerivada = despues.estado === "derivada";
 
   // Los audios y fotos de esta ráfaga, bajados a nuestro Storage antes de pensar la respuesta:
   // el turno los necesita para poder leerlos, y el CRM para poder mostrarlos. Si algo falla,
@@ -656,6 +664,7 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     // leer el audio que sí está guardado.
     acceso: d.adjuntos,
     fetcher: d.fetcher,
+    yaDerivada,
   });
   // El turno ya guardó sus mensajes (paso 9). Se marca ANTES de mandarlos: si se corta en el
   // medio del envío, el reintento retoma mandando en vez de pensar de nuevo (0044).

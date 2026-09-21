@@ -288,16 +288,51 @@ prueba("número fuera de LUCIA_TELEFONOS: ni turno ni Meta, y queda anotado", as
   assert((await eventos(c, TEL_AFUERA)).some((e) => String(e.detalle.nota).includes("fuera de LUCIA_TELEFONOS")));
 });
 
-prueba("charla derivada: la tiene una persona, Lucía no contesta", async (c) => {
+// Hasta el 21/9 una charla derivada dejaba a Lucía muda para siempre, y era la falla más cara
+// que encontraron los probadores: cuatro de cinco chocaron con ella. Un cliente preguntaba
+// "necesito saber los horarios del local" —algo que Lucía contesta perfecto— y no recibía nada,
+// porque otro tema suyo había quedado en manos de una persona. Mateo cambió la regla: sigue
+// contestando, y se calla solo si el cliente se enojó o pidió hablar con alguien del local.
+//
+// Acá se afirma la parte del WORKER: que el turno CORRA con la charla derivada, avisándole con
+// yaDerivada. Quién se calla y quién no lo decide el turno (_shared/turno, de agente) y se
+// prueba allá; el worker no tiene que saber nada de eso.
+prueba("charla derivada: el turno corre igual, avisado de que ya la tiene una persona", async (c) => {
   await mensajeDelCliente(c, TEL, "hola");
   await c.sql.query(
     "update conversaciones set estado = 'derivada' where cliente_id = (select id from clientes where telefono = $1)",
+    [TEL],
+  );
+  const { d, turno } = armar(c);
+
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals(turno.llamadas.length, 1);
+  assertEquals(turno.llamadas[0].yaDerivada, true);
+});
+
+// Lo único que sigue callando a Lucía del lado del worker. Cerrar es una decisión del equipo y
+// no se deshace sola: si el cliente escribe de nuevo, registrar_mensaje_entrante le abre una
+// conversación nueva en vez de reabrir esta.
+prueba("charla cerrada: esa sí queda cerrada y el turno no corre", async (c) => {
+  await mensajeDelCliente(c, TEL, "hola");
+  await c.sql.query(
+    "update conversaciones set estado = 'cerrada' where cliente_id = (select id from clientes where telefono = $1)",
     [TEL],
   );
   const { d, turno, meta } = armar(c);
 
   await atenderCola(c.db, d, "worker-prueba");
   assertEquals([turno.llamadas.length, meta.envios.length], [0, 0]);
+});
+
+// Con la charla activa, yaDerivada tiene que ir en false: si fuera true siempre, el turno se
+// creería que ya hay alguien atendiendo y dejaría de derivar cuando corresponde.
+prueba("charla activa: yaDerivada va en false", async (c) => {
+  await mensajeDelCliente(c, TEL, "hola");
+  const { d, turno } = armar(c);
+
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals(turno.llamadas[0]?.yaDerivada, false);
 });
 
 prueba("teléfono ficticio: corre el turno y guarda la respuesta, pero no sale nada por Meta", async (c) => {
