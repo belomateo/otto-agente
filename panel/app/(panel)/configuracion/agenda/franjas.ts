@@ -34,30 +34,3 @@ export function describirFranjas(franjas: Franja[]): string {
   if (partes.length <= 1) return partes.join('');
   return `${partes.slice(0, -1).join(', ')} y ${partes[partes.length - 1]}`;
 }
-
-/** Lo que impide guardar las franjas de un día, en palabras del dueño. */
-export function erroresFranjas(franjas: Franja[], probadoresLocal: number): string[] {
-  const errores: string[] = [];
-  const validas: { desde: number; hasta: number; nombre: string }[] = [];
-  for (const f of franjas) {
-    const nombre = `${f.desde.trim() || '—'} a ${f.hasta.trim() || '—'}`;
-    const desde = aMinutos(f.desde);
-    const hasta = aMinutos(f.hasta);
-    if (desde === null || hasta === null) {
-      errores.push(`La franja de ${nombre} tiene una hora mal escrita: van como 13:00.`);
-    } else if (desde >= hasta) {
-      errores.push(`La franja de ${nombre} termina antes de empezar.`);
-    } else {
-      validas.push({ desde, hasta, nombre });
-    }
-    if (f.probadores < 1) errores.push(`La franja de ${nombre} necesita al menos 1 probador.`);
-    else if (f.probadores > probadoresLocal)
-      errores.push(`La franja de ${nombre} tiene ${PROBADORES(f.probadores)} y el local tiene ${probadoresLocal}.`);
-  }
-  validas.sort((a, b) => a.desde - b.desde);
-  for (let i = 1; i < validas.length; i++) {
-    if (validas[i].desde < validas[i - 1].hasta)
-      errores.push(`Las franjas de ${validas[i - 1].nombre} y de ${validas[i].nombre} se pisan.`);
-  }
-  return errores;
-}

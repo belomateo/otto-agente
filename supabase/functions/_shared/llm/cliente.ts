@@ -41,7 +41,8 @@ export type PeticionChat = {
   temperature?: number;
 };
 
-function apiKey(): string {
+// Exportada: transcripcion.ts (audio, multipart, no pasa por unaLlamada) también la necesita.
+export function apiKey(): string {
   const k = Deno.env.get("OPENAI_API_KEY");
   if (!k) throw new Error("Falta OPENAI_API_KEY en el entorno.");
   return k;

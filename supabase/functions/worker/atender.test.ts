@@ -103,14 +103,18 @@ function turnoDoble(respuestas: string[], extra: Partial<ResultadoTurno> = {}) {
   return { fn, llamadas };
 }
 
-function metaDoble(falla: (intento: number) => boolean = () => false) {
+// `desdeEnvio` existe para las pruebas que arman Meta DOS VECES sobre la misma charla (un trabajo
+// que falla y después se reintenta). El contador arranca de cero en cada armado, así que sin esto
+// la segunda pasada devuelve un wamid que la primera ya usó y el insert choca contra
+// mensajes_wa_message_id_key — un choque que solo existe acá: Meta nunca repite un id.
+function metaDoble(falla: (intento: number) => boolean = () => false, desdeEnvio = 0) {
   const envios: Record<string, unknown>[] = [];
   let intentos = 0;
   const fetcher = ((_url: string | URL | Request, init?: RequestInit) => {
     const i = intentos++;
     if (falla(i)) return Promise.resolve(Response.json({ error: { message: "Meta caída (doble)" } }, { status: 500 }));
     envios.push(JSON.parse(String(init?.body)));
-    return Promise.resolve(Response.json({ messages: [{ id: `wamid.SALIDA-${i}` }] }));
+    return Promise.resolve(Response.json({ messages: [{ id: `wamid.SALIDA-${desdeEnvio + i}` }] }));
   }) as typeof fetch;
   return { fetcher, envios };
 }
@@ -129,11 +133,11 @@ function reloj(inicio: Date) {
   };
 }
 
-type Opciones = { respuestas?: string[]; resultado?: Partial<ResultadoTurno>; falla?: (i: number) => boolean; desdeSeg?: number };
+type Opciones = { respuestas?: string[]; resultado?: Partial<ResultadoTurno>; falla?: (i: number) => boolean; desdeSeg?: number; desdeEnvio?: number };
 
 function armar(c: Contexto, o: Opciones = {}) {
   const turno = turnoDoble(o.respuestas ?? RESPUESTAS, o.resultado);
-  const meta = metaDoble(o.falla);
+  const meta = metaDoble(o.falla, o.desdeEnvio);
   const r = reloj(new Date(c.t0.getTime() + (o.desdeSeg ?? 10) * 1000));
   const d: Dependencias = {
     wa: { token: "t", phoneNumberId: "1" },
@@ -213,6 +217,13 @@ prueba("Lucía contesta: corre el turno una vez, manda cada burbuja por Meta y g
   assertEquals(await atenderCola(c.db, d, "worker-prueba"), 1);
   assertEquals(turno.llamadas.length, 1);
   assertEquals(turno.llamadas[0].calendario, calendarioPropio);
+  // El turno tiene que recibir con qué leer los adjuntos del bucket. Son parámetros OPCIONALES
+  // (el emulador de agente corre sin ellos y ahí está bien), así que olvidarlos no rompe el
+  // tipado ni ninguna prueba con doble: el síntoma aparece recién en producción, y es que a un
+  // cliente se le contesta «no puedo leer esto» sobre un audio que sí está bajado y guardado.
+  // Pasó exactamente así el 19/9. Por eso se afirma acá, que es el único lado donde se ve.
+  assertEquals(turno.llamadas[0].acceso, d.adjuntos);
+  assertEquals(turno.llamadas[0].fetcher, d.fetcher);
   assertEquals(meta.envios.map((e) => [e.to, textoDe(e)]), RESPUESTAS.map((r) => [TEL, r]));
   assertEquals((await salientes(c, TEL)).map((s) => [s.contenido, s.wa_message_id]), [
     [RESPUESTAS[0], "wamid.SALIDA-0"],
@@ -277,16 +288,51 @@ prueba("número fuera de LUCIA_TELEFONOS: ni turno ni Meta, y queda anotado", as
   assert((await eventos(c, TEL_AFUERA)).some((e) => String(e.detalle.nota).includes("fuera de LUCIA_TELEFONOS")));
 });
 
-prueba("charla derivada: la tiene una persona, Lucía no contesta", async (c) => {
+// Hasta el 21/9 una charla derivada dejaba a Lucía muda para siempre, y era la falla más cara
+// que encontraron los probadores: cuatro de cinco chocaron con ella. Un cliente preguntaba
+// "necesito saber los horarios del local" —algo que Lucía contesta perfecto— y no recibía nada,
+// porque otro tema suyo había quedado en manos de una persona. Mateo cambió la regla: sigue
+// contestando, y se calla solo si el cliente se enojó o pidió hablar con alguien del local.
+//
+// Acá se afirma la parte del WORKER: que el turno CORRA con la charla derivada, avisándole con
+// yaDerivada. Quién se calla y quién no lo decide el turno (_shared/turno, de agente) y se
+// prueba allá; el worker no tiene que saber nada de eso.
+prueba("charla derivada: el turno corre igual, avisado de que ya la tiene una persona", async (c) => {
   await mensajeDelCliente(c, TEL, "hola");
   await c.sql.query(
     "update conversaciones set estado = 'derivada' where cliente_id = (select id from clientes where telefono = $1)",
+    [TEL],
+  );
+  const { d, turno } = armar(c);
+
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals(turno.llamadas.length, 1);
+  assertEquals(turno.llamadas[0].yaDerivada, true);
+});
+
+// Lo único que sigue callando a Lucía del lado del worker. Cerrar es una decisión del equipo y
+// no se deshace sola: si el cliente escribe de nuevo, registrar_mensaje_entrante le abre una
+// conversación nueva en vez de reabrir esta.
+prueba("charla cerrada: esa sí queda cerrada y el turno no corre", async (c) => {
+  await mensajeDelCliente(c, TEL, "hola");
+  await c.sql.query(
+    "update conversaciones set estado = 'cerrada' where cliente_id = (select id from clientes where telefono = $1)",
     [TEL],
   );
   const { d, turno, meta } = armar(c);
 
   await atenderCola(c.db, d, "worker-prueba");
   assertEquals([turno.llamadas.length, meta.envios.length], [0, 0]);
+});
+
+// Con la charla activa, yaDerivada tiene que ir en false: si fuera true siempre, el turno se
+// creería que ya hay alguien atendiendo y dejaría de derivar cuando corresponde.
+prueba("charla activa: yaDerivada va en false", async (c) => {
+  await mensajeDelCliente(c, TEL, "hola");
+  const { d, turno } = armar(c);
+
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals(turno.llamadas[0]?.yaDerivada, false);
 });
 
 prueba("teléfono ficticio: corre el turno y guarda la respuesta, pero no sale nada por Meta", async (c) => {
@@ -532,10 +578,10 @@ prueba("una burbuja en duda no se reenvía: se marca y la charla va a una person
 
   await c.sql.query("update cola_trabajos set reintentar_despues_de = null");
 
-  const segunda = armar(c, { desdeSeg: 30 });
+  // desdeEnvio: 2 porque la primera pasada ya consumió los envíos 0 y 1 (uno salió, el otro falló).
+  const segunda = armar(c, { desdeSeg: 30, desdeEnvio: 2 });
   await atenderCola(c.db, segunda.d, "worker-prueba");
-  assertEquals(segunda.turno.llamadas.length, 0);
-  assertEquals(segunda.meta.envios.length, 0); // no lo manda de nuevo
+  assertEquals(segunda.turno.llamadas.length, 0); // no vuelve a pensar
   const [m] = (await c.sql.query(
     `select no_enviado_motivo from mensajes where contenido = $1`, [RESPUESTAS[1]],
   )).rows;
@@ -545,6 +591,19 @@ prueba("una burbuja en duda no se reenvía: se marca y la charla va a una person
       where c.cliente_id = (select id from clientes where telefono = $1)`, [TEL],
   )).rows;
   assertEquals([dv?.motivo, dv?.estado], ["fallo_tecnico", "derivada"]);
+
+  // Lo que cambió con 0057. Antes acá no salía NADA y el cliente quedaba esperando una respuesta
+  // que nunca iba a llegar, sin enterarse de nada. Las dos mitades importan por separado:
+  const salidas = segunda.meta.envios.map(textoDe);
+  // 1. la burbuja en duda sigue sin reenviarse (puede haber llegado: mejor que falte a que se
+  //    duplique). Esta es la garantía vieja y no se toca.
+  assert(!salidas.includes(RESPUESTAS[1]), `no reenvía la burbuja en duda, mandó: ${JSON.stringify(salidas)}`);
+  // 2. pero ahora sí sale el aviso de que sigue una persona, encolado por cola_derivar_por_fallo
+  //    como un mensaje del mostrador (sin la marca interna, que el cliente no tiene que ver).
+  assertEquals(salidas.length, 1);
+  const aviso = salidas[0] ?? "";
+  assert(/en un rato te escriben/.test(aviso), `el aviso al cliente, mandó: ${JSON.stringify(salidas)}`);
+  assert(!aviso.includes("[mostrador]"), "la marca interna no le llega al cliente");
 });
 
 prueba("fotos del catálogo: después del texto sale cada foto con su link público y queda en la charla", async (c) => {

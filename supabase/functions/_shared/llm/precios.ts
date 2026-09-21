@@ -27,3 +27,14 @@ export function costoUsd(modelo: string, tokensIn: number, tokensOut: number, to
     (sinCachear * p.entradaPorMillon + tokensCacheados * p.entradaCacheadaPorMillon + tokensOut * p.salidaPorMillon) / 1_000_000;
   return Math.round(costo * 1_000_000) / 1_000_000; // redondeado a la millonésima de dólar
 }
+
+// Transcripción (pedido de Mateo, 19/9: leer audios): OpenAI la factura por minuto de audio, no
+// por token — no entra en PRECIOS/costoUsd de arriba. Estimado a groso modo (no es la factura
+// real, igual que el resto de este archivo); sirve para que consumo_llm no quede en 0 y se vea
+// que la charla gastó algo. Actualizar si cambia el modelo de transcripción (LLM_TRANSCRIPCION).
+const PRECIO_TRANSCRIPCION_USD_POR_MINUTO = 0.006;
+
+export function costoTranscripcionUsd(segundos: number): number {
+  const costo = (segundos / 60) * PRECIO_TRANSCRIPCION_USD_POR_MINUTO;
+  return Math.round(costo * 1_000_000) / 1_000_000;
+}

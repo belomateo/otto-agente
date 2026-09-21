@@ -13,6 +13,14 @@
 // acción de esta barandilla es "rehacer", no "derivar": un falso positivo sale barato (Lucía
 // reescribe el mensaje), así que conviene errar de este lado antes que dejar pasar un precio
 // inventado.
+//
+// Hallazgo de logica probando en vivo, 20/9 (bug real, prioridad alta): "sale barato" dejó de
+// ser cierto para un caso puntual pero garantizado — un nombre de perfil de WhatsApp con un
+// número chico ("Martin 23", "Caro 22", "Juan 10"). Lucía saluda por el nombre en el primer
+// mensaje de la charla, la barandilla lee el número como precio, pide rehacer, y el modelo
+// vuelve a saludar por el MISMO nombre porque no puede evitarlo: barandilla_doble garantizado,
+// siempre, en el primerísimo mensaje. Ahora se enmascara el nombre del cliente antes de buscar
+// montos (ver enmascararNombre).
 
 import { normalizar } from "./texto.ts";
 import { type Barandilla, NO_SALTA } from "./tipos.ts";
@@ -55,8 +63,24 @@ function enmascararContexto(normalizado: string): string {
   return CONTEXTOS_QUE_NO_SON_PRECIO.reduce((s, re) => s.replace(re, (m) => "·".repeat(m.length)), normalizado);
 }
 
-export function montos(t: string): number[] {
-  const crudo = normalizar(String(t ?? ""));
+const escaparRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// El nombre del cliente (probadores en vivo, 20/9, hallazgo de logica): un nombre de perfil de
+// WhatsApp con un número chico ("Martin 23") revienta esto — Lucía saluda por el nombre ("Hola,
+// Martin 23!"), la barandilla lee el 23 como precio, pide rehacer, el modelo vuelve a saludar
+// por el mismo nombre (no puede evitarlo) y salta de nuevo: barandilla_doble garantizado, en el
+// PRIMER mensaje de la charla, para cualquier nombre de WhatsApp con un número corto — "Juan 10",
+// "Caro 22", "Fer 7" son comunísimos. Se enmascara el nombre ANTES de cualquier otra búsqueda
+// (no solo la del número suelto): si alguna vez alguien se llama "Juan 15000", tampoco vale.
+function enmascararNombre(normalizado: string, nombreCliente: string): string {
+  const nombre = normalizar(nombreCliente).trim();
+  if (!nombre) return normalizado;
+  return normalizado.replace(new RegExp(`\\b${escaparRegex(nombre)}\\b`, "g"), (m) => "·".repeat(m.length));
+}
+
+export function montos(t: string, nombreCliente?: string | null): number[] {
+  let crudo = normalizar(String(t ?? ""));
+  if (nombreCliente) crudo = enmascararNombre(crudo, nombreCliente);
   const res = new Set<number>();
   for (const m of crudo.matchAll(/\$\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?/g)) res.add(aNumero(m[1]));
   for (const m of crudo.matchAll(/(?<![\d$.,])(\d{1,3}(?:\.\d{3})+)(?![\d.,])/g)) res.add(aNumero(m[1]));
@@ -80,8 +104,8 @@ export const precioSinHerramienta: Barandilla = {
   nombre: "precio_sin_herramienta",
   etapa: "contenido",
   accion: "rehacer",
-  evaluar({ texto, traza }) {
-    const encontrados = montos(texto);
+  evaluar({ texto, traza, nombreCliente }) {
+    const encontrados = montos(texto, nombreCliente);
     if (encontrados.length === 0) return NO_SALTA;
     const devueltos = new Set(traza.preciosDevueltos.map((p) => Math.round(p)));
     const fuera = encontrados.filter((m) => !devueltos.has(m));

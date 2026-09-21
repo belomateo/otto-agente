@@ -85,7 +85,7 @@ export async function armarContextoDelTurno(
   // (los turnos activos del cliente, y las del horario de hoy) quedan sembradas en
   // traza.horasDevueltas — pero nadie las agarraba de acá para pasárselas al turno. El cliente
   // preguntando por su propio turno ("¿a qué hora era?") hacía saltar la barandilla dos veces y
-  // terminaba en barandilla_doble, mudo (MOTIVOS_DERIVAN_EN_SILENCIO).
+  // terminaba en barandilla_doble (con el texto fijo de turno.ts, desde el 19/9 — antes, mudo).
   const horas = [...new Set([...turnos.horas, ...horarioHoy.horas])];
   return { texto, horas };
 }

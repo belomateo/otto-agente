@@ -75,8 +75,12 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
    <link>». `derivaciones.destino_tel` ya se guarda; falta el paso que manda el
    mensaje (`worker/atender.ts`, con `ResultadoTurno.avisoEquipo` que el turno ya
    devuelve). Hasta entonces, la derivación solo se ve en el panel.
-5. 🔧 Al cliente se le manda el `mensaje_al_cliente` (o nada si es reclamo,
-   cliente enojado o descuento, para que siga una persona).
+5. 🔧 Al cliente se le manda un mensaje: el `mensaje_al_cliente` que escribió Lucía,
+   o si es reclamo, cliente enojado o descuento, un texto fijo aprobado en su lugar
+   (para que siga una persona sin discutir). Pedido de Mateo, 19/9: ninguna
+   derivación deja al cliente sin nada — la única excepción real es sin_respuesta/
+   timeout (el cliente dejó de escribir) y la ventana de Meta cerrada (no se puede
+   mandar texto libre).
 6. 👤 Alguien la toma desde Atención humana: responde desde el panel (esos
    mensajes salen marcados `[mostrador]` en el historial que Lucía lee), y al
    terminar aprieta **"Devolver a Lucía"** o **"Cerrar"**.

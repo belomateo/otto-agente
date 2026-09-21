@@ -15,29 +15,63 @@ import { aplicarBarandillas } from "../barandillas/index.ts";
 import type { Db } from "../db.ts";
 import type { MotivoDerivacion } from "../enums.ts";
 import { actualizarFicha, leerFicha } from "../herramientas/ficha.ts";
-import { registrarDerivacion, textoDeContexto } from "../herramientas/derivacion.ts";
+import {
+  CLAVE_TEXTO_DERIVACION_DURA_GENERICA,
+  CLAVE_TEXTO_DERIVACION_FALLO,
+  CLAVE_TEXTO_DERIVACION_RECLAMO,
+  registrarDerivacion,
+  textoDeContexto,
+  textoDeDerivacion,
+} from "../herramientas/derivacion.ts";
 import { definicionesParaElModelo } from "../herramientas/index.ts";
 import type { Calendario } from "../herramientas/tipos.ts";
 import { clasificar } from "../llm/clasificador.ts";
 import { extraer } from "../llm/extractor.ts";
-import { correrPrincipal, type LlamadaLlm, type MensajeLlm, type ResultadoPrincipal } from "../llm/principal.ts";
+import { correrPrincipal, type ContenidoLlm, type LlamadaLlm, type MensajeLlm, type ResultadoPrincipal } from "../llm/principal.ts";
 import { trazaNueva } from "../traza.ts";
+import type { AccesoStorage } from "../whatsapp/medios.ts";
 import { contextoDeHerramientas } from "./contexto_herramientas.ts";
 import { armarContextoDelTurno } from "./contexto.ts";
 import { derivacionDuraPorEventoInminente, derivacionDuraPorPalabraClave } from "./derivacion_dura.ts";
 import { leerHistorial, ultimasLineasParaClasificar, type MensajeChat } from "./historial.ts";
+import { pidePersonaPorPalabraClave } from "./pide_persona.ts";
 import { agruparRafaga, MAXIMO_CARACTERES_RAFAGA } from "./rafaga.ts";
 import { eventosDeLaTraza, registrarConsumo, registrarEventos, type EventoAgente } from "./bitacora.ts";
 import { prepararParaEnviar } from "../whatsapp/preparar.ts";
 
 export const LIMITE_TURNO_MS = 25_000;
-const CLAVE_TEXTO_DERIVACION_DURA = "texto_derivacion_dura_generica";
 const CLAVE_TEXTO_MENSAJE_NO_SOPORTADO = "texto_mensaje_no_soportado";
-// Con estos motivos, derivar() de acá abajo no manda nada al cliente, ni siquiera el texto fijo
-// genérico de derivación dura (CLAVE_TEXTO_DERIVACION_DURA). No confundir con MOTIVOS_SIN_MENSAJE
-// de _shared/enums.ts: esa otra es sobre la despedida que ESCRIBE EL MODELO al llamar
-// derivar_a_persona (otra lista, con otros motivos, para una pregunta parecida).
-const MOTIVOS_DERIVAN_EN_SILENCIO: readonly MotivoDerivacion[] = ["reclamo", "cliente_enojado", "sin_respuesta", "timeout", "barandilla_doble"];
+// Pedido de Mateo, 19/9: un adjunto que TODAVÍA se está bajando no es un error (bajarMediosPendientes,
+// en el worker, le pone un tope de tiempo/cantidad al turno) — decir "no pude leerlo" acá sería
+// mentir, porque sí se va a leer. No necesita respaldo en código como los textos de derivación
+// (textoDeDerivacion): si la fila queda vacía, como mucho no se manda nada, la charla sigue sin
+// pausar y el cliente puede volver a escribir — mismo criterio que texto_mensaje_no_soportado.
+const CLAVE_TEXTO_ADJUNTO_PENDIENTE = "texto_adjunto_pendiente";
+// Pedido de Mateo, 19/9: toda derivación le tiene que dejar algo al cliente, no importa quién la
+// haya decidido. Estos dos motivos, en cambio, son la excepción a propósito: es el CLIENTE el
+// que dejó de escribir (sin_respuesta/timeout), así que "en breve te contestan" sería un mensaje
+// no pedido — y si ya pasaron 24 hs, Meta lo rechaza igual (fuera_ventana_meta). Quedan mudos
+// hasta que Mateo decida lo contrario; si dice que sí, se agrega con una plantilla aprobada, no
+// con texto libre. No confundir con MOTIVOS_SIN_MENSAJE de _shared/enums.ts: esa otra es sobre
+// la despedida que ESCRIBE EL MODELO al llamar derivar_a_persona (otra lista, para una pregunta
+// parecida, resuelta ahí con texto fijo en vez de silencio — ver derivar_a_persona.ts).
+const MOTIVOS_QUE_QUEDAN_MUDOS: readonly MotivoDerivacion[] = ["sin_respuesta", "timeout"];
+// reclamo/cliente_enojado: mismo texto fijo, decida esto el código (palabra clave o
+// clasificador) o el modelo por derivar_a_persona.ts — para que la charla se vea igual del lado
+// del cliente sin importar quién detectó el motivo.
+const MOTIVOS_CON_TEXTO_RECLAMO: readonly MotivoDerivacion[] = ["reclamo", "cliente_enojado"];
+// barandilla_doble: dos saltos del mismo turno son un problema DEL SISTEMA (Lucía no logró
+// escribir algo que pasara las barandillas), no del cliente ni de su reclamo — texto propio, con
+// tono de disculpa, en vez del genérico o el de reclamo.
+const MOTIVOS_CON_TEXTO_FALLO: readonly MotivoDerivacion[] = ["barandilla_doble"];
+// Pedido de Mateo, 21/9 (vía logica): una charla ya derivada deja de ser muda por completo — el
+// worker (logica) saca el bloqueo total y le pasa yaDerivada acá. Los ÚNICOS dos motivos para
+// que Lucía se calle en un turno de una charla ya derivada, textuales: el cliente se enoja, o
+// pide hablar directamente con un humano. Todo lo demás (una pregunta de horarios, un "urgente
+// necesito esto hoy", lo que sea) lo sigue contestando normal, aunque la charla ya la tenga una
+// persona — mismo agrupamiento que MOTIVOS_CON_TEXTO_RECLAMO (reclamo y cliente_enojado ya se
+// tratan igual en todo el resto del código).
+const MOTIVOS_DE_SILENCIO_DERIVADA: readonly MotivoDerivacion[] = MOTIVOS_CON_TEXTO_RECLAMO;
 
 export type ResultadoTurno = {
   mensajesAlCliente: string[];
@@ -48,13 +82,48 @@ export type ResultadoTurno = {
   bloqueadoPorVentana: boolean;
 };
 
+// Invariante (pedido de Mateo, 19/9): si el turno deriva (derivo === true), mensajesAlCliente
+// tiene que tener algo — salvo tres excepciones documentadas: la ventana de Meta cerrada
+// (bloqueadoPorVentana, más abajo: ahí ni siquiera se intenta y derivo queda false), y
+// sin_respuesta/timeout (MOTIVOS_QUE_QUEDAN_MUDOS, arriba). Antes el silencio era la respuesta
+// por defecto para varios motivos y una despedida vacía del modelo; ahora es al revés: el
+// silencio es la excepción, documentada acá, y todo lo demás manda un texto fijo aprobado si no
+// hay uno propio que valga.
 async function derivar(
   db: Db,
   p: { conversacionId: string; motivo: MotivoDerivacion; mensaje: string | null; derivacionTel: string | null },
 ): Promise<ResultadoTurno> {
   const { id } = await registrarDerivacion({ db, conversacionId: p.conversacionId, derivacionTel: p.derivacionTel }, p.motivo);
-  const mensajesAlCliente = MOTIVOS_DERIVAN_EN_SILENCIO.includes(p.motivo) ? [] : prepararParaEnviar([p.mensaje]);
+  let mensajesAlCliente: string[];
+  if (MOTIVOS_QUE_QUEDAN_MUDOS.includes(p.motivo)) {
+    mensajesAlCliente = [];
+  } else {
+    const clave = MOTIVOS_CON_TEXTO_RECLAMO.includes(p.motivo)
+      ? CLAVE_TEXTO_DERIVACION_RECLAMO
+      : MOTIVOS_CON_TEXTO_FALLO.includes(p.motivo)
+      ? CLAVE_TEXTO_DERIVACION_FALLO
+      : null;
+    if (clave) {
+      // textoDeDerivacion nunca devuelve vacío: si la fila de contexto_agente está en blanco, cae
+      // al respaldo de código (hallazgo de logica, 19/9) en vez de repetir el silencio que se
+      // acaba de cerrar. usoRespaldo solo se loguea (no hay a quién devolvérselo desde acá: esta
+      // derivación la decidió el código, no una herramienta con `datos` propio).
+      const { texto, usoRespaldo } = await textoDeDerivacion(db, clave);
+      if (usoRespaldo) console.error(`derivar(${p.motivo}): la fila de contexto_agente (${clave}) está vacía, se usó el respaldo de código`);
+      mensajesAlCliente = prepararParaEnviar([texto]);
+    } else {
+      mensajesAlCliente = prepararParaEnviar([p.mensaje]);
+    }
+  }
   return { mensajesAlCliente, imagenes: [], derivo: true, motivoDerivacion: p.motivo, avisoEquipo: { motivo: p.motivo, derivacionId: id }, bloqueadoPorVentana: false };
+}
+
+// Charla ya derivada, y el cliente se enojó o pidió hablar con una persona en ESTE turno: no es
+// una derivación nueva (ya hay una persona con la charla, y crear otra fila sería redundante), y
+// tampoco hay nada que contestar — la persona que ya la tiene sigue viéndola. `derivo: false` a
+// propósito: no es un evento de derivación, es simplemente no meterse.
+function quedarseCalladaDerivada(): ResultadoTurno {
+  return { mensajesAlCliente: [], imagenes: [], derivo: false, bloqueadoPorVentana: false };
 }
 
 let promptCacheado: string | null = null;
@@ -75,10 +144,21 @@ export type ParametrosTurno = {
   tz: string;
   calendario: Calendario;
   derivacionTel: string | null;
+  // Pedido de Mateo, 21/9: la charla YA está derivada (conv.estado !== 'activa') pero el worker
+  // decidió igual correr el turno — antes ni se llamaba a esto. Con esto en true, correrTurno NO
+  // vuelve a derivar por un motivo dura/clasificador (ya hay una persona con la charla): se queda
+  // callada SOLO si el cliente se enojó o pidió hablar con una persona en este turno
+  // (MOTIVOS_DE_SILENCIO_DERIVADA), y para cualquier otra cosa sigue el turno normal, contestando.
+  yaDerivada?: boolean;
   // El prompt ya armado. Lo manda el worker, que lo saca de la base (prompt_vigente(), 0050) para
   // que lo que la dueña edita en el panel le llegue a Lucía sin volver a publicar. Si no viene, se
   // usa el prompt.md que viaja adentro de la función.
   prompt?: string;
+  // El bucket privado de adjuntos (mismo `d.adjuntos` que ya usa el worker para las fotos del
+  // mostrador), para leer los audios/imágenes que mandó el cliente (medios.ts). Sin esto (el
+  // emulador no tiene Storage ni Meta), cualquier adjunto queda como "no legible" — mismo
+  // comportamiento que antes del 19/9.
+  acceso?: AccesoStorage;
   fetcher?: typeof fetch;
 };
 
@@ -92,22 +172,42 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
   let historial: MensajeChat[] = [];
 
   // Paso 3 — agrupar ráfaga: todo lo que el cliente mandó desde la última respuesta de Lucía
-  // (o desde el principio) hasta ahora, ya insertado en `mensajes` por quien llamó a esto.
-  const rafaga = await agruparRafaga(db, p.conversacionId, p.ahora);
+  // (o desde el principio) hasta ahora, ya insertado en `mensajes` por quien llamó a esto. Desde
+  // el 19/9 esto también transcribe audios y prepara imágenes (rafaga.ts): sale con lo que hay
+  // para pasarle al modelo, y lo que costó (llamadasLlm) para la bitácora.
+  const rafaga = await agruparRafaga(db, p.conversacionId, p.ahora, { acceso: p.acceso, fetcher: p.fetcher });
   const mensaje = rafaga.texto;
+  const hayImagenes = rafaga.imagenes.length > 0;
   const ultimoMensajeClienteAt = rafaga.ultimoEnviadoAt ?? p.ahora;
+  llamadasLlm.push(...rafaga.llamadasLlm);
   if (rafaga.recortada) {
     eventos.push({ tipo: "error", detalle: { etapa: "agrupar-rafaga", error: `ráfaga recortada a ${MAXIMO_CARACTERES_RAFAGA} caracteres antes del clasificador y el principal` } });
   }
+  if (rafaga.hayAdjuntoNoLegible) {
+    eventos.push({ tipo: "pensamiento", detalle: { etapa: "adjuntos", nota: "algún adjunto de esta ráfaga no se pudo leer (tipo no soportado, bajada fallida o transcripción vacía)" } });
+  }
+  if (rafaga.adjuntosDeMas > 0) {
+    eventos.push({ tipo: "pensamiento", detalle: { etapa: "adjuntos", nota: `${rafaga.adjuntosDeMas} adjunto(s) de más en la ráfaga, no procesados (tope por turno)` } });
+  }
 
   try {
-    if (!mensaje) {
-      // Supuesto #33: llegó algo (foto, audio, sticker, ubicación...) pero no hay nada de texto
-      // para leer — no es lo mismo que "no pasó nada" (rafaga.soloNoTexto lo distingue). No tiene
-      // sentido gastar el clasificador ni el principal en esto: no hay una palabra que entender,
-      // así que el texto es fijo, en código, como el de una derivación dura.
+    if (!mensaje && !hayImagenes) {
+      // Pedido de Mateo, 19/9: un adjunto que TODAVÍA se está bajando no es un error — el worker
+      // le puso un tope de tiempo/cantidad a bajarMediosPendientes, y este va a estar listo en el
+      // turno que viene. Decir "no pude leerlo" acá sería mentir.
+      if (rafaga.hayAdjuntoPendiente) {
+        eventos.push({ tipo: "pensamiento", detalle: { etapa: "adjuntos", nota: "adjunto todavía bajándose: se lee en el próximo turno, no es un error" } });
+        const texto = await textoDeContexto(db, CLAVE_TEXTO_ADJUNTO_PENDIENTE);
+        resultado = { mensajesAlCliente: prepararParaEnviar([texto]), imagenes: [], derivo: false, bloqueadoPorVentana: false };
+        return resultado;
+      }
+      // Supuesto #33: llegó algo (sticker, ubicación, un adjunto que no se pudo leer...) pero no
+      // hay nada de texto ni imagen para leer — no es lo mismo que "no pasó nada" (rafaga.
+      // soloNoTexto lo distingue). No tiene sentido gastar el clasificador ni el principal en
+      // esto: no hay una palabra que entender, así que el texto es fijo, en código, como el de
+      // una derivación dura.
       if (rafaga.soloNoTexto) {
-        eventos.push({ tipo: "pensamiento", detalle: { etapa: "no-es-texto", nota: "mensaje entrante sin texto (foto/audio/sticker/otro): contesta con el texto fijo, sin pasar por el modelo" } });
+        eventos.push({ tipo: "pensamiento", detalle: { etapa: "no-es-texto", nota: "mensaje entrante sin nada legible: contesta con el texto fijo, sin pasar por el modelo" } });
         const texto = await textoDeContexto(db, CLAVE_TEXTO_MENSAJE_NO_SOPORTADO);
         resultado = { mensajesAlCliente: prepararParaEnviar([texto]), imagenes: [], derivo: false, bloqueadoPorVentana: false };
         return resultado;
@@ -120,13 +220,35 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     // Paso 4a — derivación dura por código: palabra clave en el mensaje, o el evento ya sabido
     // hoy/mañana (decisión #8). Antes de gastar un solo token.
     const ficha = await leerFicha(db, p.clienteId);
+    // Pedido de Mateo, 21/9: charla ya derivada y pide hablar con una persona EN ESTE turno — se
+    // calla, no crea otra derivación (ver ParametrosTurno.yaDerivada y pide_persona.ts).
+    if (p.yaDerivada && pidePersonaPorPalabraClave(mensaje)) {
+      eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivada-silencio", motivo: "pide_persona", porQue: "pidió hablar con una persona mientras la charla ya está derivada" } });
+      resultado = quedarseCalladaDerivada();
+      return resultado;
+    }
     const dura = derivacionDuraPorPalabraClave(mensaje) ?? derivacionDuraPorEventoInminente(ficha.fecha_evento, p.ahora, p.tz);
     if (dura) {
-      eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivacion-dura-codigo", motivo: dura.motivo, porQue: dura.porQue } });
-      const texto = await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_DURA);
-      resultado = await derivar(db, { conversacionId: p.conversacionId, motivo: dura.motivo, mensaje: texto, derivacionTel: p.derivacionTel });
-      eventos.push({ tipo: "derivacion", detalle: { motivo: dura.motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "codigo" } });
-      return resultado;
+      if (p.yaDerivada) {
+        if (MOTIVOS_DE_SILENCIO_DERIVADA.includes(dura.motivo)) {
+          eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivada-silencio", motivo: dura.motivo, porQue: dura.porQue } });
+          resultado = quedarseCalladaDerivada();
+          return resultado;
+        }
+        // Otro motivo (prenda_danada, corporativo, evento_inminente): ya está derivada, no se
+        // vuelve a derivar por esto — sigue el turno normal más abajo, Lucía puede contestar.
+        eventos.push({
+          tipo: "pensamiento",
+          detalle: { etapa: "derivada-sigue", motivo: dura.motivo, porQue: `${dura.porQue}, pero la charla ya está derivada: no se deriva de nuevo, sigue contestando` },
+        });
+      } else {
+        eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivacion-dura-codigo", motivo: dura.motivo, porQue: dura.porQue } });
+        const { texto, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
+        if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "derivacion-dura-codigo", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
+        resultado = await derivar(db, { conversacionId: p.conversacionId, motivo: dura.motivo, mensaje: texto, derivacionTel: p.derivacionTel });
+        eventos.push({ tipo: "derivacion", detalle: { motivo: dura.motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "codigo" } });
+        return resultado;
+      }
     }
 
     // Paso 4b — el clasificador, red para la intención de derivar cuando no hay palabra clave.
@@ -147,12 +269,29 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       });
       if (clasificacion.clasificacion.derivar_duro && clasificacion.clasificacion.motivo_derivacion) {
         const motivo = clasificacion.clasificacion.motivo_derivacion;
-        const texto = await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_DURA);
-        resultado = await derivar(db, { conversacionId: p.conversacionId, motivo, mensaje: texto, derivacionTel: p.derivacionTel });
-        eventos.push({ tipo: "derivacion", detalle: { motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "clasificador" } });
-        return resultado;
+        if (p.yaDerivada) {
+          if (MOTIVOS_DE_SILENCIO_DERIVADA.includes(motivo)) {
+            eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivada-silencio", motivo, porQue: "el clasificador lo marcó, charla ya derivada" } });
+            resultado = quedarseCalladaDerivada();
+            return resultado;
+          }
+          // Igual que en el paso 4a: ya está derivada, no se deriva de nuevo por esto.
+          eventos.push({
+            tipo: "pensamiento",
+            detalle: { etapa: "derivada-sigue", motivo, porQue: "el clasificador lo marcó, pero la charla ya está derivada: no se deriva de nuevo, sigue contestando" },
+          });
+        } else {
+          const { texto, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
+          if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "clasificar", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
+          resultado = await derivar(db, { conversacionId: p.conversacionId, motivo, mensaje: texto, derivacionTel: p.derivacionTel });
+          eventos.push({ tipo: "derivacion", detalle: { motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "clasificador" } });
+          return resultado;
+        }
       }
     }
+    // venta_sin_resolver.ts la necesita: la única barandilla que mira la intención del
+    // clasificador en vez del texto o la traza de herramientas (pedido de logica, 20/9).
+    const intencion = clasificacion?.clasificacion.intencion ?? null;
 
     // Paso 5 — armar contexto, y paso 6 — el principal con herramientas.
     const [contexto, prompt, herramientas] = await Promise.all([
@@ -160,11 +299,28 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       p.prompt ?? leerPrompt(),
       definicionesParaElModelo(db),
     ]);
+    // Pedido de Mateo, 19/9: que Lucía vea las fotos que manda el cliente. Con imágenes, el
+    // mensaje del cliente pasa de string a un array de bloques (formato de visión de Chat
+    // Completions): el texto primero, y por cada imagen su epígrafe (si el cliente puso uno) y
+    // la imagen en base64 — el bucket de adjuntos es privado, no hay para qué generarle una URL
+    // firmada a OpenAI (rafaga.ts ya la arma como data: URI).
+    const mensajeDelCliente: MensajeLlm = hayImagenes
+      ? {
+        role: "user",
+        content: [
+          ...(mensaje ? [{ type: "text" as const, text: mensaje }] : []),
+          ...rafaga.imagenes.flatMap((img) => [
+            ...(img.epigrafe ? [{ type: "text" as const, text: `(el cliente mandó esta foto con el comentario: "${img.epigrafe}")` }] : []),
+            { type: "image_url" as const, image_url: { url: img.url } },
+          ]),
+        ],
+      }
+      : { role: "user", content: mensaje };
     const mensajesLlm: MensajeLlm[] = [
       { role: "system", content: prompt },
       { role: "system", content: contexto.texto },
       ...historial,
-      { role: "user", content: mensaje },
+      mensajeDelCliente,
     ];
     // traza.ts y horario_sin_herramienta.ts prometen horasDevueltas sembrada con los turnos del
     // cliente y el horario de hoy que ya le pasamos en el contexto: si el modelo repite una hora
@@ -199,14 +355,15 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       const textosRevisados: string[] = [];
       let seDescartoAlgo = false;
       for (const pieza of piezas) {
-        const b = await aplicarBarandillas({ texto: pieza, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje });
+        const b = await aplicarBarandillas({ texto: pieza, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje, intencion, nombreCliente: ficha.nombre });
         for (const s of b.saltos) eventos.push({ tipo: "error", detalle: { etapa: "barandilla-en-derivacion", barandilla: s.barandilla, accion: s.accion, motivo: s.motivo } });
         if (b.decision === "enviar") textosRevisados.push(b.texto);
         else if (b.decision !== "bloquear") seDescartoAlgo = true;
       }
       if (seDescartoAlgo) {
-        const textoSeguro = await textoDeContexto(db, CLAVE_TEXTO_DERIVACION_DURA);
-        if (textoSeguro) textosRevisados.push(textoSeguro);
+        const { texto: textoSeguro, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
+        if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "barandilla-en-derivacion", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
+        textosRevisados.push(textoSeguro);
       }
       resultado = {
         // prepararParaEnviar de una sola vez sobre todo lo que sale (decisión #17, hito 2.3): no
@@ -239,7 +396,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
     // Paso 8 — barandillas sobre lo que escribió Lucía. Hasta un "rehacer".
     const evaluar = (texto: string, saltosPrevios: number) =>
-      aplicarBarandillas({ texto, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje }, { saltosPrevios });
+      aplicarBarandillas({ texto, traza: ctxHerramientas.traza, ahora: p.ahora, ultimoMensajeClienteAt, esPrimerMensaje, intencion, nombreCliente: ficha.nombre }, { saltosPrevios });
 
     let b = await evaluar(r.textoFinal, 0);
     if (b.decision === "rehacer") {

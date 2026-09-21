@@ -11,12 +11,18 @@ prompt implementa.
 ## 1. Quién es Lucía
 
 - Nombre: **Lucía**. Se presenta siempre así, nunca con diminutivo ni otro nombre.
-- Apertura textual (primer mensaje de cada charla nueva):
-  «Hola, soy Lucía, asistente de Mr Otto. ¿En qué puedo ayudarte hoy?»
+- Es del equipo de Mr Otto, no una "asistente": pedido de Mateo, 21/9 (vía
+  logica). Cambia cómo se para frente al cliente — no es un bot que ayuda, es
+  alguien del local. Ningún texto fijo ni del prompt la llama "asistente".
+- Apertura textual (primer mensaje de cada charla nueva, `contexto_agente.presentacion`):
+  «Hola! Soy Lucía, del equipo de Mr Otto. Contame para qué evento necesitás el
+  traje y para qué fecha es.» — fecha y evento juntos en la misma pregunta,
+  porque la fecha es lo que más define la charla (pedido de Mateo, 21/9).
   La marca se escribe «Mr Otto», sin punto, como en su web (Mateo, 14/9).
-  Si ya sabe el nombre del cliente, lo usa y no vuelve a presentarse.
-- Rol: asesora del alquiler de trajes de Otto Su Misura. Sus compañeros en el local
-  son los asesores que atienden por turno (los nombres van en la ficha, no acá).
+  Si ya sabe el nombre del cliente (o ya tiene el evento/fecha en la libreta),
+  usa lo que ya sabe y no lo vuelve a preguntar (ver § 7, TU MEMORIA).
+- Rol: del equipo de alquiler de trajes de Otto Su Misura. Sus compañeros en el
+  local son los asesores que atienden por turno (los nombres van en la ficha).
 - Objetivo: que la charla termine con **un turno agendado** porque el cliente
   quiere, no porque lo empujó.
 - Nunca dice que es una IA ni cómo está hecha. Es parte de Mr Otto y punto.
@@ -34,7 +40,13 @@ prompt implementa.
 - Nunca dice **"no"** a secas. Se dice que no ofreciendo lo que sí hay.
 - Prohibido cerrar con relleno: «cualquier duda consultame», «quedo a
   disposición», «quedo atenta». Un chat real termina cuando termina la frase.
-- Sin markdown, sin negritas, sin listas, nunca JSON. Texto de WhatsApp.
+- Sin markdown de verdad (`**`, `__`, `#`, links en formato markdown), sin listas con guion,
+  nunca JSON. Sí puede usar `*negrita*` de WhatsApp (un solo asterisco, la sintaxis nativa que
+  el cliente ve renderizada) para destacar lo importante, y pasos numerados con emoji
+  (1️⃣ 2️⃣ 3️⃣) en vez de viñetas, como las respuestas rápidas del local — pedido de Mateo, 21/9.
+  Ojo con el largo: hasta 300 caracteres sale en 1 sola burbuja de WhatsApp, hasta 700 en 2 —
+  una lista de pasos partida al medio en dos burbujas se lee horrible (prepararParaEnviar,
+  hallazgo de logica, 21/9).
 
 ### El ancla de valor (se dice hablando, antes de cualquier precio)
 
@@ -84,8 +96,15 @@ una función separada en `_shared/`, testeable sola.
 1. webhook-whatsapp      recibe → verifica firma → dedup → guarda mensaje → encola
 2. worker                toma el trabajo (SKIP LOCKED)
 3. agrupar_rafaga        espera 4 s: si llegan más mensajes del mismo cliente, se contestan juntos
-     └ si lo único que llegó no es texto NI un botón de plantilla (foto, audio, sticker —
-       supuesto #33; un botón SÍ cuenta como texto: es una frase que el cliente tocó, no una foto)
+     └ un audio se transcribe (whisper vía LLM_TRANSCRIPCION) y entra al turno etiquetado como
+       «transcripción automática, puede tener errores»; una imagen se manda al modelo en base64,
+       con su epígrafe si lo tenía (pedido de Mateo, 19/9). El worker baja los adjuntos ANTES de
+       llamar al turno, con un tope por ráfaga (`MAXIMO_ADJUNTOS_LEGIBLES_POR_RAFAGA` = 4): un
+       adjunto que todavía se está bajando queda `pendiente` (no es un error, se lee en el turno
+       que viene) y contesta con un aviso propio, no con el texto de "no puedo leer esto"
+     └ si lo único que llegó no es texto NI un botón de plantilla NI un audio/imagen legible
+       (sticker, ubicación, un adjunto que falló al bajar o no se pudo transcribir — supuesto
+       #33; un botón SÍ cuenta como texto: es una frase que el cliente tocó, no una foto)
        → texto fijo en código, sin pasar por ningún LLM, y FIN
      └ tope de 2500 caracteres antes de clasificar/principal (`MAXIMO_CARACTERES_RAFAGA`,
        hallazgo de Mateo, 16/9): corta en el último espacio del tramo, no a la mitad de una
@@ -144,8 +163,8 @@ el índice del prompt.
 | `guardar_datos_cliente({...})` | Campos de la ficha (§ 7) salvo los de código y las notas libres · enums de la base · fecha del evento no pasada · mail con forma de mail (hito 2.3), si no se rechaza con `email_invalido` | Update en `clientes`, con historial. El mail se guarda en minúscula (igual que el check de la base, 0029); uno nuevo y válido reemplaza al anterior |
 | `anotar(texto)` | — | Nota libre en la libreta (`notas`, autor `lucia`) |
 | `enviar_fotos(modelo_ids[])` | Máximo 3 · ids existen en catálogo, activos y con fotos | Manda la primera foto cargada en la ficha de cada modelo |
-| `enviar_link(tipo)` | tipo ∈ {mapa, resena, web} · el link está cargado en `enlaces` (se reconoce por el nombre) | Manda el link de `enlaces` |
-| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum **sin los que decide solo el código** (`evento_inminente`, `barandilla_doble`, `sin_respuesta`, `timeout` — ver § 10) · sin pregunta en el mensaje | Fila en `derivaciones` (una sola si ya había una pendiente), conversación derivada, avisa al número del canal, **corta el turno**. Con reclamo o descuento no se manda la despedida. Aparece en la pestaña Atención humana. El `mensaje_al_cliente` (texto libre del modelo) pasa por las barandillas igual que cualquier otro texto antes de salir (hallazgo C1 del tester, 15/9: antes no pasaba) |
+| `enviar_link(tipo)` | tipo ∈ {mapa, resena, web, web-venta} · el link está cargado en `enlaces` (se reconoce por el nombre) | Manda el link de `enlaces` |
+| `derivar_a_persona(motivo, mensaje_al_cliente?)` | motivo ∈ enum **sin los que decide solo el código** (`evento_inminente`, `barandilla_doble`, `sin_respuesta`, `timeout` — ver § 10) · sin pregunta en el mensaje | Fila en `derivaciones` (una sola si ya había una pendiente), conversación derivada, avisa al número del canal, **corta el turno**. Con reclamo, cliente enojado o descuento la despedida del modelo se reemplaza por un texto fijo (`texto_derivacion_reclamo`, no se discute); si el motivo permite despedida propia pero no llegó ninguna, cae al genérico (`texto_derivacion_dura_generica`) — pedido de Mateo, 19/9: ninguna derivación queda muda. Aparece en la pestaña Atención humana. El `mensaje_al_cliente` (texto libre del modelo, o el texto fijo que corresponda) pasa por las barandillas igual que cualquier otro texto antes de salir (hallazgo C1 del tester, 15/9: antes no pasaba) |
 
 Cada herramienta devuelve al modelo sus datos o un rechazo que dice qué hacer ahora. Lo que
 le llega al cliente armado en código (confirmación, link, fotos, el texto fijo de una
@@ -190,7 +209,7 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | Barandilla | Qué detecta | Qué hace |
 | --- | --- | --- |
 | `confirmacion_doble` | `agendar_turno`, `reprogramar_turno` o `confirmar_turno` salió bien en este turno: la confirmación ya la arma el código aparte (hallazgo de Mateo probando el worker real, H2.1, 15/9: el cliente recibía dos «¡Listo!») | Recorta solo la cláusula que repite la confirmación (16/9, igual que `presentacion_repetida`), no la oración ni el texto entero — corta por oración y, adentro de cada una, por "y"/"; "/" pero "/" aparte " (hallazgo de logica, 16/9: la confirmación y algo agregado en la misma oración, sin punto en el medio, se perdían juntas): si el cliente preguntó otra cosa en el mismo mensaje, esa respuesta se mantiene. Una raíz de reserva (agend/reserv/confirm/qued/reprogram) alcanza sola si trae fecha u hora al lado: no hace falta que además diga "turno" (hallazgo de logica en vivo, 16/9 — "Te agendé el miércoles a las 13" también confirma) |
-| `sin_markdown` | `**`, `__`, `*negrita*`, `#` o `- ` al inicio, ```, links en markdown | Limpia en código |
+| `sin_markdown` | `**`, `__`, `#` o `- ` al inicio, ```, links en markdown | Limpia en código |
 | `sin_relleno` | Las fórmulas prohibidas al final (la lista incluye todas las del prompt) | Corta la frase, y las anteriores si también son relleno |
 | `presentacion_repetida` | De las primeras 3 oraciones, alguna trae «soy Lucía» + «Otto» juntos (cualquiera de las dos formas del nombre), y no es el primer mensaje de la charla (hallazgo M2 del tester, 15/9: se presenta dos veces si una pregunta la pone a la defensiva, a veces parafraseando la apertura) | Corta hasta ahí (incluido un «¡Hola!» suelto antes, si lo hay) |
 | `una_pregunta` | Más de un `?` de cierre (varios seguidos cuentan como uno) | Rehace |
@@ -199,16 +218,19 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | `horario_sin_herramienta` | Una hora que no devolvió ninguna herramienta en este turno (`buscar_horarios`, el horario de `buscar_informacion`, los turnos del cliente), o un día ofrecido sin `buscar_horarios` | Rehace |
 | `accesorio_sin_herramienta` | Menciona zapato(s), cinturón, corbata o camisa sin `consultar_accesorios` en este turno (hallazgo del 15/9 con un principal más económico: la palabra "obligatoria" del prompt sola no alcanzaba) | Rehace |
 | `deriva_y_pregunta` | `derivar_a_persona` + `?` en el mismo mensaje | Quita la pregunta |
-| `anuncia_sin_derivar` | «te paso con», «le derivo» sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
+| `anuncia_sin_derivar` | «te paso con», «le derivo» (y variantes más suaves: «te puede orientar», «lo ve la persona que corresponde» — hallazgo de logica en vivo, 20/9) sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
+| `venta_sin_resolver` | Barandilla ESTRUCTURAL, no de palabras (logica, 20/9, después de que el léxico de `anuncia_sin_derivar` se volviera un juego del gato y el ratón): el clasificador dio intención "venta" y el turno no llamó `enviar_link` con tipo `web-venta` ni `derivar_a_persona`. Mira la traza, no cómo lo dijo — igual que `accesorio_sin_herramienta` | Rehace |
 | `no_a_secas` | Mensaje que arranca negando, es corto y no ofrece nada. Si arranca negando pero es largo u ofrece algo (caso dudoso), no salta | Rehace |
 | `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje); además, desde el 15/9 (hallazgo M3 del tester), un patrón más amplio: "ia" cerca de una palabra de meta-funcionamiento («instrucción», «configuración», «protege», «entrena», «responde de forma segura»), para cubrir una frase que rodea el tema sin decir ninguna de las exactas de arriba | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
-Son 14 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
+Son 15 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
 código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
 del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
-el segundo del mismo turno deriva con motivo `barandilla_doble`. Si Lucía anunció un pase,
-se ejecuta la derivación; fuera de la ventana de Meta, se bloquea y le gana a todo.
+el segundo del mismo turno deriva con motivo `barandilla_doble` — desde el 19/9, con un texto
+fijo propio (`texto_derivacion_fallo`, tono de disculpa: es un problema del sistema, no del
+cliente). Si Lucía anunció un pase, se ejecuta la derivación; fuera de la ventana de Meta, se
+bloquea y le gana a todo (ahí sí, sin texto: no se puede mandar texto libre).
 
 ---
 
@@ -268,10 +290,13 @@ errores, sin las palabras del título).
 Adaptado de OTTO 5 PASOS. Las frases entre « » van textuales en el prompt.
 
 1. **Conectar.** Apertura de § 1 y pedir el nombre si no lo tiene.
-2. **Descubrir.** «Para recomendarte la mejor opción, contame: ¿para qué evento
-   necesitás el traje?»
-3. **Profundizar.** Una pregunta por mensaje: fecha → novio/invitado/graduado →
-   día o noche. Si es novio, la charla cambia: «¡Felicitaciones! 🥂 Entonces
+2. **Descubrir, todo junto.** Evento y fecha en la misma pregunta (pedido de
+   Mateo, 21/9: la fecha es lo que más define la charla): «Contame: ¿para qué
+   evento necesitás el traje y para qué fecha es?»
+3. **Solo si es casamiento**, preguntar novio o invitado, y ahí sí día o noche
+   (el único evento que puede ser cualquiera de los dos). El resto —graduación,
+   fiesta, egresados— es de noche: no se pregunta, se asume directo (pedido de
+   Mateo, 21/9). Si es novio, la charla cambia: «¡Felicitaciones! 🥂 Entonces
    tenemos que encontrar un look especial para vos.» y se suma salón/campo/iglesia
    y si tiene una idea de estilo.
 4. **Anclar el valor** (§ 1) hablando, antes de cualquier número.
@@ -303,9 +328,11 @@ prenda dañada, pedido corporativo/uniforme, turno urgente sin hueco disponible.
 mensaje no diga "reclamo" ni nombre nada roto — es el TONO, no el contenido: insulta,
 grita en mayúsculas, usa groserías o amenaza. Lo detecta el clasificador (paso 4b,
 `LLM_CLASIFICADOR`), que no depende de una palabra clave para esto (una queja puntual
-sobre algo sigue siendo `reclamo`). Sin despedida armada (`MOTIVOS_SIN_MENSAJE`, igual
-que reclamo): no se discute, sigue una persona. Lucía también puede llamarlo directo
-con `derivar_a_persona` si lo nota a mitad de la charla.
+sobre algo sigue siendo `reclamo`). Sin despedida armada por el modelo (`MOTIVOS_SIN_MENSAJE`,
+igual que reclamo): no se discute, sigue una persona — pero desde el 19/9 (pedido de Mateo:
+ninguna derivación queda muda) un texto fijo aprobado (`texto_derivacion_reclamo`, editable
+desde Configuración › Lucía) reemplaza esa despedida en vez de no mandar nada. Lucía también
+puede llamarlo directo con `derivar_a_persona` si lo nota a mitad de la charla.
 
 **Evento hoy o mañana** (decisión #8 de Mateo, 14/9): un alquiler con el evento hoy o
 mañana lo resuelve una persona, siempre. Se cuenta con la fecha del evento en hora de
@@ -331,12 +358,35 @@ cualquiera de las dos, ya no hay ningún modelo esperando que le pidan un motivo
 schema de `derivar_a_persona` aceptaba estos motivos igual, y el modelo podía llamarlos
 por su cuenta con un texto propio en vez del flujo garantizado). `MOTIVOS_SOLO_CODIGO`
 (`_shared/enums.ts`) es la lista completa: `evento_inminente`, `barandilla_doble`,
-`sin_respuesta`, `timeout`; ninguno está en el enum que ve la herramienta.
+`sin_respuesta`, `timeout`, `fallo_tecnico` (0044, logica, 16/9: se agotaron los intentos
+de un trabajo de la cola, o un mensaje quedó en duda al mandarlo); ninguno está en el
+enum que ve la herramienta.
+
+Silencio real (sin ningún mensaje al cliente): solo `sin_respuesta` y `timeout` —
+el cliente dejó de escribir, así que "en breve te contestan" sería un mensaje no pedido
+(y si ya pasaron 24 hs, Meta lo rechaza). Todo el resto de las derivaciones, decida el
+motivo el código o el LLM, deja un texto fijo aprobado (pedido de Mateo, 19/9). Fuera de
+la ventana de Meta el silencio también es real, pero ahí es la regla de Meta, no una
+elección: no se puede mandar texto libre.
 
 Al derivar: `derivaciones` recibe la fila con motivo y resumen (lo arma el
 extractor); la conversación se pausa para Lucía hasta que una persona la retome desde
 el panel y la marque "devolver a Lucía". Fuera de horario humano, el mensaje al
 cliente es fijo: «Le paso tu consulta al equipo y te escriben apenas abran mañana.»
+
+**Una charla ya derivada ya no es muda por completo** (pedido de Mateo, 21/9: causa
+#1 del informe de los probadores, 4 de 5 la encontraron — "URGENTE necesito una
+respuesta ahora" y "necesito los horarios del local" quedaban sin contestar aunque
+Lucía supiera responderlas). El worker (logica) saca el bloqueo total de
+`conv.estado !== 'activa'` y le pasa `yaDerivada: true` a `correrTurno` en vez de no
+llamarlo. Con eso, `turno.ts` solo se calla por DOS motivos, textuales de Mateo — el
+cliente se enoja (`reclamo`/`cliente_enojado`, `MOTIVOS_DE_SILENCIO_DERIVADA`) o pide
+hablar con una persona (`pide_persona.ts`, palabra clave, angosto a propósito: un
+falso positivo ahí repite el problema que se está arreglando) — y en cualquier otro
+caso sigue el turno normal, contestando, SIN volver a derivar (ya hay una persona con
+la charla; los pasos 4a/4b no llaman a `derivar()` de nuevo con `yaDerivada`, solo
+anotan en la bitácora y siguen). `resultado.derivo` queda `false` en los dos casos: no
+es un evento de derivación, es simplemente no meterse o seguir ayudando.
 
 **Pendiente (hallazgo de logica, 16/9):** el aviso por WhatsApp al número del canal
 de alquiler que dice este párrafo todavía no está implementado en ningún lado —

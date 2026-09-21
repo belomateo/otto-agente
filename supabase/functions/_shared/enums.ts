@@ -44,13 +44,14 @@ export const MOTIVOS_DERIVACION = [
 ] as const;
 export type MotivoDerivacion = typeof MOTIVOS_DERIVACION[number];
 
-// Con estos motivos no se le manda la despedida al cliente: sigue una persona (PROCESOS.md § 4).
-// Es sobre el mensaje_al_cliente que ESCRIBE EL MODELO al llamar derivar_a_persona (lo usa
-// derivar_a_persona.ts). No confundir con MOTIVOS_DERIVAN_EN_SILENCIO de _shared/turno/turno.ts:
-// esa otra es sobre si el turno manda incluso el texto fijo genérico al derivar por código (una
-// lista distinta, con motivos distintos, para una pregunta parecida).
-// cliente_enojado suma acá el 16/9: igual que un reclamo, no se discute ni se manda una
-// despedida armada que capaz suena impostada contra alguien caliente — sigue una persona.
+// Con estos motivos no se manda la despedida que ESCRIBE EL MODELO al llamar derivar_a_persona
+// (PROCESOS.md § 4): no se discute con alguien caliente, ni se manda una despedida armada que
+// capaz suena impostada. Hasta el 18/9 eso significaba mudo del todo; desde el pedido de Mateo
+// del 19/9 (toda derivación le deja algo al cliente) significa "la reemplaza un texto fijo
+// aprobado" (texto_derivacion_reclamo) en vez de "no se manda nada" — ver derivar_a_persona.ts.
+// No confundir con MOTIVOS_QUE_QUEDAN_MUDOS de _shared/turno/turno.ts: esa es la lista corta (solo
+// sin_respuesta/timeout) de las dos excepciones que SÍ quedan mudas de verdad, para una pregunta
+// parecida pero sobre las derivaciones que decide el código, no el modelo.
 export const MOTIVOS_SIN_MENSAJE: readonly MotivoDerivacion[] = ["reclamo", "cliente_enojado", "descuento"];
 
 // Motivos que SOLO decide el código, nunca el modelo llamando a derivar_a_persona (AGENTE.md
@@ -83,7 +84,9 @@ export const TIPOS_TURNO = ["graduado", "novio", "invitado", "doble", "triple", 
 export type TipoTurno = typeof TIPOS_TURNO[number];
 
 // AGENTE.md § 4 (enviar_link). enlaces no tiene columna de tipo: ver herramientas/enlaces.ts.
-export const TIPOS_LINK = ["mapa", "resena", "web"] as const;
+// web-venta (pedido de Mateo, 20/9: Lucía deriva de más por venta) es el link de la tienda
+// online (mrotto.com.ar), distinto de "web" (la web de alquiler, mrottocollection.com.ar).
+export const TIPOS_LINK = ["mapa", "resena", "web", "web-venta"] as const;
 export type TipoLink = typeof TIPOS_LINK[number];
 
 // AGENTE.md § 7 · clientes_evento_check, clientes_rol_check, clientes_dia_o_noche_check (0023).

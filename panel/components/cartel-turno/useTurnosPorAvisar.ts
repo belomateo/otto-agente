@@ -10,6 +10,7 @@ const SONDEO_MS = 20_000;
 
 export function useTurnosPorAvisar() {
   const [turnos, setTurnos] = useState<AvisoTurno[]>([]);
+  const [error, setError] = useState<string | null>(null);
   // Ids con un OK en curso: se sacan de la lista al toque (antes de que responda el POST) para
   // que no haga falta esperar un sondeo entero a ver el efecto de tocar OK.
   const ocultos = useRef<Set<string>>(new Set());
@@ -31,15 +32,29 @@ export function useTurnosPorAvisar() {
     return () => clearInterval(id);
   }, [sondear]);
 
-  const marcarOk = useCallback((id: string) => {
-    ocultos.current.add(id);
-    setTurnos((actuales) => actuales.filter((t) => t.id !== id));
-    fetch(`/api/turnos/${id}/ok`, { method: 'POST' }).catch(() => {
-      // Sin red: no hace falta reintentar acá. Un 409 (el turno ya salió de la ventana del
-      // aviso: canceló, terminó, etc.) tampoco necesita más que esto: el próximo sondeo trae
-      // el estado real, y si seguía pendiente por alguna razón, reaparece solo.
-    });
-  }, []);
+  // Si el POST no registró el OK de verdad (sin red, o el servidor lo rechazó por algo que no
+  // sea "ya salió de la ventana del aviso"), sacarlo de `ocultos` es obligatorio: si no, queda
+  // escondido para siempre — ni el próximo sondeo lo va a volver a traer, porque el filtro de
+  // `sondear` lo sigue tachando. Un 409 sí se deja escondido: ahí el servidor ya confirmó que
+  // no hace falta avisar más (canceló, terminó, etc.), no es una falla.
+  const marcarOk = useCallback(
+    (id: string) => {
+      ocultos.current.add(id);
+      setTurnos((actuales) => actuales.filter((t) => t.id !== id));
+      setError(null);
+      fetch(`/api/turnos/${id}/ok`, { method: 'POST' })
+        .then((r) => {
+          if (r.ok || r.status === 409) return;
+          throw new Error('no ok');
+        })
+        .catch(() => {
+          ocultos.current.delete(id);
+          setError('No se pudo registrar el OK. Probá de nuevo.');
+          sondear();
+        });
+    },
+    [sondear]
+  );
 
-  return { turnos, marcarOk };
+  return { turnos, error, marcarOk };
 }

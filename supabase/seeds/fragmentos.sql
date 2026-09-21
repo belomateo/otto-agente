@@ -13,6 +13,12 @@
 -- Los tres de objeciones son un borrador desde el ancla de valor: los corrige el dueño o
 -- Mateo en Conocimiento.
 --
+-- 17/9/2026: seis fragmentos salen de las respuestas de Sofía (medios de pago del alquiler,
+-- cancelación, prueba final, retiro anticipado, cambio de modelo, y que se puede entrar sin
+-- turno). Están volcadas en docs/ficha-del-negocio.md § Alquiler. La cancelación va acá como
+-- política: el monto exacto lo cierra el local, porque depende de fechas del contrato que
+-- Lucía no tiene.
+--
 -- Idempotente: cada fragmento tiene su id fijo; correrlo de nuevo solo pisa lo que cambió
 -- (y el trigger deja historial). Ojo: volver a correrlo después de que el dueño editó un
 -- fragmento lo devuelve a esta versión.
@@ -22,20 +28,32 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
    'seed H1.6'),
 
   ('a9f10000-0000-4000-8000-000000000201', 'como-funciona', 'Cómo es el alquiler, paso a paso',
-   'Primero venís al local con turno: el asesor te muestra modelos, te probás el que más te guste y te toma las medidas. Si lo alquilás, la sastrería lo ajusta a tu medida. El traje se retira (lo pasás a buscar) un día antes del evento, con una prueba final para ver que esté perfecto, y se devuelve un día hábil después: lo devolvés acá mismo. La tintorería corre por nuestra cuenta.',
-   'seed H1.6'),
+   'Primero venís al local con turno: el asesor te muestra modelos, te probás el que más te guste y te toma las medidas. Si lo alquilás, la sastrería lo ajusta a tu medida. El traje se retira (lo pasás a buscar) un día antes del evento, con una prueba final para ver que esté perfecto, y se devuelve un día hábil después: lo devolvés acá mismo. Si viajás o no podés retirarlo ese día, se coordina el retiro uno o dos días antes. La tintorería corre por nuestra cuenta.',
+   'respuestas de Sofía 17/9'),
 
   ('a9f10000-0000-4000-8000-000000000202', 'como-funciona', 'El turno en el local',
    'Te esperamos en España 764, Rosario. Se permite un acompañante por persona y hay 10 minutos de tolerancia. Si alquilás, para reservar el traje se abona el 100% en el local. Si no podés venir, avisanos y lo reprogramamos.',
    'seed H1.6'),
 
+  ('a9f10000-0000-4000-8000-000000000203', 'como-funciona', 'Cambiar el modelo elegido',
+   'Si ya elegiste tu traje y después querés cambiarlo por otro modelo, se puede: depende de que el que quieras esté disponible para tu fecha. Avisanos apenas lo sepas, así el equipo lo chequea y te lo cambia.',
+   'respuestas de Sofía 17/9'),
+
   ('a9f10000-0000-4000-8000-000000000301', 'reserva-y-garantia', 'Pago y garantía',
-   'No se deja seña: para reservar el traje se abona el 100% del alquiler, todo junto, en el local, en el mismo turno en que lo elegís. Se puede pagar en efectivo, con transferencia o con tarjeta de crédito o débito. El día de la prueba final se deja una tarjeta de crédito como garantía, también en el local. Por WhatsApp no se cobra ni se piden datos de tarjeta.',
-   'seed H1.6'),
+   'No se deja seña: para reservar el traje se abona el 100% del alquiler, todo junto, en el local, en el mismo turno en que lo elegís. Se puede pagar en efectivo, con transferencia, con tarjeta de débito o con tarjeta de crédito en un pago; también en tres pagos con tarjeta de crédito, con un 10% de recargo. El día de la prueba final se deja una tarjeta de crédito como garantía, también en el local. Por WhatsApp no se cobra ni se piden datos de tarjeta.',
+   'respuestas de Sofía 17/9'),
+
+  ('a9f10000-0000-4000-8000-000000000302', 'reserva-y-garantia', 'Si cancelás el alquiler',
+   'El contrato de alquiler tiene una penalidad por cancelación, y cuánto es depende de cuándo cancelás: dentro de los 5 días hábiles de haber firmado el contrato, la penalidad es del 30% del total; pasado ese plazo y hasta 10 días antes de la fecha de uso, es del 70%; y desde los 9 días antes de la fecha de uso ya no hay devolución. Cuánto corresponde en cada caso lo cierra el equipo del local, porque depende de las fechas que figuran en el contrato.',
+   'respuestas de Sofía 17/9'),
 
   ('a9f10000-0000-4000-8000-000000000401', 'ubicacion-horarios', 'Dónde estamos',
-   'El local queda en calle España 764, Rosario, y todo se hace ahí: la prueba, los ajustes, el retiro y la devolución. Para probarte un traje se viene con turno, así el equipo te dedica el tiempo que hace falta. El local abre más horas que las de los turnos de alquiler: los horarios de atención y de turnos salen de la agenda.',
-   'seed H1.6'),
+   'El local queda en calle España 764, Rosario, y todo se hace ahí: la prueba, los ajustes, el retiro y la devolución. Lo mejor es venir con turno, así el equipo te dedica el tiempo que hace falta. El local abre más horas que las de los turnos de alquiler: los horarios de atención y de turnos salen de la agenda.',
+   'respuestas de Sofía 17/9'),
+
+  ('a9f10000-0000-4000-8000-000000000402', 'ubicacion-horarios', 'Venir sin turno',
+   'Podés pasar por el local sin turno, solo a mirar los modelos. Si en ese momento hay lugar, también te podés medir y dejar tu alquiler hecho. Con turno igual es mejor: el asesor te dedica todo el tiempo que haga falta.',
+   'respuestas de Sofía 17/9'),
 
   ('a9f10000-0000-4000-8000-000000000501', 'talles', 'Talles',
    'Tenemos trajes de alquiler desde el XS hasta el 68 (el número de saco), y para los más chicos, nenes incluidos, desde el talle 4. El talle justo se ve en el local, probándolo, y la sastrería lo ajusta. Si necesitás uno más grande que el 68, se puede confeccionar con tiempo, pero ya es un traje de venta: eso te lo confirma el equipo.',
@@ -44,6 +62,10 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
   ('a9f10000-0000-4000-8000-000000000601', 'a-medida', 'Hecho a tu medida',
    'En Mr Otto el alquiler es a medida: en el turno te prueban el traje, te toman las medidas y la sastrería hace los arreglos que hagan falta (achicar, alargar, las mangas, el ruedo del pantalón) para que te quede perfecto el día del evento. Si hace falta, se confecciona. Las medidas se toman siempre en el local, y la sastrería y la tintorería ya están incluidas.',
    'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000000602', 'a-medida', 'Retoques en la prueba final',
+   'Si en la prueba final el traje necesita un retoque, los sastres lo arreglan ahí mismo, en el momento. Según el arreglo puede demorar entre una y dos horas, así que tené previsto ese tiempo. No hace falta volver otro día.',
+   'respuestas de Sofía 17/9'),
 
   ('a9f10000-0000-4000-8000-000000000701', 'anticipacion', 'Anticipación',
    '¿Con cuánto tiempo conviene reservar? Lo ideal es entre 60 y 7 días antes del evento, así hay tiempo para elegir y para que la sastrería ajuste todo sin apuro. Si es urgente y el evento es en pocos días, igual llegás: siempre buscamos la forma. Si el evento es hoy o mañana, te paso con un asesor del local, que hace lo posible por encontrarte un lugar en la agenda.',
@@ -66,8 +88,12 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
    'seed H1.6'),
 
   ('a9f10000-0000-4000-8000-000000001201', 'que-no-hacemos', 'Fuera del alquiler',
-   'El alquiler es solo en el local de España 764, Rosario: no hacemos envíos ni te lo mandamos a tu casa, porque la prueba final y los ajustes se hacen acá. Si venís de otra ciudad, coordinamos el turno pensando en la fecha del evento. Los uniformes y los pedidos para empresas los atiende otro equipo de Mr Otto, y la venta de ropa es de otra área: en esos casos lo ve la persona que corresponde.',
-   'seed H1.6'),
+   'El alquiler es solo en el local de España 764, Rosario: no hacemos envíos ni te lo mandamos a tu casa, porque la prueba final y los ajustes se hacen acá. Si venís de otra ciudad, coordinamos el turno pensando en la fecha del evento. Los uniformes y los pedidos para empresas los atiende otro equipo de Mr Otto.',
+   'seed H1.6, recortado 20/9 (la venta pasó a su propio fragmento: mezclada acá, la subía de largo y le hacía perder contra otros temas)'),
+
+  ('a9f10000-0000-4000-8000-000000001202', 'que-no-hacemos', 'Comprar en vez de alquilar',
+   'Mr Otto también vende trajes, no solo alquila: la compra se hace por la web de venta, no acá en el chat. Si pregunta por comprar, se le manda el link de venta en el mismo mensaje, sin esperar a que lo pida de nuevo. El alquiler es distinto y lo maneja Lucía directamente por acá: turnos, medidas y trajes a medida, así que si lo suyo es alquilar, sigue la charla normal.',
+   'nuevo 20/9 (Mateo: Lucía derivaba de más por venta, sin ofrecer nada — antes esto vivía mezclado en "Fuera del alquiler" como "es de otra área", lo que empujaba a derivar en vez de contestar). Redactado más imperativo el 20/9 (logica probó en vivo: el link salía una de cada dos veces)'),
 
   ('a9f10000-0000-4000-8000-000000001301', 'descuentos', 'Descuentos',
    'Alquilando con nosotros, las prendas para completar el look se pueden comprar con descuento. Sobre el alquiler en sí, cualquier rebaja, promo o descuento especial lo decide una persona del equipo, no se define por este canal.',

@@ -17,7 +17,7 @@ import { crearClienteNavegador } from '@/lib/supabase/client';
 type Usuario = { nombre: string; rol: string };
 
 export function Sidebar({
-  pendientes = 2,
+  pendientes,
   usuario,
 }: {
   pendientes?: number;
@@ -59,7 +59,7 @@ export function Sidebar({
             >
               <Icon />
               <span>{label}</span>
-              {key === 'atencion' && pendientes > 0 && (
+              {key === 'atencion' && (pendientes ?? 0) > 0 && (
                 <Chip bg="#A6473A" fg="#FFFFFF" className="ml-auto px-[7px] py-px text-[14px] font-semibold md:text-[11px]">
                   {pendientes}
                 </Chip>

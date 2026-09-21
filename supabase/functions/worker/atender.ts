@@ -12,6 +12,13 @@ import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts"
 import { botonDeTurno } from "../_shared/whatsapp/botones.ts";
 import { type ConfigWhatsapp, enviarImagen, enviarImagenPorId, enviarTexto, subirMedia } from "../_shared/whatsapp/enviar.ts";
 import { type Adjuntos, bajarAdjunto, nombreDeArchivo } from "./adjuntos.ts";
+import {
+  bajarMedioDeMeta,
+  duracionOpusSegundos,
+  guardarEnStorage,
+  rutaDelAdjunto,
+  TIPOS_QUE_BAJAMOS,
+} from "../_shared/whatsapp/medios.ts";
 import { promptDeLucia } from "./prompt.ts";
 import { prepararParaEnviar } from "../_shared/whatsapp/preparar.ts";
 import { puedeTextoLibre } from "../_shared/whatsapp/ventana.ts";
@@ -62,6 +69,13 @@ export function urlDeFoto(baseCatalogo: string, foto: string): string {
 export function esperaDeRafagaMs(ultimoMensajeAt: Date, ahora: Date): number {
   return Math.max(0, QUIETUD_RAFAGA_MS - (ahora.getTime() - ultimoMensajeAt.getTime()));
 }
+
+// Cuántos adjuntos se bajan antes de un turno, y cuánto tiempo se les da en total. El turno
+// entero tiene 25 s (LIMITE_TURNO_MS): si bajar los archivos se comiera ese presupuesto, el
+// cliente se quedaría sin respuesta, que es peor que quedarse sin el audio. Lo que no entra en
+// el presupuesto queda 'pendiente' y lo levanta el turno siguiente.
+export const MAX_ADJUNTOS_POR_TURNO = 4;
+export const PRESUPUESTO_ADJUNTOS_MS = 10_000;
 
 export type Dependencias = {
   wa: ConfigWhatsapp;
@@ -487,12 +501,93 @@ async function estadoDeLaCharla(db: Db, conversacionId: string) {
   return f ?? null;
 }
 
+// Baja a nuestro Storage los audios y fotos que mandó el cliente y todavía no se bajaron (0055,
+// 0056). Corre ANTES del turno, después de esperar la quietud de la ráfaga: así los mensajes de
+// una misma tanda ya entraron todos y se bajan juntos.
+//
+// Nada de lo que pase acá puede tumbar el turno. Un audio que no se pudo bajar es un audio que
+// no se pudo bajar: se marca 'error' con el motivo, el equipo lo ve en el CRM y Lucía contesta
+// igual. Quedarse sin respuesta por un archivo roto sería mucho peor que quedarse sin el archivo.
+export async function bajarMediosPendientes(db: Db, d: Dependencias, conversacionId: string): Promise<{ listos: number; fallados: number; quedan: number }> {
+  const pendientes = await db.consulta<{ id: string; tipo: string; adjunto_media_id: string; adjunto_mime: string | null }>(
+    `select id::text as id, tipo, adjunto_media_id, adjunto_mime
+       from mensajes
+      where conversacion_id = $1::uuid and adjunto_estado = 'pendiente'
+      order by enviado_at`,
+    [conversacionId],
+  );
+  if (!pendientes.length) return { listos: 0, fallados: 0, quedan: 0 };
+
+  const marcarError = (id: string, motivo: string) =>
+    db.consulta("update mensajes set adjunto_estado = 'error', adjunto_detalle = $2 where id = $1::uuid", [id, motivo.slice(0, 500)]);
+
+  const arranque = d.ahora().getTime();
+  let listos = 0, fallados = 0, atendidos = 0;
+
+  for (const m of pendientes) {
+    // El tope es por turno, no por siempre: lo que sobra queda 'pendiente' y lo toma el próximo.
+    if (atendidos >= MAX_ADJUNTOS_POR_TURNO || d.ahora().getTime() - arranque > PRESUPUESTO_ADJUNTOS_MS) break;
+    atendidos++;
+
+    // Video y documento todavía no se bajan (pesan y no los pidió nadie), pero se marcan igual
+    // para que en el CRM se vea que el cliente mandó algo. Una burbuja vacía haría que el equipo
+    // conteste como si no hubiera mandado nada.
+    if (!TIPOS_QUE_BAJAMOS.has(m.tipo)) {
+      await marcarError(m.id, `todavía no se bajan los adjuntos de tipo «${m.tipo}»`);
+      fallados++;
+      continue;
+    }
+
+    try {
+      const medio = await bajarMedioDeMeta(d.wa, m.adjunto_media_id, d.fetcher);
+      // El mime del webhook es más específico que el del endpoint de medios ('audio/ogg;
+      // codecs=opus' contra 'audio/ogg'), así que se prefiere el que ya teníamos.
+      const mime = m.adjunto_mime || medio.mime;
+      const ruta = rutaDelAdjunto(conversacionId, m.id, mime);
+      await guardarEnStorage(d.adjuntos, ruta, medio.bytes, mime, d.fetcher);
+      await db.consulta(
+        `update mensajes
+            set adjunto_estado = 'listo', adjunto_path = $2, adjunto_mime = $3,
+                adjunto_bytes = $4, adjunto_segundos = $5, adjunto_detalle = null
+          where id = $1::uuid`,
+        [m.id, ruta, mime, medio.bytes.byteLength, duracionOpusSegundos(medio.bytes)],
+      );
+      listos++;
+    } catch (e) {
+      // Recuperable: el media id sigue guardado y sirve ~30 días, así que alguien puede volver a
+      // ponerlo en 'pendiente' desde el panel y el próximo turno lo reintenta.
+      await marcarError(m.id, mensajeDeError(e));
+      fallados++;
+    }
+  }
+
+  const quedan = pendientes.length - atendidos;
+  await evento(db, conversacionId, fallados > 0 ? "error" : "ok", {
+    etapa: "adjuntos",
+    listos,
+    fallados,
+    ...(quedan > 0 ? { quedan_para_el_proximo_turno: quedan } : {}),
+  });
+  return { listos, fallados, quedan };
+}
+
 export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Promise<void> {
   const conv = await estadoDeLaCharla(db, t.conversacion_id);
   if (!conv) throw new Error(`conversación ${t.conversacion_id}: no existe`);
 
   if (t.payload?.tipo === "mostrador") return await enviarDelMostrador(db, d, t, conv.telefono);
   if (t.payload?.tipo === "mostrador_foto") return await enviarFotoDelMostrador(db, d, t, conv.telefono);
+  // Alguien del local apretó "reintentar" sobre un adjunto que no se pudo bajar (0058). Solo se
+  // baja lo que quedó pendiente y se termina: Lucía NO piensa ni contesta. El cliente no dijo
+  // nada nuevo, así que mandarle un mensaje porque alguien tocó un botón sería escribirle sin
+  // que lo haya pedido. Va antes del chequeo de estado de la charla a propósito, igual que las
+  // dos ramas de arriba: un adjunto se tiene que poder recuperar aunque la charla ya la tenga
+  // una persona — de hecho es justo cuando más falta hace, porque la está leyendo alguien.
+  if (t.payload?.tipo === "adjuntos") {
+    const r = await bajarMediosPendientes(db, d, t.conversacion_id);
+    await evento(db, t.conversacion_id, r.fallados > 0 ? "error" : "ok", { etapa: "adjuntos-reintento", ...r });
+    return;
+  }
 
   // El botón "Confirmo" lo resuelve el código, con la charla activa o derivada (1.14).
   const boton = botonDeTurno(t.payload?.mensaje);
@@ -512,8 +607,10 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     return;
   }
 
-  // La derivaron entre que se encoló y ahora: la tiene una persona, Lucía no contesta.
-  if (conv.estado !== "activa") {
+  // Cerrada: el equipo dio la charla por terminada y no se reabre sola. (Con un mensaje nuevo
+  // registrar_mensaje_entrante abre una conversación nueva, así que acá casi no llega: queda por
+  // las dudas.)
+  if (conv.estado !== "activa" && conv.estado !== "derivada") {
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${conv.estado}: Lucía no contesta` });
     return;
   }
@@ -528,12 +625,23 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   }
 
   await esperarQuietud(db, d, t.conversacion_id);
-  // Mientras esperaba, alguien pudo tomar la charla desde el panel.
+  // Mientras esperaba, alguien pudo tomar la charla desde el panel. Eso ya no la calla: desde el
+  // pedido de Mateo (21/9) Lucía sigue contestando con la charla derivada, y el turno decide solo
+  // cuándo corresponde callarse (cliente enojado o pidiendo una persona). Lo único que sigue
+  // cortando es que la hayan cerrado.
   const despues = await estadoDeLaCharla(db, t.conversacion_id);
-  if (despues?.estado !== "activa") {
+  if (despues?.estado !== "activa" && despues?.estado !== "derivada") {
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${despues?.estado}: Lucía no contesta` });
     return;
   }
+  // La tiene una persona: el turno corre igual, pero sabiendo que ya hay alguien atendiendo, así
+  // no vuelve a derivar por un motivo nuevo ni abre otra fila en derivaciones.
+  const yaDerivada = despues.estado === "derivada";
+
+  // Los audios y fotos de esta ráfaga, bajados a nuestro Storage antes de pensar la respuesta:
+  // el turno los necesita para poder leerlos, y el CRM para poder mostrarlos. Si algo falla,
+  // queda marcado y el turno sigue igual.
+  await bajarMediosPendientes(db, d, t.conversacion_id);
 
   const ahora = d.ahora();
   // De la base, no del archivo que se publicó: lo que la dueña cambia en el panel tiene que estar
@@ -548,6 +656,15 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     calendario: d.calendario,
     derivacionTel: d.derivacionTel,
     prompt: prompt.texto,
+    // Sin estos dos, agruparRafaga no puede leer los adjuntos del bucket y TODO audio o foto
+    // queda como "no legible", aunque ya esté bajado y en 'listo'. Son opcionales a propósito
+    // —el emulador de agente corre sin ellos y ahí no leer adjuntos es lo correcto—, y esa
+    // misma opcionalidad hace que olvidarlos acá no rompa ni el tipado ni ninguna prueba con
+    // doble: se ve solo en producción, como un cliente al que le contestan que no le pueden
+    // leer el audio que sí está guardado.
+    acceso: d.adjuntos,
+    fetcher: d.fetcher,
+    yaDerivada,
   });
   // El turno ya guardó sus mensajes (paso 9). Se marca ANTES de mandarlos: si se corta en el
   // medio del envío, el reintento retoma mandando en vez de pensar de nuevo (0044).

@@ -28,6 +28,7 @@ import { sinMarkdown } from "./sin_markdown.ts";
 import { sinRelleno } from "./sin_relleno.ts";
 import type { Accion, Barandilla, EntradaBarandilla } from "./tipos.ts";
 import { unaPregunta } from "./una_pregunta.ts";
+import { ventaSinResolver } from "./venta_sin_resolver.ts";
 
 export const BARANDILLAS: readonly Barandilla[] = [
   confirmacionDoble,
@@ -41,6 +42,7 @@ export const BARANDILLAS: readonly Barandilla[] = [
   accesorioSinHerramienta,
   derivaYPregunta,
   anunciaSinDerivar,
+  ventaSinResolver,
   noASecas,
   mencionaIa,
   fueraVentanaMeta,

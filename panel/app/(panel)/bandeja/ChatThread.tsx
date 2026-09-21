@@ -20,8 +20,10 @@ import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
 import { IconAudio, IconFoto } from '@/components/nav/icons';
+import { useUsuario } from '@/components/nav/UsuarioContext';
 import { SONDEO_LISTAS_MS, useDatos } from '@/components/api/useDatos';
 import { useAccionesCharla } from '@/components/api/useAccionesCharla';
+import { fechaEnZona } from '@/lib/formato';
 import type { Charla } from '@/lib/queries/bandeja';
 
 // La ventana de WhatsApp se puede cerrar entre que se escribe un mensaje y que el worker lo
@@ -37,7 +39,10 @@ function AvisoNoEnviado({ motivo }: { motivo: 'ventana_cerrada' | 'error_al_envi
   );
 }
 
-const TIPOS_FOTO_ACEPTADOS = 'image/jpeg,image/png,image/webp';
+// Sin webp: WhatsApp no lo acepta y las dos rutas de subida (acá y catalogo/EdicionModelo.tsx)
+// ya lo rechazan del lado del servidor — ofrecerlo en el picker solo hace que la persona elija
+// la foto y recién ahí se entere de que no sirve.
+const TIPOS_FOTO_ACEPTADOS = 'image/jpeg,image/png';
 
 // Todavía no hay URL para mostrar la foto en la burbuja (paneles: la lectura de mensajes no la
 // expone), tampoco para las que manda el cliente — se avisa que es una foto en vez de mostrar
@@ -47,8 +52,10 @@ function textoDeBurbuja(m: { tipo: string; texto: string }) {
 }
 
 function separador(fecha: string) {
-  const hoy = new Date().toISOString().slice(0, 10);
-  if (fecha === hoy) return 'Hoy';
+  // fechaEnZona(), no new Date().toISOString(): entre las 21:00 y la medianoche en Rosario
+  // (ART, -03:00) la fecha UTC ya es la de mañana, y los mensajes de hoy quedaban separados
+  // bajo el título equivocado.
+  if (fecha === fechaEnZona()) return 'Hoy';
   return new Date(`${fecha}T00:00:00`).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
@@ -78,14 +85,36 @@ function resumenDe(charla: Charla) {
 
 export function ChatThread({ variante, conversacionId }: { variante: 'desktop' | 'mobile'; conversacionId: string | null }) {
   const compacto = variante === 'mobile';
+  const esAdmin = useUsuario()?.rol === 'admin';
   const { datos: charla, cargando, error, recargar } = useDatos<Charla>(conversacionId ? `/api/bandeja/${conversacionId}` : null, { sondeoMs: SONDEO_LISTAS_MS });
   const { enviando, error: errorAccion, motivo: motivoAccion, tomar, devolver, cerrar, responder, enviarFoto } = useAccionesCharla(conversacionId);
   const [texto, setTexto] = useState('');
   const inputFotoRef = useRef<HTMLInputElement>(null);
+  const listaRef = useRef<HTMLDivElement>(null);
+  const primeraCargaRef = useRef(true);
 
   useEffect(() => {
     setTexto('');
+    primeraCargaRef.current = true;
   }, [conversacionId]);
+
+  // Como cualquier chat: abrir una charla arranca en el mensaje más nuevo, y un mensaje
+  // nuevo (propio o del sondeo) empuja para abajo solo si ya se estaba mirando el fondo —
+  // si alguien se corrió para arriba a leer el historial, un mensaje entrante no lo interrumpe.
+  useEffect(() => {
+    const el = listaRef.current;
+    if (!el || !charla) return;
+    const alFondo = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (primeraCargaRef.current || alFondo) {
+      el.scrollTo({ top: el.scrollHeight, behavior: primeraCargaRef.current ? 'auto' : 'smooth' });
+    }
+    primeraCargaRef.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [charla?.mensajes.length, conversacionId]);
+
+  function irAlFondo() {
+    listaRef.current?.scrollTo({ top: listaRef.current.scrollHeight, behavior: 'smooth' });
+  }
 
   if (!conversacionId) return <div className="flex-1 bg-hueso" />;
   if (cargando && !charla) return <Cargando />;
@@ -111,20 +140,24 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
     if (await responder(t)) {
       setTexto('');
       recargar();
+      irAlFondo();
     }
   }
   async function onFotoElegida(e: React.ChangeEvent<HTMLInputElement>) {
     const archivo = e.target.files?.[0];
     e.target.value = ''; // permite volver a elegir el mismo archivo después
     if (!archivo) return;
-    if (await enviarFoto(archivo)) recargar();
+    if (await enviarFoto(archivo)) {
+      recargar();
+      irAlFondo();
+    }
   }
 
   let fechaAnterior = '';
 
   return (
     // min-w-0: sin esto el texto truncado de abajo fija el ancho mínimo del hilo y la página desborda de costado.
-    <div className="flex min-w-0 flex-1 flex-col bg-hueso">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-hueso">
       <div className={`flex items-center gap-4 border-b border-borde bg-lino ${compacto ? 'p-3.5' : 'px-6 py-3.5'}`}>
         {compacto && (
           <Link href="/bandeja" aria-label="Volver a la bandeja" className="text-xl text-grafito">
@@ -155,9 +188,11 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
         </div>
         {!compacto ? (
           <>
-            <Link href={`/clientes?id=${charla.cliente.id}`} className="flex-none rounded-otto border border-borde bg-lino px-3.5 py-2 text-[14px] font-medium md:text-[13.5px]">
-              Ver ficha
-            </Link>
+            {esAdmin && (
+              <Link href={`/clientes?id=${charla.cliente.id}`} className="flex-none rounded-otto border border-borde bg-lino px-3.5 py-2 text-[14px] font-medium md:text-[13.5px]">
+                Ver ficha
+              </Link>
+            )}
             {charla.estado !== 'cerrada' && (
               <button
                 type="button"
@@ -198,9 +233,11 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
 
       {compacto && (
         <div className="flex gap-2 border-b border-borde bg-lino p-3.5 pt-0">
-          <Link href={`/clientes?id=${charla.cliente.id}`} className="flex-1 rounded-otto border border-borde bg-lino py-2 text-center text-[14px] font-medium md:text-[13px]">
-            Ver ficha
-          </Link>
+          {esAdmin && (
+            <Link href={`/clientes?id=${charla.cliente.id}`} className="flex-1 rounded-otto border border-borde bg-lino py-2 text-center text-[14px] font-medium md:text-[13px]">
+              Ver ficha
+            </Link>
+          )}
           {charla.estado === 'activa' && (
             <button type="button" onClick={onTomar} disabled={enviando} className="flex-1 rounded-otto bg-cobre py-2 text-[14px] font-medium text-lino disabled:opacity-60 md:text-[13px]">
               Tomar la charla
@@ -219,7 +256,7 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
         </div>
       )}
 
-      <div className={`flex flex-1 flex-col gap-3.5 overflow-y-auto ${compacto ? 'p-4' : 'px-7 py-5.5'}`}>
+      <div ref={listaRef} className={`flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto ${compacto ? 'p-4' : 'px-7 py-5.5'}`}>
         {charla.mensajes.length === 0 ? (
           <EstadoVacio titulo="Todavía no hay mensajes" texto="Cuando el cliente escriba, los mensajes aparecen acá." />
         ) : (

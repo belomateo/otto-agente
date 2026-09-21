@@ -173,7 +173,7 @@ function NuevaRegla({ onCreado }: { onCreado: () => void }) {
 type RespuestaPrompt = { prompt: { id: string; texto: string; version: number; editado_por: string | null; editado_at: string } | null; generador_disponible: boolean };
 
 function PromptBase() {
-  const { datos, recargar } = useDatos<RespuestaPrompt>('/api/configuracion/prompt-base');
+  const { datos, cargando, error, recargar } = useDatos<RespuestaPrompt>('/api/configuracion/prompt-base');
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState('');
   const [sincronizado, setSincronizado] = useState(false);
@@ -211,16 +211,27 @@ function PromptBase() {
       </button>
       {abierto && (
         <div className="border-t border-borde-suave px-3.5 pb-4 pt-3 md:px-4.5">
-          {datos && !datos.generador_disponible && (
-            <div className="mb-2.5 text-[14px] text-ambar md:text-[13px]">
-              El generador que valida el prompt no está disponible en este entorno: al guardar, la API lo va a decir.
-            </div>
+          {cargando && !sincronizado ? (
+            <Cargando />
+          ) : error ? (
+            <EstadoError mensaje={error} onReintentar={recargar} />
+          ) : (
+            <>
+              {datos && !datos.generador_disponible && (
+                <div className="mb-2.5 text-[14px] text-ambar md:text-[13px]">
+                  El generador que valida el prompt no está disponible en este entorno: al guardar, la API lo va a decir.
+                </div>
+              )}
+              <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={8} aria-label="Prompt base" className="w-full resize-y rounded-otto border border-borde px-3 py-2.5 font-mono text-[14px] leading-[1.55] outline-none focus:border-cobre md:text-[13px]" />
+              {toast}
+              {/* Sin `sincronizado` no se sabe cuál es la versión vigente: guardar acá podría
+                  mandar `version: 1` a ciegas y pisar el prompt real con lo que haya en el
+                  textarea (vacío si el GET nunca llegó a resolver). */}
+              <button type="button" onClick={guardar} disabled={guardando || !texto.trim() || !sincronizado} className="mt-2.5 rounded-otto border border-cobre bg-lino px-4 py-2.5 text-sm font-medium text-cobre disabled:opacity-50">
+                {guardando ? 'Validando…' : 'Validar y guardar'}
+              </button>
+            </>
           )}
-          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={8} aria-label="Prompt base" className="w-full resize-y rounded-otto border border-borde px-3 py-2.5 font-mono text-[14px] leading-[1.55] outline-none focus:border-cobre md:text-[13px]" />
-          {toast}
-          <button type="button" onClick={guardar} disabled={guardando || !texto.trim()} className="mt-2.5 rounded-otto border border-cobre bg-lino px-4 py-2.5 text-sm font-medium text-cobre disabled:opacity-50">
-            {guardando ? 'Validando…' : 'Validar y guardar'}
-          </button>
         </div>
       )}
     </div>

@@ -2,6 +2,16 @@
 // cliente quedaría esperando a alguien que nunca se enteró. Si Lucía dice que le pasa la
 // consulta al equipo y no llamó a derivar_a_persona, el código ejecuta la derivación; como
 // después nadie lee la respuesta, también se sacan las preguntas.
+//
+// Hallazgo de logica probando en vivo, 20/9: variantes MÁS SUAVES de lo mismo —"te puede
+// orientar el equipo del local" en vez de "te paso con alguien"— no estaban en esta lista, así
+// que el modelo las decía y quedaban como un pase silencioso: ni derivación registrada (nadie en
+// Atención humana se entera) ni la ayuda que sí podía dar (el link, en el caso que lo encontró).
+// Es "lo peor de los dos mundos" (logica, 20/9). Estas frases capturan el mismo patrón con otras
+// palabras. Cuidado al sumar más: "eso te lo confirma el equipo del local" (AGENTE.md, LO QUE
+// NUNCA HACÉS) es la forma APROBADA de no contar cómo funciona por dentro y NO tiene que
+// disparar esto — por eso las frases de acá apuntan al verbo de derivar/orientar, no a
+// "el equipo del local" a secas.
 
 import { llamoA } from "../traza.ts";
 import { contieneFrase, normalizar, sacarPreguntas } from "./texto.ts";
@@ -23,6 +33,12 @@ export const ANUNCIOS_DE_PASE = [
   "te contacta alguien",
   "alguien del equipo te va a",
   "un asesor te va a",
+  "te puede orientar",
+  "te puede ayudar mejor",
+  "te puede asesorar",
+  "lo ve la persona que corresponde",
+  "lo ve otra persona",
+  "eso lo ve el equipo",
 ];
 
 export const anunciaSinDerivar: Barandilla = {

@@ -22,7 +22,7 @@ export async function registrarEventos(db: Db, conversacionId: string, eventos: 
 
 export async function registrarConsumo(db: Db, conversacionId: string, llamadas: LlamadaLlm[]): Promise<void> {
   for (const l of llamadas) {
-    const costo = costoUsd(l.modelo, l.uso.tokensIn, l.uso.tokensOut, l.uso.tokensCacheados);
+    const costo = l.costoUsdDirecto ?? costoUsd(l.modelo, l.uso.tokensIn, l.uso.tokensOut, l.uso.tokensCacheados);
     await db.consulta(
       "insert into consumo_llm (conversacion_id, modelo, tokens_in, tokens_out, costo_usd) values ($1, $2, $3, $4, $5)",
       [conversacionId, l.modelo, l.uso.tokensIn, l.uso.tokensOut, costo],

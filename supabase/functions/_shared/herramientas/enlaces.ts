@@ -3,7 +3,7 @@
 // enlaces no tiene columna de tipo (0003, 0014): cada link se reconoce por su nombre, con la
 // convención de abajo. Si el dueño renombra uno y deja de pegar, enviar_link lo devuelve como
 // "no cargado" y tests/herramientas/enums.test.ts lo marca. Lo prolijo es una columna `tipo`
-// con check (mapa, resena, web): queda pedida a paneles.
+// con check: queda pedida a paneles.
 
 import type { Db } from "../db.ts";
 import type { TipoLink } from "../enums.ts";
@@ -12,6 +12,7 @@ export const NOMBRE_DEL_LINK: Record<TipoLink, RegExp> = {
   mapa: /^mapa\b/i,
   resena: /^rese(ñ|n)a\b/i,
   web: /^web\b.*\balquiler\b/i,
+  "web-venta": /^web\b.*\bventa\b/i,
 };
 
 export type Enlace = { nombre: string; url: string };

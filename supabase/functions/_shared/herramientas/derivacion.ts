@@ -13,6 +13,34 @@ import { fechaLocal, sumarDias } from "../tiempo.ts";
 import type { ContextoHerramienta, Efectos } from "./tipos.ts";
 
 export const CLAVE_TEXTO_EVENTO_INMINENTE = "texto_evento_inminente";
+export const CLAVE_TEXTO_DERIVACION_DURA_GENERICA = "texto_derivacion_dura_generica";
+export const CLAVE_TEXTO_DERIVACION_RECLAMO = "texto_derivacion_reclamo";
+export const CLAVE_TEXTO_DERIVACION_FALLO = "texto_derivacion_fallo";
+
+// Respaldos en código (hallazgo de logica, 19/9, auditando la entrega de "ninguna derivación
+// queda muda"): los 4 textos de arriba salen de contexto_agente, editables desde el panel sin
+// redeploy — pero si el dueño deja una fila en blanco (por error, o mientras la edita), no puede
+// volver el silencio que se acaba de cerrar. Un texto viejo, aunque quede desactualizado
+// respecto de lo que se esté editando, es infinitamente mejor que nada. Solo para textos de
+// DERIVACIÓN: texto_mensaje_no_soportado y el resto de contexto_agente no lo necesitan (ahí un
+// texto vacío no deja a nadie mudo del todo — como mucho, sin ese aviso puntual).
+const RESPALDOS = {
+  [CLAVE_TEXTO_EVENTO_INMINENTE]:
+    "Te paso con un asesor del local para que te ayude con tu evento, y vamos a hacer lo posible por encontrarte un lugar en la agenda.",
+  [CLAVE_TEXTO_DERIVACION_DURA_GENERICA]: "Te paso con alguien del equipo para que te ayude con esto. En un rato te escriben.",
+  [CLAVE_TEXTO_DERIVACION_RECLAMO]: "Te leo. Esto lo sigue alguien del local: en un rato te escriben.",
+  [CLAVE_TEXTO_DERIVACION_FALLO]: "Se me complicó de este lado. Ya avisé a alguien del local y en un rato te escriben.",
+} as const;
+
+type ClaveDerivacion = keyof typeof RESPALDOS;
+
+// Como textoDeContexto, pero nunca null: si la fila está vacía o no existe, cae al respaldo de
+// código. usoRespaldo queda para que quien llama pueda dejar rastro (datos.falta) de que hay una
+// fila de contexto_agente para revisar, sin que eso le impida al cliente recibir algo.
+export async function textoDeDerivacion(db: Db, clave: ClaveDerivacion): Promise<{ texto: string; usoRespaldo: boolean }> {
+  const real = await textoDeContexto(db, clave);
+  return real ? { texto: real, usoRespaldo: false } : { texto: RESPALDOS[clave], usoRespaldo: true };
+}
 
 // Lo mínimo que hace falta para derivar: una herramienta ya tiene todo esto en su
 // ContextoHerramienta (lo satisface sin cast, por estructura); el turno (turno.ts), que deriva
@@ -63,20 +91,20 @@ export async function derivarPorEventoInminente(
   ctx: ContextoHerramienta,
 ): Promise<{ ok: true; datos: Record<string, unknown>; efectos: Efectos }> {
   const { id, yaEstaba } = await registrarDerivacion(ctx, "evento_inminente");
-  const texto = await textoDeContexto(ctx.db, CLAVE_TEXTO_EVENTO_INMINENTE);
+  const { texto, usoRespaldo } = await textoDeDerivacion(ctx.db, CLAVE_TEXTO_EVENTO_INMINENTE);
   const datos: Record<string, unknown> = {
     derivar: "evento_inminente",
     derivacion_id: id,
     nota: "El evento es hoy o mañana: lo resuelve una persona del equipo y el aviso al cliente sale solo. No ofrezcas turnos ni escribas nada más.",
   };
   if (yaEstaba) datos.ya_estaba_derivada = true;
-  if (!texto) datos.falta = `el texto fijo de esta derivación (${CLAVE_TEXTO_EVENTO_INMINENTE} en contexto_agente)`;
+  if (usoRespaldo) datos.falta = `la fila de contexto_agente de esta derivación (${CLAVE_TEXTO_EVENTO_INMINENTE}) está vacía: se usó el respaldo de código`;
   return {
     ok: true,
     datos,
     efectos: {
       cortaTurno: true,
-      mensajesAlCliente: texto ? [texto] : [],
+      mensajesAlCliente: [texto],
       avisoEquipo: { motivo: "evento_inminente", derivacionId: id },
     },
   };

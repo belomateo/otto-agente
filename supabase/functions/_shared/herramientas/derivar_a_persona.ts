@@ -1,9 +1,18 @@
 // derivar_a_persona(motivo, mensaje_al_cliente?) — pasa la charla a una persona (AGENTE.md
 // § 4 y § 10, PROCESOS.md § 4). Toca el mundo y corta el turno. Precondiciones en código: el
 // motivo es del enum QUE PUEDE ELEGIR EL MODELO (MOTIVOS_DERIVACION_LLM — no el enum completo
-// de la base) y la despedida no tiene preguntas (principio 7). Con reclamo o descuento la
-// despedida no se manda: sigue una persona. Si la charla ya tenía una derivación pendiente, no
-// se crea otra.
+// de la base) y la despedida no tiene preguntas (principio 7). Si la charla ya tenía una
+// derivación pendiente, no se crea otra.
+//
+// Pedido de Mateo, 19/9: toda derivación le tiene que dejar algo al cliente. Antes, con
+// reclamo/cliente_enojado/descuento (MOTIVOS_SIN_MENSAJE) la despedida del modelo se tiraba y el
+// cliente se quedaba mudo — y aunque el motivo no estuviera en esa lista, si el modelo mandaba
+// mensaje_al_cliente: null (el propio rechazo de acá abajo por pregunta lo empujaba a eso: "sacala
+// o dejá el mensaje en null"), también quedaba mudo. Ahora el silencio nunca es el resultado: con
+// esos tres motivos, un texto fijo aprobado (texto_derivacion_reclamo) reemplaza la despedida del
+// modelo — no se discute con alguien caliente, pero tampoco se lo deja sin nada — y si el motivo
+// permite despedida propia pero no llegó ninguna, el genérico de siempre (texto_derivacion_dura_
+// generica) hace de red de contención.
 //
 // Hallazgo C2 del tester (15/9): antes el schema aceptaba CUALQUIER motivo, incluido
 // evento_inminente — el modelo podía derivar directo con ese motivo, tomando un atajo que se
@@ -32,7 +41,7 @@
 
 import { MOTIVOS_DERIVACION_LLM, MOTIVOS_SIN_MENSAJE, MOTIVOS_SOLO_CODIGO, type MotivoDerivacion } from "../enums.ts";
 import { llamoA } from "../traza.ts";
-import { registrarDerivacion } from "./derivacion.ts";
+import { CLAVE_TEXTO_DERIVACION_DURA_GENERICA, CLAVE_TEXTO_DERIVACION_RECLAMO, registrarDerivacion, textoDeDerivacion } from "./derivacion.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
 type Args = { motivo: MotivoDerivacion; mensaje_al_cliente: string | null };
@@ -41,18 +50,20 @@ export const derivarAPersona: Herramienta<Args> = {
   nombre: "derivar_a_persona",
   tipo: "accion",
   descripcion: "Pasa la charla a una persona del equipo y corta tu turno: después de esto no escribís nada más. " +
-    "Antes, contestá todo lo que sí podés. motivo: por qué derivás. mensaje_al_cliente: una despedida corta y " +
-    "sin ninguna pregunta; con reclamo o descuento, null. Nunca anuncies un pase sin llamar a esta herramienta. " +
-    "Si el evento del cliente es hoy o mañana, NO uses esta herramienta: llamá a buscar_horarios (con la fecha " +
-    "del evento) y el código se encarga de derivar solo, con el dato guardado y el texto correcto. Con motivo " +
-    "turno_urgente_sin_hueco: llamá primero a buscar_horarios en este mismo turno (con la fecha del evento) y " +
-    "confirmá que de verdad no hay hueco antes de derivar por esto.",
+    "Antes, contestá todo lo que sí podés. motivo: por qué derivás. mensaje_al_cliente: SIEMPRE escribí una " +
+    "despedida corta y sin ninguna pregunta, nunca null — con reclamo o descuento el sistema la reemplaza por un " +
+    "texto fijo, así que no te esfuerces con esas dos, pero escribí algo igual. Nunca anuncies un pase sin llamar " +
+    "a esta herramienta. Si el evento del cliente es hoy o mañana, NO uses esta herramienta: llamá a " +
+    "buscar_horarios (con la fecha del evento) y el código se encarga de derivar solo, con el dato guardado y el " +
+    "texto correcto. Con motivo turno_urgente_sin_hueco: llamá primero a buscar_horarios en este mismo turno (con " +
+    "la fecha del evento) y confirmá que de verdad no hay hueco antes de derivar por esto.",
   parametros: objeto({
     motivo: { type: "string", enum: [...MOTIVOS_DERIVACION_LLM], description: "Por qué derivás." },
     mensaje_al_cliente: {
       type: ["string", "null"],
       maxLength: 300,
-      description: "Tu despedida, sin preguntas. null si el motivo es reclamo o descuento.",
+      description: "Tu despedida, sin preguntas. Escribila siempre, aunque el motivo sea reclamo o descuento " +
+        "(el sistema la reemplaza igual).",
     },
   }),
   async ejecutar(args, ctx) {
@@ -75,24 +86,40 @@ export const derivarAPersona: Herramienta<Args> = {
     if (mensaje && /[?¿]/.test(mensaje)) {
       return rechazo(
         "mensaje_con_pregunta",
-        "La despedida no puede tener una pregunta: después de derivar nadie la va a leer. Sacala o dejá el mensaje en null.",
+        "La despedida no puede tener una pregunta: después de derivar nadie la va a leer. Sacala.",
       );
     }
     const { id, yaEstaba } = await registrarDerivacion(ctx, args.motivo);
     const sinDespedida = MOTIVOS_SIN_MENSAJE.includes(args.motivo);
+    // Pedido de Mateo, 19/9: nunca mudo. Con reclamo/cliente_enojado/descuento, el texto fijo de
+    // "no se discute" reemplaza lo que haya escrito el modelo (si escribió algo). Si el motivo
+    // permite despedida propia pero no llegó ninguna (o quedó en blanco), el genérico de siempre
+    // hace de red de contención — antes eso quedaba en [] sin más. textoDeDerivacion nunca
+    // devuelve vacío (hallazgo de logica, 19/9): si la fila de contexto_agente está en blanco,
+    // cae al respaldo de código en vez de dejar al cliente mudo de nuevo.
+    let textoAlCliente: string;
+    let usoRespaldo = false;
+    if (sinDespedida) {
+      ({ texto: textoAlCliente, usoRespaldo } = await textoDeDerivacion(ctx.db, CLAVE_TEXTO_DERIVACION_RECLAMO));
+    } else if (mensaje) {
+      textoAlCliente = mensaje;
+    } else {
+      ({ texto: textoAlCliente, usoRespaldo } = await textoDeDerivacion(ctx.db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA));
+    }
     const datos: Record<string, unknown> = {
       derivacion_id: id,
-      nota: sinDespedida && mensaje
-        ? `Con motivo ${args.motivo} la despedida no se manda: sigue una persona. No escribas nada más.`
+      nota: sinDespedida
+        ? `Con motivo ${args.motivo} tu despedida no se manda: la reemplaza un texto fijo, sigue una persona. No escribas nada más.`
         : "La charla quedó en manos del equipo. No escribas nada más.",
     };
     if (yaEstaba) datos.ya_estaba_derivada = true;
+    if (usoRespaldo) datos.falta = "la fila de contexto_agente de esta derivación está vacía: se usó el respaldo de código";
     return {
       ok: true,
       datos,
       efectos: {
         cortaTurno: true,
-        mensajesAlCliente: !sinDespedida && mensaje ? [mensaje] : [],
+        mensajesAlCliente: [textoAlCliente],
         avisoEquipo: { motivo: args.motivo, derivacionId: id },
       },
     };

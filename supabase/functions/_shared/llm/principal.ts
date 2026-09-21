@@ -21,12 +21,23 @@ import type { ContextoHerramienta } from "../herramientas/tipos.ts";
 import type { DefinicionParaModelo } from "../herramientas/index.ts";
 import { llamarChat, type Uso } from "./cliente.ts";
 
+// Bloque de contenido de un mensaje "user" con imágenes (pedido de Mateo, 19/9: que Lucía vea
+// fotos). Formato de Chat Completions con visión: un array de bloques en vez de un string; la
+// url puede ser un data: URI (así se manda hoy, ver rafaga.ts — el bucket de adjuntos es
+// privado, no hay para qué generarle una URL firmada a OpenAI).
+export type ContenidoLlm = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
 export type MensajeLlm =
   | { role: "system" | "user" | "assistant"; content: string }
+  | { role: "user"; content: ContenidoLlm[] }
   | { role: "assistant"; content: string | null; tool_calls: { id: string; type: "function"; function: { name: string; arguments: string } }[] }
   | { role: "tool"; tool_call_id: string; content: string };
 
-export type LlamadaLlm = { modelo: string; uso: Uso; ms: number };
+// costoUsdDirecto (pedido de Mateo, 19/9: leer audios): la transcripción se factura por minuto,
+// no por token, así que Uso (pensada para chat completions) no le queda — en vez de forzarla a
+// esa forma, este override reemplaza el cálculo de costoUsd() en bitacora.ts. tokensIn/tokensOut
+// quedan en 0 para esas filas: no aplican, pero consumo_llm los pide igual.
+export type LlamadaLlm = { modelo: string; uso: Uso; ms: number; costoUsdDirecto?: number };
 
 export type ResultadoPrincipal = {
   textoFinal: string | null;
