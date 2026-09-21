@@ -374,6 +374,20 @@ extractor); la conversación se pausa para Lucía hasta que una persona la retom
 el panel y la marque "devolver a Lucía". Fuera de horario humano, el mensaje al
 cliente es fijo: «Le paso tu consulta al equipo y te escriben apenas abran mañana.»
 
+**Una charla ya derivada ya no es muda por completo** (pedido de Mateo, 21/9: causa
+#1 del informe de los probadores, 4 de 5 la encontraron — "URGENTE necesito una
+respuesta ahora" y "necesito los horarios del local" quedaban sin contestar aunque
+Lucía supiera responderlas). El worker (logica) saca el bloqueo total de
+`conv.estado !== 'activa'` y le pasa `yaDerivada: true` a `correrTurno` en vez de no
+llamarlo. Con eso, `turno.ts` solo se calla por DOS motivos, textuales de Mateo — el
+cliente se enoja (`reclamo`/`cliente_enojado`, `MOTIVOS_DE_SILENCIO_DERIVADA`) o pide
+hablar con una persona (`pide_persona.ts`, palabra clave, angosto a propósito: un
+falso positivo ahí repite el problema que se está arreglando) — y en cualquier otro
+caso sigue el turno normal, contestando, SIN volver a derivar (ya hay una persona con
+la charla; los pasos 4a/4b no llaman a `derivar()` de nuevo con `yaDerivada`, solo
+anotan en la bitácora y siguen). `resultado.derivo` queda `false` en los dos casos: no
+es un evento de derivación, es simplemente no meterse o seguir ayudando.
+
 **Pendiente (hallazgo de logica, 16/9):** el aviso por WhatsApp al número del canal
 de alquiler que dice este párrafo todavía no está implementado en ningún lado —
 `derivaciones.destino_tel` se escribe (`registrarDerivacion`,

@@ -34,6 +34,7 @@ import { contextoDeHerramientas } from "./contexto_herramientas.ts";
 import { armarContextoDelTurno } from "./contexto.ts";
 import { derivacionDuraPorEventoInminente, derivacionDuraPorPalabraClave } from "./derivacion_dura.ts";
 import { leerHistorial, ultimasLineasParaClasificar, type MensajeChat } from "./historial.ts";
+import { pidePersonaPorPalabraClave } from "./pide_persona.ts";
 import { agruparRafaga, MAXIMO_CARACTERES_RAFAGA } from "./rafaga.ts";
 import { eventosDeLaTraza, registrarConsumo, registrarEventos, type EventoAgente } from "./bitacora.ts";
 import { prepararParaEnviar } from "../whatsapp/preparar.ts";
@@ -63,6 +64,14 @@ const MOTIVOS_CON_TEXTO_RECLAMO: readonly MotivoDerivacion[] = ["reclamo", "clie
 // escribir algo que pasara las barandillas), no del cliente ni de su reclamo — texto propio, con
 // tono de disculpa, en vez del genérico o el de reclamo.
 const MOTIVOS_CON_TEXTO_FALLO: readonly MotivoDerivacion[] = ["barandilla_doble"];
+// Pedido de Mateo, 21/9 (vía logica): una charla ya derivada deja de ser muda por completo — el
+// worker (logica) saca el bloqueo total y le pasa yaDerivada acá. Los ÚNICOS dos motivos para
+// que Lucía se calle en un turno de una charla ya derivada, textuales: el cliente se enoja, o
+// pide hablar directamente con un humano. Todo lo demás (una pregunta de horarios, un "urgente
+// necesito esto hoy", lo que sea) lo sigue contestando normal, aunque la charla ya la tenga una
+// persona — mismo agrupamiento que MOTIVOS_CON_TEXTO_RECLAMO (reclamo y cliente_enojado ya se
+// tratan igual en todo el resto del código).
+const MOTIVOS_DE_SILENCIO_DERIVADA: readonly MotivoDerivacion[] = MOTIVOS_CON_TEXTO_RECLAMO;
 
 export type ResultadoTurno = {
   mensajesAlCliente: string[];
@@ -109,6 +118,14 @@ async function derivar(
   return { mensajesAlCliente, imagenes: [], derivo: true, motivoDerivacion: p.motivo, avisoEquipo: { motivo: p.motivo, derivacionId: id }, bloqueadoPorVentana: false };
 }
 
+// Charla ya derivada, y el cliente se enojó o pidió hablar con una persona en ESTE turno: no es
+// una derivación nueva (ya hay una persona con la charla, y crear otra fila sería redundante), y
+// tampoco hay nada que contestar — la persona que ya la tiene sigue viéndola. `derivo: false` a
+// propósito: no es un evento de derivación, es simplemente no meterse.
+function quedarseCalladaDerivada(): ResultadoTurno {
+  return { mensajesAlCliente: [], imagenes: [], derivo: false, bloqueadoPorVentana: false };
+}
+
 let promptCacheado: string | null = null;
 async function leerPrompt(): Promise<string> {
   if (promptCacheado !== null) return promptCacheado;
@@ -127,6 +144,12 @@ export type ParametrosTurno = {
   tz: string;
   calendario: Calendario;
   derivacionTel: string | null;
+  // Pedido de Mateo, 21/9: la charla YA está derivada (conv.estado !== 'activa') pero el worker
+  // decidió igual correr el turno — antes ni se llamaba a esto. Con esto en true, correrTurno NO
+  // vuelve a derivar por un motivo dura/clasificador (ya hay una persona con la charla): se queda
+  // callada SOLO si el cliente se enojó o pidió hablar con una persona en este turno
+  // (MOTIVOS_DE_SILENCIO_DERIVADA), y para cualquier otra cosa sigue el turno normal, contestando.
+  yaDerivada?: boolean;
   // El prompt ya armado. Lo manda el worker, que lo saca de la base (prompt_vigente(), 0050) para
   // que lo que la dueña edita en el panel le llegue a Lucía sin volver a publicar. Si no viene, se
   // usa el prompt.md que viaja adentro de la función.
@@ -197,14 +220,35 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     // Paso 4a — derivación dura por código: palabra clave en el mensaje, o el evento ya sabido
     // hoy/mañana (decisión #8). Antes de gastar un solo token.
     const ficha = await leerFicha(db, p.clienteId);
+    // Pedido de Mateo, 21/9: charla ya derivada y pide hablar con una persona EN ESTE turno — se
+    // calla, no crea otra derivación (ver ParametrosTurno.yaDerivada y pide_persona.ts).
+    if (p.yaDerivada && pidePersonaPorPalabraClave(mensaje)) {
+      eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivada-silencio", motivo: "pide_persona", porQue: "pidió hablar con una persona mientras la charla ya está derivada" } });
+      resultado = quedarseCalladaDerivada();
+      return resultado;
+    }
     const dura = derivacionDuraPorPalabraClave(mensaje) ?? derivacionDuraPorEventoInminente(ficha.fecha_evento, p.ahora, p.tz);
     if (dura) {
-      eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivacion-dura-codigo", motivo: dura.motivo, porQue: dura.porQue } });
-      const { texto, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
-      if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "derivacion-dura-codigo", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
-      resultado = await derivar(db, { conversacionId: p.conversacionId, motivo: dura.motivo, mensaje: texto, derivacionTel: p.derivacionTel });
-      eventos.push({ tipo: "derivacion", detalle: { motivo: dura.motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "codigo" } });
-      return resultado;
+      if (p.yaDerivada) {
+        if (MOTIVOS_DE_SILENCIO_DERIVADA.includes(dura.motivo)) {
+          eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivada-silencio", motivo: dura.motivo, porQue: dura.porQue } });
+          resultado = quedarseCalladaDerivada();
+          return resultado;
+        }
+        // Otro motivo (prenda_danada, corporativo, evento_inminente): ya está derivada, no se
+        // vuelve a derivar por esto — sigue el turno normal más abajo, Lucía puede contestar.
+        eventos.push({
+          tipo: "pensamiento",
+          detalle: { etapa: "derivada-sigue", motivo: dura.motivo, porQue: `${dura.porQue}, pero la charla ya está derivada: no se deriva de nuevo, sigue contestando` },
+        });
+      } else {
+        eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivacion-dura-codigo", motivo: dura.motivo, porQue: dura.porQue } });
+        const { texto, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
+        if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "derivacion-dura-codigo", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
+        resultado = await derivar(db, { conversacionId: p.conversacionId, motivo: dura.motivo, mensaje: texto, derivacionTel: p.derivacionTel });
+        eventos.push({ tipo: "derivacion", detalle: { motivo: dura.motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "codigo" } });
+        return resultado;
+      }
     }
 
     // Paso 4b — el clasificador, red para la intención de derivar cuando no hay palabra clave.
@@ -225,11 +269,24 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       });
       if (clasificacion.clasificacion.derivar_duro && clasificacion.clasificacion.motivo_derivacion) {
         const motivo = clasificacion.clasificacion.motivo_derivacion;
-        const { texto, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
-        if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "clasificar", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
-        resultado = await derivar(db, { conversacionId: p.conversacionId, motivo, mensaje: texto, derivacionTel: p.derivacionTel });
-        eventos.push({ tipo: "derivacion", detalle: { motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "clasificador" } });
-        return resultado;
+        if (p.yaDerivada) {
+          if (MOTIVOS_DE_SILENCIO_DERIVADA.includes(motivo)) {
+            eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivada-silencio", motivo, porQue: "el clasificador lo marcó, charla ya derivada" } });
+            resultado = quedarseCalladaDerivada();
+            return resultado;
+          }
+          // Igual que en el paso 4a: ya está derivada, no se deriva de nuevo por esto.
+          eventos.push({
+            tipo: "pensamiento",
+            detalle: { etapa: "derivada-sigue", motivo, porQue: "el clasificador lo marcó, pero la charla ya está derivada: no se deriva de nuevo, sigue contestando" },
+          });
+        } else {
+          const { texto, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
+          if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "clasificar", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
+          resultado = await derivar(db, { conversacionId: p.conversacionId, motivo, mensaje: texto, derivacionTel: p.derivacionTel });
+          eventos.push({ tipo: "derivacion", detalle: { motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "clasificador" } });
+          return resultado;
+        }
       }
     }
     // venta_sin_resolver.ts la necesita: la única barandilla que mira la intención del
