@@ -9,11 +9,15 @@ export function json<T>(datos: T, status = 200) {
   return NextResponse.json(datos, { status, headers: SIN_CACHE });
 }
 
-export function error(status: number, mensaje: string, detalle?: unknown) {
-  return NextResponse.json(detalle === undefined ? { error: mensaje } : { error: mensaje, detalle }, {
-    status,
-    headers: SIN_CACHE,
-  });
+// codigo es aparte de detalle (hallazgo de logica, 21/9): front tenía que comparar el TEXTO del
+// mensaje para distinguir "no aprobado" de otros 403 — y ese texto está para la persona, no
+// para el cliente. Un código estable deja el mensaje libre de cambiar sin romper nada; se suma
+// solo donde hace falta distinguir (no_aprobado, debe_cambiar_clave), no en todos los errores.
+export function error(status: number, mensaje: string, detalle?: unknown, codigo?: string) {
+  const cuerpo: Record<string, unknown> = { error: mensaje };
+  if (detalle !== undefined) cuerpo.detalle = detalle;
+  if (codigo !== undefined) cuerpo.codigo = codigo;
+  return NextResponse.json(cuerpo, { status, headers: SIN_CACHE });
 }
 
 type ErrorDeBase = { code?: string; message: string; details?: string | null; hint?: string | null };

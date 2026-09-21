@@ -146,6 +146,13 @@ async function iniciarSesion(email, password) {
   });
   return { id: data.user.id, email, cookie: () => [...jar].map(([n, v]) => `${n}=${v}`).join("; "), directo };
 }
+// Para confirmar que una contraseña vieja (temporal, ya cambiada) dejó de servir: a diferencia
+// de iniciarSesion(), no tira si falla — acá fallar es el resultado esperado.
+async function puedeEntrarCon(email, password) {
+  const sb = createClient(SB_URL, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  return !error;
+}
 async function api(ses, metodo, ruta, cuerpo) {
   const headers = {};
   if (ses) headers.cookie = ses.cookie();
@@ -459,7 +466,7 @@ try {
   seccion("H1.10 control 3 (antes de aprobar) — la cuenta nueva no ve nada y cae en /esperando");
   for (const r of GETS) {
     const x = await api(sn, "GET", r);
-    ok(x.status === 403 && x.tipo.includes("json"), `pendiente GET ${r} → ${x.status}`);
+    ok(x.status === 403 && x.tipo.includes("json") && x.datos.codigo === "no_aprobado", `pendiente GET ${r} → ${x.status}, codigo ${x.datos.codigo}`);
   }
   {
     const x = await api(sn, "GET", "/bandeja");
@@ -508,6 +515,12 @@ try {
     ok(s.estado === "aprobada" && s.resuelto_por === A.id && s.resuelto_at !== null, "aprobar: solicitud aprobada con resuelto_por = el admin y resuelto_at");
     const y = await api(sa, "POST", `/api/accesos/${solN}`, { accion: "aprobar" });
     ok(y.status === 409, `aprobar dos veces → 409 (${y.status})`);
+
+    // Pedido de front (21/9): sin el rol vigente en la lista de aprobados no puede ofrecer
+    // "subir a admin" ni "bajar a equipo" sin adivinar.
+    const aprobados = await api(sa, "GET", "/api/accesos?estado=aprobada");
+    const nEnAprobados = aprobados.datos.solicitudes?.find((s) => s.perfil_id === N.id);
+    ok(aprobados.status === 200 && nEnAprobados?.rol === "equipo", `la lista de aprobados trae el rol vigente de cada uno (${aprobados.status}, rol ${nEnAprobados?.rol})`);
   }
   {
     const x = await api(sa, "POST", `/api/accesos/${solT}`, { accion: "rechazar" });
@@ -1717,6 +1730,98 @@ try {
     ok(yaNo.status === 404, `revocarla de nuevo → 404 (${yaNo.status})`);
     const noRevocaUsada = await api(sa, "DELETE", `/api/accesos/invitaciones/${encodeURIComponent(emailReal)}`);
     ok(noRevocaUsada.status === 404, `una invitación ya usada no se puede "revocar" (${noRevocaUsada.status})`);
+  }
+
+  seccion("Alta directa + cambio de contraseña forzado (0059, decisión de Mateo 21/9, auditoría de seguridad)");
+  {
+    const emailAlta = `paneles.altadirecta.${SUFIJO}@example.com`;
+    const sinAdmin = await api(sn, "POST", "/api/accesos/usuarios", { email: emailAlta });
+    ok(sinAdmin.status === 403, `un 'equipo' no puede dar de alta una cuenta (${sinAdmin.status})`);
+    const malEmail = await api(sa, "POST", "/api/accesos/usuarios", { email: "no-es-un-mail" });
+    ok(malEmail.status === 400, `email mal formado → 400 (${malEmail.status})`);
+
+    const alta = await api(sa, "POST", "/api/accesos/usuarios", { email: emailAlta, nombre: `${MARCA} altadirecta` });
+    ok(
+      alta.status === 201 && alta.datos.perfil?.rol === "equipo" && alta.datos.perfil?.estado === "aprobado" && alta.datos.perfil?.debe_cambiar_clave === true,
+      `admin da de alta directo: rol equipo, aprobado, debe cambiar la clave (${alta.status}, ${JSON.stringify(alta.datos.perfil)})`
+    );
+    ok(
+      typeof alta.datos.clave_temporal === "string" && alta.datos.clave_temporal.length >= 20 && typeof alta.datos.aviso === "string" && alta.datos.aviso.length > 0,
+      `viene una contraseña temporal con entropía real y un aviso de que no se vuelve a mostrar (largo ${alta.datos.clave_temporal?.length})`
+    );
+    // Para que limpiar() la borre igual que a los usuarios de crearUsuario(): esta cuenta no
+    // nació por ese helper (nace por la propia API que se está probando), pero es igual de real.
+    usuarios.altadirecta = { id: alta.datos.perfil.id, email: emailAlta, password: alta.datos.clave_temporal };
+    const claveTemporal = alta.datos.clave_temporal;
+
+    const solicitudAlta = (await q("select estado, resuelto_por from solicitudes_acceso where perfil_id = $1", [alta.datos.perfil.id]))[0];
+    ok(solicitudAlta.estado === "aprobada" && solicitudAlta.resuelto_por === A.id, "su solicitud queda aprobada, no cuelga en pendientes");
+
+    const dup = await api(sa, "POST", "/api/accesos/usuarios", { email: emailAlta });
+    ok(dup.status === 409 && dup.datos.error.includes("ya tiene cuenta"), `crearla de nuevo con el mismo mail → 409 (${dup.status}: ${dup.datos.error})`);
+
+    // Con la clave temporal entra, pero con debe_cambiar_clave en true: el middleware la corta.
+    const salta = await iniciarSesion(emailAlta, claveTemporal);
+    const bandejaBloqueada = await api(salta, "GET", "/api/bandeja");
+    ok(
+      bandejaBloqueada.status === 403 && bandejaBloqueada.datos.codigo === "debe_cambiar_clave",
+      `con clave temporal, la API corta con 403 y un código estable, no solo el texto (${bandejaBloqueada.status}, codigo ${bandejaBloqueada.datos.codigo})`
+    );
+    const bandejaPagina = await api(salta, "GET", "/bandeja");
+    ok(bandejaPagina.status === 307 && bandejaPagina.location.includes("/cambiar-clave"), `en el panel la manda a /cambiar-clave (${bandejaPagina.status} ${bandejaPagina.location})`);
+    const loginPagina = await api(salta, "GET", "/login");
+    ok(
+      loginPagina.status === 307 && loginPagina.location.includes("/cambiar-clave"),
+      `ya logueada, /login también la manda a /cambiar-clave (no a /bandeja: todavía debe cambiarla) (${loginPagina.status} ${loginPagina.location})`
+    );
+
+    const claveActualMal = await api(salta, "PATCH", "/api/mi-cuenta/clave", { actual: "esta-clave-no-es", nueva: "una-clave-nueva-valida" });
+    ok(claveActualMal.status === 401, `contraseña actual incorrecta → 401 (${claveActualMal.status})`);
+    const claveIgual = await api(salta, "PATCH", "/api/mi-cuenta/clave", { actual: claveTemporal, nueva: claveTemporal });
+    ok(claveIgual.status === 400, `la nueva igual a la actual → 400, así no se puede reusar la temporal (${claveIgual.status}: ${claveIgual.datos.error})`);
+    const claveCorta = await api(salta, "PATCH", "/api/mi-cuenta/clave", { actual: claveTemporal, nueva: "abc12" });
+    ok(claveCorta.status === 400, `menos de 6 caracteres (el mínimo real del proyecto, probado contra la Admin API) → 400 (${claveCorta.status})`);
+
+    const nuevaClave = "una-clave-bastante-mejor-9";
+    const cambio = await api(salta, "PATCH", "/api/mi-cuenta/clave", { actual: claveTemporal, nueva: nuevaClave });
+    ok(cambio.status === 200 && cambio.datos.ok === true, `cambia la contraseña (${cambio.status})`);
+    usuarios.altadirecta.password = nuevaClave;
+
+    const perfilPost = (await q("select debe_cambiar_clave from perfiles where id = $1", [alta.datos.perfil.id]))[0];
+    ok(perfilPost.debe_cambiar_clave === false, "debe_cambiar_clave baja después del cambio");
+    ok(!(await puedeEntrarCon(emailAlta, claveTemporal)), "la clave temporal ya no sirve para entrar");
+
+    const sAltaDesbloqueada = await iniciarSesion(emailAlta, nuevaClave);
+    const bandejaOk = await api(sAltaDesbloqueada, "GET", "/api/bandeja");
+    ok(bandejaOk.status === 200, `con la clave nueva, entra normal (${bandejaOk.status})`);
+    const loginYaVa = await api(sAltaDesbloqueada, "GET", "/login");
+    ok(
+      loginYaVa.status === 307 && loginYaVa.location.includes("/bandeja"),
+      `ya sin la bandera, /login la manda a /bandeja como a cualquier aprobado (${loginYaVa.status} ${loginYaVa.location})`
+    );
+  }
+
+  seccion("Subir de categoría (0059, decisión de Mateo 21/9): hoy el rol se fija una sola vez al aprobar, esto lo cambia después");
+  {
+    const C = await crearUsuario("subircategoria");
+    await q("update perfiles set rol = 'equipo', estado = 'aprobado' where id = $1", [C.id]);
+    const sc = await iniciarSesion(C.email, C.password);
+
+    const sinAdmin = await api(sc, "PATCH", `/api/accesos/usuarios/${C.id}`, { rol: "admin" });
+    ok(sinAdmin.status === 403, `un 'equipo' no se sube de categoría a sí mismo por acá (${sinAdmin.status})`);
+    const rolInvalido = await api(sa, "PATCH", `/api/accesos/usuarios/${C.id}`, { rol: "dueña" });
+    ok(rolInvalido.status === 400, `rol fuera del enum → 400 (${rolInvalido.status})`);
+    const autopromocion = await api(sa, "PATCH", `/api/accesos/usuarios/${A.id}`, { rol: "equipo" });
+    ok(autopromocion.status === 403, `ni el propio admin se cambia el rol por acá — trg_sin_autoedicion sigue corriendo (${autopromocion.status})`);
+    // Q ya quedó 'rechazado' en "Quitar acceso": cambiar_rol no sube de categoría a quien no
+    // tiene acceso (eso es cosa de resolver_solicitud o de una alta directa nueva).
+    const noAprobado = await api(sa, "PATCH", `/api/accesos/usuarios/${Q.id}`, { rol: "admin" });
+    ok(noAprobado.status === 404, `no sube de categoría a alguien sin acceso vigente (${noAprobado.status})`);
+
+    const subida = await api(sa, "PATCH", `/api/accesos/usuarios/${C.id}`, { rol: "admin" });
+    ok(subida.status === 200 && subida.datos.perfil?.rol === "admin", `un admin sube de categoría a alguien ya aprobado (${subida.status}, ${subida.datos.perfil?.rol})`);
+    const yaEsAdmin = await api(sc, "GET", "/api/configuracion/prompt-base");
+    ok(yaEsAdmin.status === 200, `con el rol nuevo entra a una pantalla admin-only sin volver a loguearse — RLS lee el rol vigente en cada request (${yaEsAdmin.status})`);
   }
   {
     // prompt_base ya no arranca vacía (0 de logica, 16/9: la sembró paneles con la plantilla

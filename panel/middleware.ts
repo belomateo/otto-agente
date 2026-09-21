@@ -12,6 +12,11 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 const RUTAS_AUTH = ['/login', '/esperando'];
+// No van en RUTAS_AUTH: esas son "sacar de acá a quien ya está aprobado", y acá es al revés —
+// quien tiene debe_cambiar_clave en true tiene que PODER quedarse en esta página y en esta
+// ruta de API (si no, no hay forma de que llegue nunca a cambiarla).
+const RUTA_CAMBIO_CLAVE = '/cambiar-clave';
+const RUTA_API_CAMBIO_CLAVE = '/api/mi-cuenta/clave';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -49,9 +54,16 @@ export async function middleware(request: NextRequest) {
     return redireccion;
   }
 
-  // Lo mismo para las respuestas JSON de /api/**.
-  function responderJson(status: number, mensaje: string) {
-    const r = NextResponse.json({ error: mensaje }, { status, headers: { 'Cache-Control': 'no-store' } });
+  // Lo mismo para las respuestas JSON de /api/**. codigo es opcional (hallazgo de logica, 21/9):
+  // front tenía que comparar el TEXTO del mensaje para distinguir "no aprobado" de otro 403, y
+  // ese texto es para la persona, no para el cliente — mismo campo que error() de
+  // lib/api/respuestas.ts (que requerirSesion usa para su propio recheque), mismos valores:
+  // 'no_aprobado' y 'debe_cambiar_clave'.
+  function responderJson(status: number, mensaje: string, codigo?: string) {
+    const r = NextResponse.json(codigo === undefined ? { error: mensaje } : { error: mensaje, codigo }, {
+      status,
+      headers: { 'Cache-Control': 'no-store' },
+    });
     response.cookies.getAll().forEach((cookie) => r.cookies.set(cookie));
     return r;
   }
@@ -70,7 +82,7 @@ export async function middleware(request: NextRequest) {
 
   const { data: perfil, error: errorPerfil } = await supabase
     .from('perfiles')
-    .select('estado')
+    .select('estado, debe_cambiar_clave')
     .eq('id', user.id)
     .maybeSingle();
   if (errorPerfil) {
@@ -80,12 +92,22 @@ export async function middleware(request: NextRequest) {
     if (esApi) return responderJson(503, 'No se pudo verificar el perfil');
   }
   const aprobado = perfil?.estado === 'aprobado';
+  const debeCambiarClave = perfil?.debe_cambiar_clave === true;
 
-  if (esApi) return aprobado ? response : responderJson(403, 'Tu acceso todavía no está aprobado');
+  if (esApi) {
+    if (!aprobado) return responderJson(403, 'Tu acceso todavía no está aprobado', 'no_aprobado');
+    if (debeCambiarClave && pathname !== RUTA_API_CAMBIO_CLAVE) {
+      return responderJson(403, 'Tenés que cambiar tu contraseña temporal antes de seguir', 'debe_cambiar_clave');
+    }
+    return response;
+  }
 
-  if (!aprobado && pathname !== '/esperando') return redirigirA('/esperando');
+  if (!aprobado) return pathname === '/esperando' ? response : redirigirA('/esperando');
 
-  if (aprobado && esRutaAuth) return redirigirA('/bandeja');
+  if (debeCambiarClave) return pathname === RUTA_CAMBIO_CLAVE ? response : redirigirA(RUTA_CAMBIO_CLAVE);
+
+  // Ya aprobado y sin clave pendiente: ni /login-o-esperando ni /cambiar-clave tienen sentido acá.
+  if (esRutaAuth || pathname === RUTA_CAMBIO_CLAVE) return redirigirA('/bandeja');
 
   return response;
 }

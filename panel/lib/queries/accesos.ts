@@ -17,6 +17,10 @@ export type SolicitudAcceso = {
   nombre: string | null;
   /** Lo completa el handler (auth.users); null si no se pudo leer. */
   email: string | null;
+  /** El rol VIGENTE del perfil (pedido de front, 21/9): en 'aprobada' es el que ya tiene hoy,
+   *  no el que pidió al registrarse (eso es rol_solicitado, más abajo, y es otra cosa) — front
+   *  lo necesita para decidir si ofrecer subir a admin o bajar a equipo. */
+  rol: 'admin' | 'equipo';
   estado: string;
   solicitado_at: string;
   /** 'hace 12 min' */
@@ -33,7 +37,7 @@ export async function listarSolicitudes(sesion: Sesion, estado: EstadoSolicitud)
   const { data, error } = await sesion.supabase
     .from('solicitudes_acceso')
     .select(
-      'id, perfil_id, estado, solicitado_at, resuelto_at, resuelto_por, rol_solicitado, perfil:perfiles!solicitudes_acceso_perfil_id_fkey(nombre)'
+      'id, perfil_id, estado, solicitado_at, resuelto_at, resuelto_por, rol_solicitado, perfil:perfiles!solicitudes_acceso_perfil_id_fkey(nombre, rol)'
     )
     .eq('estado', estado)
     .order('solicitado_at', { ascending: true });
@@ -44,6 +48,7 @@ export async function listarSolicitudes(sesion: Sesion, estado: EstadoSolicitud)
     perfil_id: s.perfil_id,
     nombre: s.perfil?.nombre ?? null,
     email: null,
+    rol: (s.perfil?.rol as 'admin' | 'equipo' | undefined) ?? 'equipo',
     estado: s.estado,
     solicitado_at: s.solicitado_at,
     hace: haceCuanto(s.solicitado_at, ahora),
@@ -105,4 +110,25 @@ export async function revocarInvitacion(sesion: Sesion, email: string) {
     .is('usado_at', null)
     .select('email, rol, invitado_por, creado_at, usado_at')
     .maybeSingle();
+}
+
+/**
+ * Termina el alta directa (decisión de Mateo, 21/9, auditoría de seguridad): la ruta ya creó la
+ * cuenta con auth.admin.createUser (service role) — eso disparó manejar_alta_usuario() (0054),
+ * que sin invitación deja un perfil 'pendiente' con el rol default. Esto lo completa: rol
+ * 'equipo', 'aprobado', debe_cambiar_clave en true. completar_alta_admin() (0059) es security
+ * definer y re-verifica es_admin() adentro — no depende solo de que esta ruta ya pidió admin.
+ */
+export async function completarAltaAdmin(sesion: Sesion, perfilId: string) {
+  return sesion.supabase.rpc('completar_alta_admin', { p_perfil: perfilId });
+}
+
+/**
+ * Subir de categoría (0059): hoy el rol de una cuenta se fija una sola vez, al resolver la
+ * solicitud — no había forma de cambiarle el rol a alguien ya aprobado. cambiar_rol() es
+ * security definer, re-verifica es_admin() adentro, y sigue pasando por trg_sin_autoedicion
+ * (0018): nadie se sube el rol a sí mismo, ni por acá.
+ */
+export async function cambiarRol(sesion: Sesion, perfilId: string, rol: 'admin' | 'equipo') {
+  return sesion.supabase.rpc('cambiar_rol', { p_perfil: perfilId, p_rol: rol });
 }

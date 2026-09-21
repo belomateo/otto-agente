@@ -900,6 +900,7 @@ export type Database = {
       perfiles: {
         Row: {
           creado_at: string
+          debe_cambiar_clave: boolean
           estado: string
           id: string
           nombre: string | null
@@ -907,6 +908,7 @@ export type Database = {
         }
         Insert: {
           creado_at?: string
+          debe_cambiar_clave?: boolean
           estado?: string
           id: string
           nombre?: string | null
@@ -914,6 +916,7 @@ export type Database = {
         }
         Update: {
           creado_at?: string
+          debe_cambiar_clave?: boolean
           estado?: string
           id?: string
           nombre?: string | null
@@ -1189,6 +1192,40 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      cambiar_rol: {
+        Args: { p_perfil: string; p_rol: string }
+        Returns: {
+          creado_at: string
+          debe_cambiar_clave: boolean
+          estado: string
+          id: string
+          nombre: string | null
+          rol: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "perfiles"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      completar_alta_admin: {
+        Args: { p_perfil: string }
+        Returns: {
+          creado_at: string
+          debe_cambiar_clave: boolean
+          estado: string
+          id: string
+          nombre: string | null
+          rol: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "perfiles"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       crear_invitacion: {
         Args: { p_email: string; p_rol: string }
         Returns: {
@@ -1281,6 +1318,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      terminar_cambio_clave: { Args: never; Returns: undefined }
       turno_confirmar_por_boton: {
         Args: { p_conversacion: string; p_turno: string }
         Returns: string
