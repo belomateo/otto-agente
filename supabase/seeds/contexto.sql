@@ -40,8 +40,16 @@
 -- cuando un audio/imagen TODAVÍA se está bajando (bajarMediosPendientes le pone un tope de
 -- tiempo/cantidad al turno) — no es un error, así que no puede sonar a "no pude leerlo": eso
 -- sería mentir, porque sí se va a leer. En la base real se insertó aparte el 19/9.
+-- presentacion (pedido de Mateo, 21/9, vía logica): "que Lucía sea del equipo de mrotto, no
+-- asistente" + "que pregunte fecha y tipo de evento todo junto, ya que la fecha es lo más
+-- importante al definir la conversación". Cambia de un saludo genérico a uno que ya arranca
+-- pidiendo lo que más define la charla. En la base real esto se aplica con un UPDATE (no se
+-- re-corre este archivo, ver el aviso de arriba) recién cuando logica despliegue junto con el
+-- resto del lote (bug del nombre, venta con link Y derivación, identidad/flujo/formato): un
+-- UPDATE acá es instantáneo para producción (prompt_vigente(), caché de 1 minuto), así que no se
+-- toca solo mientras corren los probadores.
 insert into contexto_agente (clave, valor) values
-  ('presentacion', 'Hola, soy Lucía, asistente de Mr Otto. ¿En qué puedo ayudarte hoy?'),
+  ('presentacion', 'Hola! Soy Lucía, del equipo de Mr Otto. Contame para qué evento necesitás el traje y para qué fecha es.'),
   ('texto_evento_inminente', 'Te paso con un asesor del local para que te ayude con tu evento, y vamos a hacer lo posible por encontrarte un lugar en la agenda.'),
   ('texto_derivacion_dura_generica', 'Te paso con alguien del equipo para que te ayude con esto. En un rato te escriben.'),
   ('texto_mensaje_no_soportado', 'Por ahora no puedo leer esto. ¿Me contás en un mensaje de texto qué necesitás? Así te ayudo enseguida.'),

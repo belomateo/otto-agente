@@ -124,16 +124,17 @@ Deno.test("confirmacion_doble no salta sin agendar_turno/reprogramar_turno en la
   await noSalta(confirmacionDoble, entrada("Ese horario se acaba de ocupar, ¿buscamos otro?", { traza: trazaConRechazo }));
 });
 
-Deno.test("sin_markdown salta con negritas, viñetas y títulos, y lo limpia en código", async () => {
+Deno.test("sin_markdown salta con negrita doble, viñetas y títulos, y lo limpia en código", async () => {
   const r = await salta(sinMarkdown, entrada("**Precio:** te cuento\n- camisa\n- corbata\n# Horarios"));
   assertEquals(r.texto, "Precio: te cuento\ncamisa\ncorbata\nHorarios");
-  const w = await salta(sinMarkdown, entrada("Es un traje *único* para vos."));
-  assertEquals(w.texto, "Es un traje único para vos.");
 });
 
-Deno.test("sin_markdown no salta con un guion en el medio de la frase ni con un emoji (caso parecido)", async () => {
+Deno.test("sin_markdown no salta con un guion en el medio de la frase, un emoji, ni con la negrita simple de WhatsApp (caso parecido)", async () => {
   await noSalta(sinMarkdown, entrada("Tenemos talles del 4 al 68 - te cuento cuál te va 😊"));
   await noSalta(sinMarkdown, entrada("¡Hola, Juan! ¿Para qué evento es?"));
+  // Pedido de Mateo, 21/9: *negrita simple* es la sintaxis de WhatsApp de verdad, ya no se limpia.
+  await noSalta(sinMarkdown, entrada("Es un traje *único* para vos."));
+  await noSalta(sinMarkdown, entrada("Todo se hace en *España 764, Rosario*."));
 });
 
 Deno.test("sin_relleno salta con una fórmula de relleno al final y la corta", async () => {
