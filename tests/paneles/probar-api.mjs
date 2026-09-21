@@ -128,6 +128,13 @@ async function frenarPanel(p) {
 }
 
 // ---------- sesiones ----------
+// Hallazgo de logica (21/9, sobre esta misma auditoría): signInWithPassword crea la sesión del
+// lado de GoTrue pase lo que pase con persistSession — eso es lo que guarda o no en ESTE
+// cliente, no si el servidor la crea. Sin cerrarlas, cada corrida de este arnés (arranca el
+// 12/9) deja sesiones vivas para siempre en la cuenta real que usa: 308 encontradas. Cada
+// iniciarSesion() de acá en más se registra, y limpiar() las cierra todas al final — igual que
+// ya se hace con los datos, la sesión también es residuo.
+const sesionesAbiertas = [];
 async function iniciarSesion(email, password) {
   const jar = new Map();
   const sb = createServerClient(SB_URL, ANON, {
@@ -138,6 +145,7 @@ async function iniciarSesion(email, password) {
   });
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) throw new Error("no se pudo iniciar sesión: " + error.message);
+  sesionesAbiertas.push(sb);
   await new Promise((r) => setTimeout(r, 50));
   if (jar.size === 0) throw new Error("el inicio de sesión no dejó cookies");
   const directo = createClient(SB_URL, ANON, {
@@ -147,11 +155,22 @@ async function iniciarSesion(email, password) {
   return { id: data.user.id, email, cookie: () => [...jar].map(([n, v]) => `${n}=${v}`).join("; "), directo };
 }
 // Para confirmar que una contraseña vieja (temporal, ya cambiada) dejó de servir: a diferencia
-// de iniciarSesion(), no tira si falla — acá fallar es el resultado esperado.
+// de iniciarSesion(), no tira si falla — acá fallar es el resultado esperado. Si por lo que sea
+// SÍ entra, también queda registrada para que limpiar() la cierre.
 async function puedeEntrarCon(email, password) {
   const sb = createClient(SB_URL, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
   const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (!error) sesionesAbiertas.push(sb);
   return !error;
+}
+async function cerrarSesiones() {
+  for (const sb of sesionesAbiertas) {
+    try {
+      await sb.auth.signOut();
+    } catch (e) {
+      console.error("  no se pudo cerrar una sesión de prueba:", e.message);
+    }
+  }
 }
 async function api(ses, metodo, ruta, cuerpo) {
   const headers = {};
@@ -297,6 +316,7 @@ async function restaurarReales() {
 // de prueba (más abajo, por cliente_id); su historial, antes, porque la fila desaparece.
 const turnosExtra = [];
 async function limpiar() {
+  await cerrarSesiones();
   if (turnosExtra.length) {
     await q("delete from historial_ediciones where tabla = 'turnos' and fila_id = any($1::uuid[])", [turnosExtra]);
   }
