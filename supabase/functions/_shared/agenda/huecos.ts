@@ -50,6 +50,19 @@ export type PedidoHuecos = {
   ahora: Date;
   fechaEvento: string | null;
   tz: string;
+  // Días cerrados puntuales —feriados, o el día que el local no abre por lo que sea— como
+  // AAAA-MM-DD en la zona del negocio (pedido de Mateo, 21/9; tabla cierres_agenda, de paneles).
+  // Un día acá adentro da cero huecos, igual que un día sin franjas.
+  //
+  // Va en el pedido y no en las reglas a propósito: depende del rango que se está consultando
+  // (desde/hasta), y las reglas se leen sin saber de qué fechas se habla. Acá queda al lado de
+  // desde/hasta, que es lo que obliga a quien llama a traerlos del mismo rango.
+  //
+  // Y lo trae quien llama, no lo consulta esta función, porque calcularHuecos es pura: la usan
+  // el worker (Deno) y el panel (Next) con el mismo código, y el panel no tiene esta conexión.
+  // Obligatorio y no opcional a propósito: si fuera opcional, quien se olvidara de pasarlo
+  // abriría los feriados en silencio, que es la peor forma de fallar.
+  cerrados: ReadonlySet<string>;
 };
 
 const dos = (n: number) => String(n).padStart(2, "0");
@@ -93,6 +106,9 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
   const duracionMs = reglas.duracionMin * MS_POR_MINUTO;
   const huecos: Hueco[] = [];
   for (let dia = primerDia; dia <= ultimoDia; dia = sumarDias(dia, 1)) {
+    // Cerrado ese día puntual: ni se miran las franjas. Es lo mismo que un domingo, pero por
+    // fecha en vez de por día de la semana.
+    if (p.cerrados.has(dia)) continue;
     const semana = diaDeLaSemana(dia);
     const franjas = reglas.franjas.filter((f) => f.diaSemana === semana).sort((a, b) => a.desde - b.desde);
     for (const f of franjas) {
@@ -166,12 +182,23 @@ async function leerOcupados(db: Db, desde: string, hasta: string, tz: string): P
   }));
 }
 
+// Los días que el local no abre dentro del rango que se está consultando (cierres_agenda, de
+// paneles). Se piden acotados al rango y no enteros: la tabla puede tener feriados de años.
+async function leerCierres(db: Db, desde: string, hasta: string): Promise<ReadonlySet<string>> {
+  const filas = await db.consulta(
+    `select to_char(fecha, 'YYYY-MM-DD') as fecha from cierres_agenda where fecha between $1::date and $2::date`,
+    [desde, hasta],
+  );
+  return new Set(filas.map((f) => String(f.fecha)));
+}
+
 export function agendaDesdeBase(db: Db, tz: string): Agenda {
   return {
     async huecos({ desde, hasta, tipo, ahora, fechaEvento }) {
       const reglas = await leerReglas(db, tipo);
       const ocupados = await leerOcupados(db, desde, hasta, tz);
-      return calcularHuecos(reglas, ocupados, { desde, hasta, ahora, fechaEvento, tz });
+      const cerrados = await leerCierres(db, desde, hasta);
+      return calcularHuecos(reglas, ocupados, { desde, hasta, ahora, fechaEvento, tz, cerrados });
     },
   };
 }
