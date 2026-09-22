@@ -1348,6 +1348,12 @@ try {
     const dup = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_SIN_TURNOS });
     ok(dup.status === 409, `cerrar la misma fecha dos veces → 409 (${dup.status})`);
 
+    // FECHA_SIN_TURNOS es un sábado (con franjas reales, normalmente ofrece huecos): cerrado,
+    // calcularHuecos() lo saltea entero — el contrato acordado con logica (_shared/agenda/
+    // huecos.ts, PedidoHuecos.cerrados), ya conectado del lado de turno-alta.ts.
+    const huecosCerrado = await api(sa, "GET", `/api/turnos/huecos?fecha=${FECHA_SIN_TURNOS}&tipo=invitado`);
+    ok(huecosCerrado.status === 200 && huecosCerrado.datos.huecos.length === 0, `cerrado, no ofrece ningún hueco ese día (${huecosCerrado.status}, ${huecosCerrado.datos.huecos?.length})`);
+
     const lista = await api(sa, "GET", "/api/configuracion/cierres");
     ok(lista.status === 200 && lista.datos.cierres.some((c) => c.fecha === FECHA_SIN_TURNOS), `la lista trae el cierre recién creado (${lista.status}, ${lista.datos.cierres?.length})`);
 
@@ -1358,6 +1364,9 @@ try {
     ok(borrada.status === 200 && borrada.datos.cierre?.fecha === FECHA_SIN_TURNOS, `admin reabre la fecha (${borrada.status})`);
     const yaNo = await api(sa, "DELETE", `/api/configuracion/cierres/${FECHA_SIN_TURNOS}`);
     ok(yaNo.status === 404, `reabrirla de nuevo → 404 (${yaNo.status})`);
+
+    const huecosReabierto = await api(sa, "GET", `/api/turnos/huecos?fecha=${FECHA_SIN_TURNOS}&tipo=invitado`);
+    ok(huecosReabierto.status === 200 && huecosReabierto.datos.huecos.length > 0, `reabierto, vuelve a ofrecer huecos (${huecosReabierto.status}, ${huecosReabierto.datos.huecos?.length})`);
 
     // Con turnos ya agendados: no cancela nada solo, avisa cuántos hay y pide confirmar.
     const FECHA_CON_TURNOS = "2031-03-20";
