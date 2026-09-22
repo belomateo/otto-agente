@@ -4,7 +4,7 @@
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { aplicarBarandillas, BARANDILLAS } from "../../supabase/functions/_shared/barandillas/index.ts";
-import { AHORA, entrada, HORA_MS } from "./_ayuda.ts";
+import { AHORA, entrada, HORA_MS, traza } from "./_ayuda.ts";
 
 Deno.test("son 15 y van en orden formato → contenido → reglas", () => {
   assertEquals(BARANDILLAS.length, 15);
@@ -60,6 +60,28 @@ Deno.test("un corte que vacía el mensaje entero no sale como 'enviar' vacío: p
   const r2 = await aplicarBarandillas(entrada("Quedo atenta."), { saltosPrevios: 1 });
   assertEquals(r2.decision, "derivar");
   assertEquals(r2.motivoDerivacion, "barandilla_doble");
+});
+
+// Hallazgo de la auditoría de logica, 22/9: si lo ÚNICO que saltó fue confirmacion_doble, un
+// texto vacío no es un bug — agendar_turno/reprogramar_turno/confirmar_turno ya mandan su propia
+// confirmación aparte (efectosMensajes en turno.ts), con todos los datos; no hay nada más que
+// agregar cuando el cliente solo pidió confirmar. Forzar el rehacer acá garantizaba caer siempre
+// en lo mismo (mismo patrón estructural que el bug de precio_sin_herramienta con el nombre del
+// cliente, 20/9): el modelo vuelve a escribir SOLO la confirmación —es la respuesta correcta y
+// completa—, se corta de nuevo, y deriva con barandilla_doble en TODO turno donde alguien
+// confirma un turno por texto. Reproducido de punta a punta contra la base real y OpenAI real
+// antes de este fix: 22/9.
+Deno.test("un corte de confirmacion_doble que vacía el mensaje SÍ sale como 'enviar': ya hay una confirmación aparte, no hay nada más que agregar", async () => {
+  const r = await aplicarBarandillas(entrada("Listo, tu turno quedó confirmado.", { traza: traza({ herramientas: ["confirmar_turno"] }) }));
+  assertEquals(r.decision, "enviar");
+  assertEquals(r.texto, "");
+  assertEquals(r.saltos.map((s) => s.barandilla), ["confirmacion_doble"]);
+});
+
+Deno.test("un corte que vacía el mensaje por OTRA barandilla sigue pidiendo rehacer, aunque haya una confirmación en la traza (caso parecido)", async () => {
+  const r = await aplicarBarandillas(entrada("Quedo atenta.", { traza: traza({ herramientas: ["confirmar_turno"] }) }));
+  assertEquals(r.decision, "rehacer");
+  assertMatch(r.instruccion ?? "", /vacío/);
 });
 
 Deno.test("un corte que deja el mensaje con contenido real sigue saliendo tal cual (caso parecido)", async () => {
