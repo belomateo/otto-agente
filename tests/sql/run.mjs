@@ -248,7 +248,12 @@ async function testEsquemaDelAgente() {
 
     // 23514 = check_violation
     assert((await probar(`update clientes set evento = 'boda' where id = '${id}'`)) === "23514", "un evento fuera del enum se rechaza");
-    assert((await probar(`update clientes set rol = 'padrino' where id = '${id}'`)) === "23514", "un rol fuera del enum se rechaza");
+    // 'madre' y no un valor cualquiera: es justo el rol que Mateo decidió (21/9) que NO existe
+    // (0060) — Otto viste hombres, sin roles femeninos a propósito. Antes decía 'padrino' acá,
+    // que dejó de ser inválido el mismo día que se agregó a la base: la prueba pasaba igual
+    // (23514) hasta que 'padrino' se volvió válido, y ahí habría empezado a fallar por el
+    // motivo equivocado si nadie la miraba.
+    assert((await probar(`update clientes set rol = 'madre' where id = '${id}'`)) === "23514", "un rol fuera del enum se rechaza");
     assert((await probar(`update clientes set dia_o_noche = 'tarde' where id = '${id}'`)) === "23514", "dia_o_noche fuera de dia/noche se rechaza");
     assert(
       (await probar(`insert into derivaciones (conversacion_id, motivo) values ('${convId}', 'queja')`)) === "23514",

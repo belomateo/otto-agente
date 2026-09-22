@@ -532,7 +532,44 @@ function fetcherSoloExtractor(): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-Deno.test("charla ya derivada: si el cliente se enoja (reclamo), Lucía se calla y NO crea otra derivación", async () => {
+// Corregido el 21/9 (Mateo, tanda de preguntas): la primera versión de esto trataba un reclamo
+// TRANQUILO como motivo de silencio (reusaba MOTIVOS_CON_TEXTO_RECLAMO, la lista de "qué texto
+// fijo mandar al derivar", para una pregunta distinta: "cuándo callarse estando ya derivada").
+// Un reclamo tranquilo no calla a Lucía: ya está derivada (así que "deriva" ya está cumplido) y
+// sigue contestando normal — solo la AGRESIÓN (cliente_enojado, por tono) la calla, ver el test
+// de abajo.
+prueba("charla ya derivada: un reclamo TRANQUILO no calla a Lucía, sigue contestando (corregido, no es agresión)", async ({ ctx, sql, conversacionId }) => {
+  await sql.query("update conversaciones set estado = 'derivada' where id = $1", [conversacionId]);
+  await insertarEntrante(sql, conversacionId, "quiero hacer un reclamo, el traje llegó con una mancha");
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    const esClasificador = body.response_format?.json_schema?.name === "clasificacion";
+    const esExtractor = body.response_format?.json_schema?.name === "ficha";
+    if (esClasificador) {
+      // No tendría que llamarse: "reclamo" ya se detecta por palabra clave en el paso 4a.
+      throw new Error("no tenía que llamar al clasificador: reclamo se detecta por palabra clave, antes");
+    }
+    if (esExtractor) {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({
+          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+        }),
+      }));
+    }
+    return Promise.resolve(respuestaChat({ contenido: "Te leo, ya se lo paso al equipo para que lo vean con vos." }));
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher, yaDerivada: true,
+  });
+
+  assertEquals(resultado.derivo, false, "no es una derivación nueva: ya la tiene una persona");
+  assertEquals(resultado.mensajesAlCliente, ["Te leo, ya se lo paso al equipo para que lo vean con vos."], "sigue contestando: un reclamo tranquilo no es motivo de silencio");
+});
+
+Deno.test("charla ya derivada: si hay agresión (cliente_enojado, por tono), Lucía se calla y NO crea otra derivación", async () => {
   await conBase(async (sql) => {
     await sql.query("begin");
     try {
@@ -542,16 +579,35 @@ Deno.test("charla ya derivada: si el cliente se enoja (reclamo), Lucía se calla
         "insert into conversaciones (cliente_id, canal, estado) values ($1, 'prueba', 'derivada') returning id::text as id",
         [clienteId],
       )).rows[0].id as string;
-      await insertarEntrante(sql, conversacionId, "esto es un reclamo, estoy muy enojado con la atención");
+      await insertarEntrante(sql, conversacionId, "ESTO ES UNA VERGUENZA, son todos unos inutiles, denme la plata YA o hago un escandalo");
       const antes = await contar(sql, "select count(*)::int as n from derivaciones where conversacion_id = $1", [conversacionId]);
+      const fetcher = ((_url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body));
+        const esClasificador = body.response_format?.json_schema?.name === "clasificacion";
+        const esExtractor = body.response_format?.json_schema?.name === "ficha";
+        if (esClasificador) {
+          return Promise.resolve(respuestaChat({
+            contenido: JSON.stringify({ intencion: "reclamo", urgencia: "alta", derivar_duro: true, motivo_derivacion: "cliente_enojado" }),
+          }));
+        }
+        if (esExtractor) {
+          return Promise.resolve(respuestaChat({
+            contenido: JSON.stringify({
+              nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+              talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+            }),
+          }));
+        }
+        throw new Error("el clasificador ya marcó agresión: el turno no debería llegar al principal");
+      }) as unknown as typeof fetch;
 
       const resultado = await correrTurno(dbDesde(sql as unknown as ClienteSql), {
         clienteId, telefono, conversacionId, ahora: AHORA, tz: TZ,
-        calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: fetcherSoloExtractor(), yaDerivada: true,
+        calendario: calendarioDeEnsayo, derivacionTel: null, fetcher, yaDerivada: true,
       });
 
       assertEquals(resultado.derivo, false, "no es una derivación nueva: ya la tiene una persona");
-      assertEquals(resultado.mensajesAlCliente, [], "se calla: el cliente está enojado");
+      assertEquals(resultado.mensajesAlCliente, [], "se calla: es agresión, no un reclamo tranquilo");
       const despues = await contar(sql, "select count(*)::int as n from derivaciones where conversacion_id = $1", [conversacionId]);
       assertEquals(despues, antes, "no se creó ninguna fila nueva en derivaciones");
     } finally {
@@ -616,4 +672,60 @@ prueba("charla ya derivada: una pregunta normal (horarios), Lucía la sigue cont
 
   assertEquals(resultado.derivo, false, "no es una derivación nueva");
   assertEquals(resultado.mensajesAlCliente, ["Hola! Seguimos por acá sin problema. En qué más te puedo ayudar?"], "sigue contestando, no se queda muda");
+});
+
+// Pedido de Mateo, 21/9 (tanda de preguntas, vía logica): se presenta de nuevo si pasaron más de
+// 7 días desde el último mensaje, no solo en el primerísimo mensaje de la charla. El contexto
+// tiene que avisárselo al modelo (armarContextoDelTurno), y esPrimerMensaje tiene que ensancharse
+// para que presentacion_repetida no le corte la reintroducción (sin tocar esa barandilla: usa el
+// mismo booleano que ya usaba para el primer mensaje de verdad).
+prueba("charla con un hueco de más de 7 días: el contexto avisa, y Lucía se puede volver a presentar sin que la barandilla la corte", async ({ ctx, sql, conversacionId }) => {
+  const haceDiezDias = new Date(AHORA.getTime() - 10 * 24 * 60 * 60 * 1000);
+  await sql.query(
+    `insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at) values
+       ($1, 'entrante', 'texto', $2, $3::timestamptz),
+       ($1, 'saliente', 'texto', $4, $5::timestamptz)`,
+    [
+      conversacionId,
+      "hola, quería consultar por un traje",
+      haceDiezDias.toISOString(),
+      "Hola! Soy Lucía, del equipo de Mr Otto. ¿En qué puedo ayudarte hoy?",
+      new Date(haceDiezDias.getTime() + 60_000).toISOString(),
+    ],
+  );
+  await insertarEntrante(sql, conversacionId, "hola, de nuevo por acá");
+
+  let contextoCapturado = "";
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    const esClasificador = body.response_format?.json_schema?.name === "clasificacion";
+    const esExtractor = body.response_format?.json_schema?.name === "ficha";
+    if (esClasificador) {
+      return Promise.resolve(respuestaChat({ contenido: JSON.stringify({ intencion: "otro", urgencia: "baja", derivar_duro: false, motivo_derivacion: null }) }));
+    }
+    if (esExtractor) {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({
+          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+        }),
+      }));
+    }
+    // El principal: acá se manda el contexto del turno como mensaje de sistema.
+    const mensajes = body.messages as { role: string; content: string }[];
+    contextoCapturado = mensajes.find((m) => m.role === "system" && m.content.includes("CONTEXTO DE ESTE TURNO"))?.content ?? "";
+    return Promise.resolve(respuestaChat({ contenido: "Hola de nuevo! Soy Lucía, del equipo de Mr Otto. ¿En qué te puedo ayudar hoy?" }));
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assert(contextoCapturado.includes("Pasaron 10 días"), `el contexto tiene que avisar el hueco largo: ${contextoCapturado}`);
+  assertEquals(
+    resultado.mensajesAlCliente,
+    ["Hola de nuevo! Soy Lucía, del equipo de Mr Otto. En qué te puedo ayudar hoy?"],
+    "no se corta: el hueco largo se trata como si arrancara la charla, presentacion_repetida no interviene",
+  );
 });

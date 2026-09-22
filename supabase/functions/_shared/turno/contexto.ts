@@ -10,6 +10,12 @@ import { leerFicha } from "../herramientas/ficha.ts";
 import { describirHorarios, leerFranjas, leerHorarioDelLocal } from "../herramientas/horario_laboral.ts";
 import { fechaLarga, horaLocal, partesLocales } from "../tiempo.ts";
 
+// Pedido de Mateo, 21/9: Lucía se presenta la primera vez de la charla, y de nuevo si pasaron
+// más de 7 días desde el último mensaje — un hueco así de largo se trata como si arrancara una
+// charla nueva. turno.ts lo usa para lo mismo del lado de esPrimerMensaje (presentacion_repetida
+// ya no la corta en ese caso); acá se le suma la línea de contexto que se lo dice al modelo.
+export const UMBRAL_DIAS_REPRESENTACION = 7;
+
 const NOMBRE_CAMPO: Record<string, string> = {
   nombre: "nombre", evento: "evento", fecha_evento: "fecha del evento", rol: "rol",
   dia_o_noche: "día o noche", talle_aprox: "talle aproximado", ciudad: "ciudad",
@@ -62,14 +68,14 @@ async function horarioDeHoyTexto(db: Db, ahora: Date, tz: string): Promise<{ tex
 
 export async function armarContextoDelTurno(
   db: Db,
-  p: { clienteId: string; ahora: Date; tz: string },
+  p: { clienteId: string; ahora: Date; tz: string; diasDesdeUltimoMensaje: number | null },
 ): Promise<{ texto: string; horas: string[] }> {
   const [libreta, turnos, horarioHoy] = await Promise.all([
     libretaTexto(db, p.clienteId),
     turnosActivosTexto(db, p.clienteId, p.ahora, p.tz),
     horarioDeHoyTexto(db, p.ahora, p.tz),
   ]);
-  const texto = [
+  const lineas = [
     "CONTEXTO DE ESTE TURNO (no es parte de lo que sabés de memoria; usalo, no lo repitas al cliente tal cual).",
     "",
     "TU LIBRETA",
@@ -80,7 +86,14 @@ export async function armarContextoDelTurno(
     "",
     `HORA ACTUAL: ${fechaLarga(p.ahora, p.tz)}, ${horaLocal(p.ahora, p.tz)} (hora de Argentina).`,
     horarioHoy.texto,
-  ].join("\n");
+  ];
+  if (p.diasDesdeUltimoMensaje !== null && p.diasDesdeUltimoMensaje >= UMBRAL_DIAS_REPRESENTACION) {
+    lineas.push(
+      "",
+      `Pasaron ${p.diasDesdeUltimoMensaje} días desde el último mensaje de este cliente: presentate de nuevo, como si arrancara la charla.`,
+    );
+  }
+  const texto = lineas.join("\n");
   // Hallazgo de la auditoría, 17/9: horario_sin_herramienta y traza.ts prometen que estas horas
   // (los turnos activos del cliente, y las del horario de hoy) quedan sembradas en
   // traza.horasDevueltas — pero nadie las agarraba de acá para pasárselas al turno. El cliente

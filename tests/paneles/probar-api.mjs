@@ -71,12 +71,36 @@ const seccion = (t) => console.log(`\n[${t}]`);
 const tiene = (o, claves) => Boolean(o) && claves.every((k) => k in o);
 
 const admin = createClient(SB_URL, SERVICE, { auth: { persistSession: false, autoRefreshToken: false } });
-const db = new pg.Client({ connectionString: DB_URL });
-// Sin esto, un corte de red (pasó de verdad, dos veces seguidas) tira un 'error' no manejado en
-// el Client y mata el proceso ENTERO antes de que el try/catch/finally de más abajo llegue a
-// limpiar() — con clientes reales en la misma base (Lucía en producción, 18/9), eso significa
-// dejar residuo de prueba sin avisar en vez de, como mínimo, intentar la limpieza igual.
-db.on("error", (e) => console.error("  ⚠️  la conexión de control se cortó (seguimos, la consulta en curso va a fallar y el flujo normal la va a manejar):", e.message));
+let db = new pg.Client({ connectionString: DB_URL });
+function vigilarDb() {
+  // Sin esto, un corte de red (pasó de verdad, dos veces seguidas) tira un 'error' no manejado
+  // en el Client y mata el proceso ENTERO antes de que el try/catch/finally de más abajo llegue
+  // a limpiar() — con clientes reales en la misma base (Lucía en producción, 18/9), eso
+  // significa dejar residuo de prueba sin avisar en vez de, como mínimo, intentar la limpieza.
+  db.on("error", (e) => console.error("  ⚠️  la conexión de control se cortó (seguimos, la consulta en curso va a fallar y el flujo normal la va a manejar):", e.message));
+}
+vigilarDb();
+// Hallazgo de front (22/9): un corte a mitad de corrida no solo hacía fallar la consulta en
+// curso — dejaba MUERTA la conexión para el resto del proceso, así que limpiar()/
+// restaurarReales() (que usan esta misma conexión) fallaban también, y una tabla singleton
+// como configuracion_agenda (una sola fila para todo el negocio, sin patrón de nombre que
+// verificarLimpieza() pueda filtrar) quedaba con un valor de prueba (dias_reserva_urgencia en
+// 300) afectando a clientes reales hasta que alguien lo notó a mano. Antes de la limpieza final
+// se asegura una conexión viva, reconectando si hace falta.
+async function asegurarConexion() {
+  try {
+    await db.query("select 1");
+    return;
+  } catch {
+    console.error("  ⚠️  la conexión de control seguía muerta: reconectando para poder limpiar igual...");
+  }
+  try {
+    await db.end();
+  } catch {}
+  db = new pg.Client({ connectionString: DB_URL });
+  vigilarDb();
+  await db.connect();
+}
 const q = async (s, p = []) => (await db.query(s, p)).rows;
 
 // ---------- panel ----------
@@ -128,6 +152,13 @@ async function frenarPanel(p) {
 }
 
 // ---------- sesiones ----------
+// Hallazgo de logica (21/9, sobre esta misma auditoría): signInWithPassword crea la sesión del
+// lado de GoTrue pase lo que pase con persistSession — eso es lo que guarda o no en ESTE
+// cliente, no si el servidor la crea. Sin cerrarlas, cada corrida de este arnés (arranca el
+// 12/9) deja sesiones vivas para siempre en la cuenta real que usa: 308 encontradas. Cada
+// iniciarSesion() de acá en más se registra, y limpiar() las cierra todas al final — igual que
+// ya se hace con los datos, la sesión también es residuo.
+const sesionesAbiertas = [];
 async function iniciarSesion(email, password) {
   const jar = new Map();
   const sb = createServerClient(SB_URL, ANON, {
@@ -138,6 +169,7 @@ async function iniciarSesion(email, password) {
   });
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) throw new Error("no se pudo iniciar sesión: " + error.message);
+  sesionesAbiertas.push(sb);
   await new Promise((r) => setTimeout(r, 50));
   if (jar.size === 0) throw new Error("el inicio de sesión no dejó cookies");
   const directo = createClient(SB_URL, ANON, {
@@ -147,11 +179,22 @@ async function iniciarSesion(email, password) {
   return { id: data.user.id, email, cookie: () => [...jar].map(([n, v]) => `${n}=${v}`).join("; "), directo };
 }
 // Para confirmar que una contraseña vieja (temporal, ya cambiada) dejó de servir: a diferencia
-// de iniciarSesion(), no tira si falla — acá fallar es el resultado esperado.
+// de iniciarSesion(), no tira si falla — acá fallar es el resultado esperado. Si por lo que sea
+// SÍ entra, también queda registrada para que limpiar() la cierre.
 async function puedeEntrarCon(email, password) {
   const sb = createClient(SB_URL, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
   const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (!error) sesionesAbiertas.push(sb);
   return !error;
+}
+async function cerrarSesiones() {
+  for (const sb of sesionesAbiertas) {
+    try {
+      await sb.auth.signOut();
+    } catch (e) {
+      console.error("  no se pudo cerrar una sesión de prueba:", e.message);
+    }
+  }
 }
 async function api(ses, metodo, ruta, cuerpo) {
   const headers = {};
@@ -297,6 +340,7 @@ async function restaurarReales() {
 // de prueba (más abajo, por cliente_id); su historial, antes, porque la fila desaparece.
 const turnosExtra = [];
 async function limpiar() {
+  await cerrarSesiones();
   if (turnosExtra.length) {
     await q("delete from historial_ediciones where tabla = 'turnos' and fila_id = any($1::uuid[])", [turnosExtra]);
   }
@@ -377,6 +421,19 @@ async function verificarLimpieza() {
   }
   const { data: objs } = await admin.storage.from("catalogo").list(creados.filas.find((f) => f.tabla === "catalogo_alquiler")?.id ?? "nada");
   ok((objs ?? []).length === 0, "no quedaron fotos de prueba en storage");
+
+  // Hallazgo de front (22/9): esta prueba dejó configuracion_agenda.dias_reserva_urgencia en un
+  // valor de prueba (300) por horas, afectando huecos reales — restaurarReales() (arriba) volvió
+  // a fallar en silencio en una corrida anterior por un corte de conexión, y como es una fila
+  // ÚNICA (sin patrón de nombre que filtrar) nada de lo de arriba lo hubiera visto. Esto no
+  // depende de la foto de esta corrida (que puede estar corrupta si YA venía mal): compara
+  // contra el rango real del negocio (docs/ficha-del-negocio.md, "recomendado entre 60 y 7 días
+  // antes"), así agarra el caso de que el propio snapshot ya esté pisado.
+  const dru = (await q("select dias_reserva_urgencia from configuracion_agenda"))[0]?.dias_reserva_urgencia;
+  ok(
+    dru >= 7 && dru <= 60,
+    `configuracion_agenda.dias_reserva_urgencia sigue en un valor real de negocio, no de prueba (${dru}, esperado entre 7 y 60)`
+  );
 }
 
 const historial = (tabla, id) =>
@@ -1070,7 +1127,9 @@ try {
     ok(
       // herramientas: >= 13 (las de H1.4), no === 13: agente suma herramientas nuevas con el
       // tiempo (p. ej. confirmar_turno, 16/9) y esto no es un control de cuántas hay.
-      x.status === 200 && x.datos.reglas.length >= 1 && x.datos.reglas.every((r) => tiene(r, ["i", "t", "id", "version"])) && x.datos.agenda.horarios.length === 6 && x.datos.agenda.duraciones.length === 6 && x.datos.agenda.configuracion?.cantidad_probadores === 3 && x.datos.herramientas.length >= 13 && Boolean(x.datos.presentacion),
+      // horarios: 7, no 6 — el domingo ahora tiene su propia fila (activo=false, 0061, pedido
+      // de Mateo 21/9): antes no tenía fila y por eso eran 6.
+      x.status === 200 && x.datos.reglas.length >= 1 && x.datos.reglas.every((r) => tiene(r, ["i", "t", "id", "version"])) && x.datos.agenda.horarios.length === 7 && x.datos.agenda.duraciones.length === 6 && x.datos.agenda.configuracion?.cantidad_probadores === 3 && x.datos.herramientas.length >= 13 && Boolean(x.datos.presentacion),
       `Configuración (${x.status}): ${x.datos.reglas?.length} reglas, ${x.datos.agenda?.horarios.length} horarios, ${x.datos.herramientas?.length} herramientas`
     );
     const y = await api(sa, "GET", `/api/historial?tabla=perfiles&id=${A.id}`);
@@ -1309,6 +1368,69 @@ try {
       Boolean(bloqueadoPrompt.error) && (lecturaPrompt.data ?? []).length === 0 && (lecturaPromptAdmin.data ?? []).length >= 1,
       `sin pasar por mi ruta: un 'equipo' no lee ni inserta en prompt_base (RLS, 0045), un admin sí lo lee (equipo ${(lecturaPrompt.data ?? []).length}, admin ${(lecturaPromptAdmin.data ?? []).length})`
     );
+  }
+
+  seccion("Cierres puntuales de agenda (0061, pedido de Mateo 21/9): feriados y cierres excepcionales");
+  {
+    const sinAdmin = await api(sn, "GET", "/api/configuracion/cierres");
+    ok(sinAdmin.status === 403, `un 'equipo' no ve los cierres (${sinAdmin.status})`);
+
+    const malaFecha = await api(sa, "POST", "/api/configuracion/cierres", { fecha: "31-03-2031" });
+    ok(malaFecha.status === 400, `fecha mal formada → 400 (${malaFecha.status})`);
+
+    const FECHA_SIN_TURNOS = "2031-03-15";
+    const alta = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_SIN_TURNOS, motivo: "Feriado de prueba" });
+    ok(alta.status === 201 && alta.datos.cierre?.fecha === FECHA_SIN_TURNOS && alta.datos.cierre?.motivo === "Feriado de prueba", `admin cierra una fecha sin turnos (${alta.status})`);
+
+    const dup = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_SIN_TURNOS });
+    ok(dup.status === 409, `cerrar la misma fecha dos veces → 409 (${dup.status})`);
+
+    // FECHA_SIN_TURNOS es un sábado (con franjas reales, normalmente ofrece huecos): cerrado,
+    // calcularHuecos() lo saltea entero — el contrato acordado con logica (_shared/agenda/
+    // huecos.ts, PedidoHuecos.cerrados), ya conectado del lado de turno-alta.ts.
+    const huecosCerrado = await api(sa, "GET", `/api/turnos/huecos?fecha=${FECHA_SIN_TURNOS}&tipo=invitado`);
+    ok(huecosCerrado.status === 200 && huecosCerrado.datos.huecos.length === 0, `cerrado, no ofrece ningún hueco ese día (${huecosCerrado.status}, ${huecosCerrado.datos.huecos?.length})`);
+
+    const lista = await api(sa, "GET", "/api/configuracion/cierres");
+    ok(lista.status === 200 && lista.datos.cierres.some((c) => c.fecha === FECHA_SIN_TURNOS), `la lista trae el cierre recién creado (${lista.status}, ${lista.datos.cierres?.length})`);
+
+    const sinBorrar = await api(sn, "DELETE", `/api/configuracion/cierres/${FECHA_SIN_TURNOS}`);
+    ok(sinBorrar.status === 403, `un 'equipo' no reabre una fecha (${sinBorrar.status})`);
+
+    const borrada = await api(sa, "DELETE", `/api/configuracion/cierres/${FECHA_SIN_TURNOS}`);
+    ok(borrada.status === 200 && borrada.datos.cierre?.fecha === FECHA_SIN_TURNOS, `admin reabre la fecha (${borrada.status})`);
+    const yaNo = await api(sa, "DELETE", `/api/configuracion/cierres/${FECHA_SIN_TURNOS}`);
+    ok(yaNo.status === 404, `reabrirla de nuevo → 404 (${yaNo.status})`);
+
+    const huecosReabierto = await api(sa, "GET", `/api/turnos/huecos?fecha=${FECHA_SIN_TURNOS}&tipo=invitado`);
+    ok(huecosReabierto.status === 200 && huecosReabierto.datos.huecos.length > 0, `reabierto, vuelve a ofrecer huecos (${huecosReabierto.status}, ${huecosReabierto.datos.huecos?.length})`);
+
+    // Con turnos ya agendados: no cancela nada solo, avisa cuántos hay y pide confirmar.
+    const FECHA_CON_TURNOS = "2031-03-20";
+    const turnoDelDia = await nuevoTurno(`${FECHA_CON_TURNOS}T13:00:00Z`);
+    const sinConfirmar = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_CON_TURNOS });
+    ok(
+      sinConfirmar.status === 409 && sinConfirmar.datos.detalle?.turnos_afectados === 1,
+      `cerrar un día con 1 turno, sin confirmar → 409 avisando cuántos hay (${sinConfirmar.status}, ${sinConfirmar.datos.detalle?.turnos_afectados})`
+    );
+    const noSeCreoNada = (await q("select count(*)::int n from cierres_agenda where fecha = $1", [FECHA_CON_TURNOS]))[0].n;
+    ok(noSeCreoNada === 0, "sin confirmar, no queda ningún cierre a medio guardar");
+
+    const conConfirmar = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_CON_TURNOS, confirmar: true });
+    ok(conConfirmar.status === 201, `confirmando, cierra igual (${conConfirmar.status})`);
+    const turnoSigueIgual = (await q("select estado from turnos where id = $1", [turnoDelDia]))[0];
+    ok(turnoSigueIgual.estado === "sin-confirmar", `el turno existente no se toca solo — sigue como estaba (${turnoSigueIgual.estado})`);
+
+    // Limpieza propia de esta sección (cierres_agenda no usa id uuid, no entra en creados.filas).
+    await q("delete from cierres_agenda where fecha = any($1::date[])", [[FECHA_SIN_TURNOS, FECHA_CON_TURNOS]]);
+  }
+  {
+    const g = await api(sa, "GET", "/api/configuracion");
+    ok(g.status === 200 && Array.isArray(g.datos.agenda?.cierres), `GET /api/configuracion trae agenda.cierres (${g.status}, ${g.datos.agenda?.cierres?.length})`);
+  }
+  {
+    const dom = (await q("select activo from horarios where dia_semana = 0"))[0];
+    ok(dom?.activo === false, `domingo tiene su propia fila, explícitamente cerrado — no por ausencia (activo: ${dom?.activo})`);
   }
 
   seccion("Decisiones #7 y #9 (0030) — franjas de turnos y reserva de urgencia");
@@ -1632,10 +1754,55 @@ try {
       quitado.status === 200 && quitado.datos.perfil?.estado === "rechazado",
       `un admin le saca el acceso a alguien del equipo, reusando 'rechazado' (${quitado.status}, estado ${quitado.datos.perfil?.estado})`
     );
+    // 401, no 403: con la sesión ya cortada (revocar_sesiones, más abajo), getUser() ni
+    // siquiera encuentra un usuario — no llega a la parte que compara el estado. Antes de este
+    // cambio daba 403 (la sesión seguía siendo válida, solo que RLS cortaba los datos); ahora es
+    // más estricto todavía, no menos.
     const yaSinAcceso = await api(sq, "GET", "/api/bandeja");
-    ok(yaSinAcceso.status === 403, `esa persona ya no entra a nada (${yaSinAcceso.status})`);
+    ok(yaSinAcceso.status === 401, `esa persona ya no entra a nada, ni siquiera con la sesión que tenía abierta (${yaSinAcceso.status})`);
+    // Hallazgo de la auditoría, confirmado por Mateo 22/9: no alcanza con que RLS corte el
+    // acceso a datos — la sesión ya emitida (Q se logueó de verdad al principio del arnés,
+    // sq viene de iniciarSesion) tiene que quedar cortada también.
+    const sesionesDeQ = (await q("select count(*)::int n from auth.sessions where user_id = $1", [Q.id]))[0].n;
+    ok(sesionesDeQ === 0, `quitar el acceso también corta la sesión que ya tenía abierta (${sesionesDeQ})`);
     const noExiste = await api(sa, "DELETE", "/api/accesos/usuarios/11111111-1111-1111-1111-111111111111");
     ok(noExiste.status === 404, `un id que no existe → 404 (${noExiste.status})`);
+  }
+
+  seccion("Resetear la clave de alguien, sin depender de mail (0062, pedido de Mateo 22/9)");
+  {
+    const R = await crearUsuario("resetear");
+    await q("update perfiles set rol = 'equipo', estado = 'aprobado' where id = $1", [R.id]);
+    const sr = await iniciarSesion(R.email, R.password);
+    const yaTieneSesion = (await q("select count(*)::int n from auth.sessions where user_id = $1", [R.id]))[0].n;
+    ok(yaTieneSesion > 0, `fixture: R tiene una sesión real antes de resetear (${yaTieneSesion})`);
+
+    const sinAdmin = await api(sn, "POST", `/api/accesos/usuarios/${R.id}/resetear-clave`);
+    ok(sinAdmin.status === 403, `un 'equipo' no resetea la clave de nadie (${sinAdmin.status})`);
+
+    const noExiste = await api(sa, "POST", "/api/accesos/usuarios/11111111-1111-1111-1111-111111111111/resetear-clave");
+    ok(noExiste.status === 404, `un id que no existe → 404 (${noExiste.status})`);
+
+    const reset = await api(sa, "POST", `/api/accesos/usuarios/${R.id}/resetear-clave`);
+    ok(
+      reset.status === 200 && reset.datos.perfil?.rol === "equipo" && reset.datos.perfil?.estado === "aprobado" && reset.datos.perfil?.debe_cambiar_clave === true,
+      `admin resetea: rol y estado intactos, debe cambiar la clave (${reset.status}, ${JSON.stringify(reset.datos.perfil)})`
+    );
+    ok(
+      typeof reset.datos.clave_temporal === "string" && reset.datos.clave_temporal.length >= 20 && typeof reset.datos.aviso === "string",
+      `viene una contraseña temporal con entropía real, una sola vez (largo ${reset.datos.clave_temporal?.length})`
+    );
+
+    const sesionesTrasReset = (await q("select count(*)::int n from auth.sessions where user_id = $1", [R.id]))[0].n;
+    ok(sesionesTrasReset === 0, `resetear la clave también corta la sesión que ya tenía abierta (${sesionesTrasReset})`);
+    ok(!(await puedeEntrarCon(R.email, R.password)), "la clave vieja ya no sirve para entrar");
+
+    const sConLaNueva = await iniciarSesion(R.email, reset.datos.clave_temporal);
+    const bloqueadaHastaCambiar = await api(sConLaNueva, "GET", "/api/bandeja");
+    ok(
+      bloqueadaHastaCambiar.status === 403 && bloqueadaHastaCambiar.datos.codigo === "debe_cambiar_clave",
+      `con la clave nueva entra, pero tiene que cambiarla antes de usar el panel (${bloqueadaHastaCambiar.status}, codigo ${bloqueadaHastaCambiar.datos.codigo})`
+    );
   }
 
   seccion("Invitar por mail (decisión de Mateo, 17/9)");
@@ -1969,6 +2136,7 @@ try {
   await frenarPanel(panel);
   seccion("Limpieza");
   try {
+    await asegurarConexion();
     await limpiar();
     await verificarLimpieza();
   } catch (e) {

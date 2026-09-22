@@ -15,8 +15,13 @@
 --  · fotos: la web las sirve en .webp y WhatsApp no manda webp como imagen (solo JPEG y PNG).
 --    El mismo CDN las devuelve en .jpg cambiando la extensión, y así quedan guardadas acá:
 --    verificadas una por una, 200 image/jpeg, ~140 KB cada una.
---  · talles: las seis fichas dicen "42-66", pero docs/ficha-del-negocio.md dice del XS al 68 de
---    saco. Uno de los dos está mal, así que quedan VACÍOS en vez de inventados.
+--  · talles: las seis fichas dicen "42-66" (número de saco) y docs/ficha-del-negocio.md decía
+--    "XS al 68". Mateo lo aclaró el 21/9 (vía logica): el piso es XS confirmado, no hay talles
+--    de nene (los "desde el 4" que decía la ficha vieja están mal, se sacan) y el techo 4XL es
+--    SUPUESTO — lo dijo en una tanda anterior pero no lo reconfirmó en esta. Nada de números de
+--    saco (el 68): esa escala nunca se confirmó y un talle inexistente manda gente al local al
+--    pedo. La escala completa (XS–4XL) se carga abajo con un UPDATE aparte, solo donde el talle
+--    siga vacío (no pisa nada que la dueña ya haya cargado a mano).
 --  · colores: van sin hex (la dueña elige el color real). El Smoking figura en la web como
 --    "Pizarra" y la foto es negra: hay que confirmarlo con el local.
 --  · descripción: la de la web es el mismo texto de marketing en todos los productos
@@ -59,3 +64,9 @@ on conflict (id) do update
   where catalogo_alquiler.modelo is distinct from excluded.modelo
      or catalogo_alquiler.fotos is distinct from excluded.fotos
      or catalogo_alquiler.colores is distinct from excluded.colores;
+
+-- XS confirmado, 4XL supuesto (ver comentario de arriba). Solo donde talles sigue vacío: si la
+-- dueña ya cargó algo desde el panel, esto no lo toca.
+update catalogo_alquiler
+   set talles = array['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL']
+ where talles = '{}';

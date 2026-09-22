@@ -40,6 +40,7 @@ const pedido = (desde: string, hasta: string, extra: Partial<PedidoHuecos> = {})
   ahora: DOS_SEMANAS_ANTES,
   fechaEvento: EVENTO_LEJANO,
   tz: TZ,
+  cerrados: new Set<string>(),
   ...extra,
 });
 const horas = (r: ResultadoAgenda) => r.huecos.map((h) => horaLocal(new Date(h.inicio), TZ));
@@ -206,4 +207,31 @@ Deno.test("grep: huecos.ts no tiene horas, duraciones, probadores ni días escri
   assertEquals(codigo.match(/\b\d{1,2}:\d{2}\b/g), null);
   const numeros = [...new Set(codigo.match(/\b\d+\b/g) ?? [])].sort();
   assert(numeros.every((n) => ["0", "1", "2"].includes(n)), `números en el código: ${numeros.join(", ")}`);
+});
+
+// Cierres puntuales (pedido de Mateo, 21/9): feriados y dias sueltos en que el local no abre.
+// La tabla la maneja paneles; aca solo llega el conjunto de fechas.
+Deno.test("un dia cerrado no ofrece ningun turno, aunque su dia de la semana tenga franja", () => {
+  const abierto = calcularHuecos(REGLAS, [], pedido(LUNES, LUNES));
+  assert(abierto.huecos.length > 0, "el lunes tiene que tener turnos si no esta cerrado");
+  const cerrado = calcularHuecos(REGLAS, [], pedido(LUNES, LUNES, { cerrados: new Set([LUNES]) }));
+  assertEquals(cerrado.huecos, []);
+});
+
+Deno.test("cerrar un dia no toca los otros: el resto de la semana sigue igual", () => {
+  const todaLaSemana = calcularHuecos(REGLAS, [], pedido(LUNES, SABADO));
+  const sinElLunes = calcularHuecos(REGLAS, [], pedido(LUNES, SABADO, { cerrados: new Set([LUNES]) }));
+  const diasDe = (r: ResultadoAgenda) => [...new Set(r.huecos.map((h) => h.inicio.slice(0, 10)))];
+  const antes = diasDe(todaLaSemana);
+  const despues = diasDe(sinElLunes);
+  assert(antes.length > despues.length, "tiene que faltar al menos un dia");
+  assertEquals(despues, antes.filter((d) => d !== LUNES));
+  // Y los horarios de los demas dias no se corren ni cambian.
+  const martes = (r: ResultadoAgenda) => r.huecos.filter((h) => !h.inicio.startsWith(LUNES)).map((h) => h.inicio);
+  assertEquals(martes(sinElLunes), martes(todaLaSemana));
+});
+
+Deno.test("una fecha cerrada que no esta en el rango no molesta (caso parecido)", () => {
+  const conRuido = calcularHuecos(REGLAS, [], pedido(LUNES, LUNES, { cerrados: new Set(["2031-01-01", "2030-12-25"]) }));
+  assertEquals(horas(conRuido), horas(calcularHuecos(REGLAS, [], pedido(LUNES, LUNES))));
 });

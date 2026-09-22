@@ -56,8 +56,8 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
    'respuestas de Sofía 17/9'),
 
   ('a9f10000-0000-4000-8000-000000000501', 'talles', 'Talles',
-   'Tenemos trajes de alquiler desde el XS hasta el 68 (el número de saco), y para los más chicos, nenes incluidos, desde el talle 4. El talle justo se ve en el local, probándolo, y la sastrería lo ajusta. Si necesitás uno más grande que el 68, se puede confeccionar con tiempo, pero ya es un traje de venta: eso te lo confirma el equipo.',
-   'seed H1.6'),
+   'Tenemos trajes de alquiler desde el XS hasta el 4XL. No hay talles para niños: es ropa de hombre adulto. El talle justo se ve en el local, probándolo, y la sastrería lo ajusta. Si tu talle no entra en ese rango, dejá que el equipo del local te confirme cómo seguir.',
+   'Mateo, 21/9: el piso confirmado es XS y no existen los talles de nene (antes decía "desde el talle 4", mal). El techo 4XL es interpretación de logica sobre un "XS a 4XL" que dijo Mateo en otra respuesta, marcado como supuesto, no confirmación de esta vuelta — no repetir el número de saco (68) que tenía antes: nadie lo confirmó y un número inventado manda a alguien al local al pedo. Reemplaza el seed de H1.6'),
 
   ('a9f10000-0000-4000-8000-000000000601', 'a-medida', 'Hecho a tu medida',
    'En Mr Otto el alquiler es a medida: en el turno te prueban el traje, te toman las medidas y la sastrería hace los arreglos que hagan falta (achicar, alargar, las mangas, el ruedo del pantalón) para que te quede perfecto el día del evento. Si hace falta, se confecciona. Las medidas se toman siempre en el local, y la sastrería y la tintorería ya están incluidas.',

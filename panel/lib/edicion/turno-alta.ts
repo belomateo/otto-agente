@@ -164,7 +164,7 @@ async function validarHueco(
   fechaEvento: string | null,
   pisarUrgencia: boolean
 ): Promise<{ huecos: Hueco[] } | Response> {
-  const [config, franjasFilas, ocupadosFilas] = await Promise.all([
+  const [config, franjasFilas, ocupadosFilas, cierreFila] = await Promise.all([
     sesion.supabase.from('configuracion_agenda').select('escalonado_min, dias_reserva_urgencia').maybeSingle(),
     sesion.supabase.from('franjas_turnos').select('dia_semana, desde, hasta, probadores'),
     sesion.supabase
@@ -173,8 +173,15 @@ async function validarHueco(
       .not('estado', 'in', '(cancelado,no-vino)')
       .gte('inicio', `${fecha}T00:00:00${OFFSET_NEGOCIO}`)
       .lt('inicio', `${fecha}T23:59:59.999${OFFSET_NEGOCIO}`),
+    // Solo esta fecha exacta, contra el string que ya se tiene (no contra lo que devuelva la
+    // consulta): así no hay conversión de la columna date a Date de por medio que pueda correr
+    // el día por huso (el bug que avisó logica, una vez al año, el día del feriado). Alcanza
+    // con esto porque acá desde y hasta son siempre el mismo día (ver más abajo); si esta
+    // función pasara a validar un rango de días, esto tendría que volverse una consulta por
+    // rango como leerCierres() de _shared/agenda/huecos.ts.
+    sesion.supabase.from('cierres_agenda').select('fecha').eq('fecha', fecha).maybeSingle(),
   ]);
-  for (const r of [config, franjasFilas, ocupadosFilas]) if (r.error) return desdeErrorDeBase(r.error);
+  for (const r of [config, franjasFilas, ocupadosFilas, cierreFila]) if (r.error) return desdeErrorDeBase(r.error);
   if (!config.data) return error(503, 'configuracion_agenda está vacía: la agenda no puede calcular huecos');
 
   const reglas: ReglasAgenda = {
@@ -195,7 +202,8 @@ async function validarHueco(
     fin: new Date(t.fin),
   }));
 
-  const r = calcularHuecos(reglas, ocupados, { desde: fecha, hasta: fecha, ahora: new Date(), fechaEvento, tz: ZONA_NEGOCIO });
+  const cerrados = new Set<string>(cierreFila.data ? [fecha] : []);
+  const r = calcularHuecos(reglas, ocupados, { desde: fecha, hasta: fecha, ahora: new Date(), fechaEvento, tz: ZONA_NEGOCIO, cerrados });
   if (r.derivar === 'evento_inminente') {
     return error(409, 'El evento es hoy o mañana: la agenda no ofrece turnos, se resuelve a mano', { motivo: 'evento_inminente' });
   }
