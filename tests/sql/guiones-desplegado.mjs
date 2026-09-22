@@ -107,7 +107,11 @@ async function correrUno(nombre) {
         if (g.necesitaCatalogo) idsCatalogo = await sembrarCatalogo(db);
 
         let convId = null;
-        let derivo = false;
+        // Corregido, auditoría 22/9: acá cortaba apenas la charla quedaba derivada, asumiendo
+        // que quedaba muda para siempre — la regla de ANTES del 21/9 (ver el mismo cambio en
+        // scripts/probar-turno.js). esperarRespuesta ya espera a que cola_trabajos quede vacía
+        // sin importar el estado, así que seguir mandando el resto del guion funciona igual con
+        // la charla ya derivada.
         for (const mensaje of g.mensajes) {
           const conv = await conversacionDe(db, telefono);
           const antes = conv ? (await salientes(db, conv.id)).length : 0;
@@ -115,8 +119,6 @@ async function correrUno(nombre) {
           const r = await esperarRespuesta(db, telefono, antes);
           resultado.respuestas.push(r.mensajes);
           convId = r.convId;
-          derivo = r.derivo;
-          if (derivo) break; // si ya derivó, no tiene sentido seguir mandando mensajes del guion
         }
 
         const resultadoFinal = { motivo_derivacion: convId ? await motivoDeLaDerivacion(db, convId) : null };

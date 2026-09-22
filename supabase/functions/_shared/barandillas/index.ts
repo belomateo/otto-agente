@@ -78,7 +78,17 @@ export async function aplicarBarandillas(
   // Antes eso caía derecho a "enviar" con texto "": prepararParaEnviar lo descarta por vacío y
   // el cliente se queda sin nada, sin que ni siquiera quede una derivación — mudo del todo, sin
   // que nadie se entere. Un corte que deja el mensaje vacío cuenta como si hubiera que rehacerlo.
-  const quedoVacio = texto.trim() === "" && saltos.length > 0;
+  //
+  // Excepción, auditoría de logica del 22/9: cuando lo ÚNICO que saltó fue confirmacion_doble, un
+  // texto vacío no es un bug — es lo correcto. agendar_turno/reprogramar_turno/confirmar_turno ya
+  // mandan su propia confirmación aparte (efectosMensajes en turno.ts), con todos los datos; no
+  // hay nada más que agregar cuando el cliente solo pidió confirmar. Forzar el rehacer acá
+  // garantizaba caer siempre en lo mismo (mismo patrón que el bug de precio_sin_herramienta con
+  // el nombre del cliente, 20/9): el modelo vuelve a escribir SOLO la confirmación —es la
+  // respuesta correcta y completa a "confirmame"—, se corta de nuevo, y deriva con
+  // barandilla_doble en TODO turno donde alguien confirma un turno por texto.
+  const cortoSoloConfirmacionDoble = saltos.length > 0 && saltos.every((s) => s.barandilla === "confirmacion_doble");
+  const quedoVacio = texto.trim() === "" && saltos.length > 0 && !cortoSoloConfirmacionDoble;
 
   if (hay("bloquear")) return { texto, decision: "bloquear", saltos };
   if (hay("ejecutar_derivacion")) return { texto, decision: "derivar", saltos, ejecutarDerivacion: true };

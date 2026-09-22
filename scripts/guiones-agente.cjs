@@ -1,6 +1,7 @@
-// Los 19 guiones de AGENTE.md § 13 (los 14 originales; evento-manana-deriva —decisión #8 del
+// Los 20 guiones de AGENTE.md § 13 (los 14 originales; evento-manana-deriva —decisión #8 del
 // 14/9—; cliente-enojado-deriva y mail-no-bloquea-la-reserva —pedido/hallazgo del 16/9—;
-// catalogo-modelo-puntual y dos-turnos-permitidos —pedidos de Mateo, 16/9—): un solo lugar con
+// catalogo-modelo-puntual y dos-turnos-permitidos —pedidos de Mateo, 16/9—;
+// derivada-reclamo-sigue-agresion-calla —auditoría del 22/9—): un solo lugar con
 // las conversaciones y los chequeos contra la base,
 // para que el emulador (scripts/probar-turno.js) y el worker desplegado
 // (tests/sql/guiones-desplegado.mjs) prueben EXACTAMENTE lo mismo — la misma razón por la que
@@ -154,7 +155,10 @@ function crearGuiones() {
         const usoTool = (await fila(sql, "select 1 from eventos_agente where conversacion_id=$1 and tipo='herramienta' and detalle->>'herramienta'='consultar_catalogo' and (detalle->>'ok')::boolean", [convId])).length > 0;
         return [
           [usoTool, "hay consultar_catalogo en la bitácora de este turno"],
-          [/\$\s?1[69]5\.?000|\$\s?165000|\$\s?195000/.test(todo.replace(/\s/g, "")) || /\$/.test(todo), "el precio que dice viene de la herramienta (aparece un $ en la respuesta)"],
+          // Corregido, auditoría 22/9: el `|| /\$/.test(todo)` de acá anulaba el chequeo entero —
+          // cualquier $ suelto (aunque fuera un monto inventado) hacía pasar la condición. Sin
+          // esa salida, solo pasa si el monto es EXACTAMENTE el que sembró sembrarCatalogo().
+          [/\$\s?1[69]5\.?000|\$\s?165000|\$\s?195000/.test(todo.replace(/\s/g, "")), "el precio que dice es el monto exacto del catálogo sembrado"],
           [/sastrer|tintorer/i.test(todo), "menciona sastrería/tintorería junto con el precio"],
           [/\?/.test(todo), "no se queda solo en el precio: suma una pregunta (regla de oro)"],
         ];
@@ -166,6 +170,10 @@ function crearGuiones() {
       async verificar(sql, telefono, respuestas) {
         const todo = respuestas.flat().join(" ").toLowerCase();
         return [
+          // Corregido, auditoría 22/9: las dos de abajo son negativas y pasan igual con Lucía
+          // completamente muda (una regex no matchea nada en un string vacío). Esta primera
+          // asegura que en verdad contestó algo.
+          [respuestas.flat().length > 0, "contestó algo, no se quedó muda"],
           [!/no (se puede|hay lugar|podemos)/.test(todo), "no dice que no se puede por lo urgente"],
           [!/no tenemos lugar|sin lugar/.test(todo), "no dice que no hay lugar sin antes buscar"],
         ];
@@ -214,10 +222,20 @@ function crearGuiones() {
         // culpa; lo que no puede pasar es que vuelva a preguntar algo en el mismo mensaje, porque
         // eso sí es la insistencia que la regla prohíbe.
         const ultima = (respuestas[respuestas.length - 1] || []).join(" ").toLowerCase();
-        return [[!/\?/.test(ultima), "no insiste con otra pregunta después de que el cliente frenó"]];
+        return [
+          // Corregido, auditoría 22/9: la única aserción de acá era negativa (sin "?") y pasaba
+          // igual con Lucía muda — un string vacío tampoco tiene "?".
+          [ultima.trim().length > 0, "contestó algo al frenar, no se quedó muda"],
+          [!/\?/.test(ultima), "no insiste con otra pregunta después de que el cliente frenó"],
+        ];
       },
     },
 
+    // Corregido, auditoría 22/9: la última aserción decía que reclamo "va sin despedida armada"
+    // y pedía CERO mensajes — esa era la regla de ANTES del 19/9. Desde el 19/9 (pedido de
+    // Mateo: ninguna derivación queda muda) manda el texto fijo texto_derivacion_reclamo; un
+    // guión que pide silencio total pasa igual si el sistema queda mudo de verdad, que es
+    // exactamente la falla que se está por auditar.
     "reclamo-deriva": {
       mensajes: ["hola, tengo un reclamo, el traje que alquile la semana pasada vino manchado"],
       async verificar(sql, telefono, respuestas) {
@@ -228,13 +246,14 @@ function crearGuiones() {
           [!!der, "hay una fila en derivaciones"],
           [der?.motivo === "reclamo" || der?.motivo === "prenda_danada", `motivo es reclamo o prenda_danada (fue: ${der?.motivo})`],
           [conv?.estado === "derivada", "la conversación quedó derivada"],
-          [respuestas.flat().length === 0, "no le mandó ningún mensaje propio (reclamo va sin despedida armada)"],
+          [respuestas.flat().length > 0, "no queda muda: manda el texto fijo de reclamo (pedido de Mateo, 19/9)"],
         ];
       },
     },
 
     // Pedido de Mateo, 16/9: un cliente agresivo tiene que derivar aunque no diga "reclamo" ni
     // nombre nada roto — lo detecta el clasificador por el TONO, no por una palabra clave.
+    // Corregido, auditoría 22/9: mismo error que reclamo-deriva, ver el comentario de arriba.
     "cliente-enojado-deriva": {
       mensajes: ["ESTO ES UNA VERGUENZA, son todos unos inutiles, quiero que me devuelvan la plata YA o hago un escandalo en las redes"],
       async verificar(sql, telefono, respuestas) {
@@ -245,7 +264,32 @@ function crearGuiones() {
           [!!der, "hay una fila en derivaciones"],
           [der?.motivo === "cliente_enojado", `motivo es cliente_enojado (fue: ${der?.motivo})`],
           [conv?.estado === "derivada", "la conversación quedó derivada"],
-          [respuestas.flat().length === 0, "no le mandó ningún mensaje propio (cliente_enojado va sin despedida armada)"],
+          [respuestas.flat().length > 0, "no queda muda: manda el texto fijo de reclamo (pedido de Mateo, 19/9)"],
+        ];
+      },
+    },
+
+    // Nuevo, auditoría 22/9 (logica): probar-agente cortaba en seco toda charla derivada, así
+    // que NINGÚN guión podía ejercitar el arreglo del 21/9 ("una charla derivada ya no es
+    // muda") — eso es parte de por qué la falla del emulador pasó un día entero sin que nadie
+    // la notara. Con el corte arreglado (solo 'cerrada' corta, 'derivada' pasa con yaDerivada),
+    // este guión ejercita las dos ramas: un reclamo tranquilo la deriva y AHÍ SIGUE
+    // contestando (no calla ya derivada); una agresión, en cambio, la calla.
+    "derivada-reclamo-sigue-agresion-calla": {
+      mensajes: [
+        "hola, tengo un reclamo, el traje que alquile vino manchado",
+        "¿tienen otro modelo para cuando me traigan uno nuevo?",
+        "ESTO ES UNA VERGUENZA, quiero que me devuelvan la plata YA",
+      ],
+      async verificar(sql, telefono, respuestas) {
+        const convId = await conversacionDe(sql, telefono);
+        const conv = (await fila(sql, "select estado from conversaciones where id=$1", [convId]))[0];
+        const derivaciones = await fila(sql, "select motivo from derivaciones where conversacion_id=$1", [convId]);
+        return [
+          [conv?.estado === "derivada", "la conversación quedó derivada (por el reclamo del primer mensaje)"],
+          [(respuestas[1] || []).length > 0, "sigue contestando la pregunta calma, ya derivada (no se calla por un reclamo tranquilo)"],
+          [(respuestas[2] || []).length === 0, "se calla ante la agresión, estando ya derivada"],
+          [derivaciones.length === 1, `no crea una segunda fila en derivaciones por la agresión: ya hay una persona con la charla (hay ${derivaciones.length})`],
         ];
       },
     },
@@ -336,7 +380,12 @@ function crearGuiones() {
         const turnos = await fila(sql, "select estado from turnos where cliente_id=$1", [cli?.id]);
         return [
           [turnos.length === 1, `quedó un turno agendado a pesar de no haber dado el mail (hay ${turnos.length})`],
-          [turnos[0]?.estado === "sin-confirmar", `el turno quedó sin-confirmar, como cualquier reserva nueva (fue: ${turnos[0]?.estado})`],
+          // Corregido, auditoría 22/9: esto pedía "sin-confirmar" — cierto cuando se escribió (el
+          // botón «Confirmo» era la única forma de confirmar), pero desde la decisión de Mateo del
+          // 16/9 (supuesto #30) confirmar_turno se dispara por INTENCIÓN, así que "confirmame ese
+          // horario" en el tercer mensaje de este mismo guion tiene que confirmarlo de verdad. El
+          // guion no había cambiado desde antes de esa decisión.
+          [turnos[0]?.estado === "confirmado", `el turno quedó confirmado: el tercer mensaje lo pide explícito (fue: ${turnos[0]?.estado})`],
         ];
       },
     },

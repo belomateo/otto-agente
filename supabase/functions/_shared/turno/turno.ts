@@ -98,7 +98,7 @@ export type ResultadoTurno = {
 // hay uno propio que valga.
 async function derivar(
   db: Db,
-  p: { conversacionId: string; motivo: MotivoDerivacion; mensaje: string | null; derivacionTel: string | null },
+  p: { conversacionId: string; motivo: MotivoDerivacion; mensaje: string | null; derivacionTel: string | null; extra?: string[] },
 ): Promise<ResultadoTurno> {
   const { id } = await registrarDerivacion({ db, conversacionId: p.conversacionId, derivacionTel: p.derivacionTel }, p.motivo);
   let mensajesAlCliente: string[];
@@ -117,7 +117,12 @@ async function derivar(
       // derivación la decidió el código, no una herramienta con `datos` propio).
       const { texto, usoRespaldo } = await textoDeDerivacion(db, clave);
       if (usoRespaldo) console.error(`derivar(${p.motivo}): la fila de contexto_agente (${clave}) está vacía, se usó el respaldo de código`);
-      mensajesAlCliente = prepararParaEnviar([texto]);
+      // `extra` (auditoría, 22/9): si agendar_turno/reprogramar_turno/confirmar_turno YA armó su
+      // propia confirmación en este turno (efectosMensajes) y el turno igual termina derivando
+      // por barandilla_doble, esa confirmación real no se pierde — va primero, y el aviso fijo
+      // después. Sin esto, un turno que SÍ se confirmó le decía al cliente "se complicó de este
+      // lado" sin darle nunca los datos de lo que en realidad ya le había salido bien.
+      mensajesAlCliente = prepararParaEnviar([...(p.extra ?? []), texto]);
     } else {
       mensajesAlCliente = prepararParaEnviar([p.mensaje]);
     }
@@ -437,7 +442,10 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     }
     if (b.decision === "derivar") {
       const motivo: MotivoDerivacion = b.ejecutarDerivacion ? "pide_persona" : "barandilla_doble";
-      resultado = await derivar(db, { conversacionId: p.conversacionId, motivo, mensaje: b.ejecutarDerivacion ? b.texto : null, derivacionTel: p.derivacionTel });
+      // extra: efectosMensajes (auditoría, 22/9) — si agendar_turno/confirmar_turno ya armó su
+      // propia confirmación en este turno y de todas formas se llega a barandilla_doble, esa
+      // confirmación real no se pierde (derivar() la antepone al texto fijo de fallo).
+      resultado = await derivar(db, { conversacionId: p.conversacionId, motivo, mensaje: b.ejecutarDerivacion ? b.texto : null, derivacionTel: p.derivacionTel, extra: efectosMensajes });
       eventos.push({ tipo: "derivacion", detalle: { motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "barandilla" } });
       return resultado;
     }
