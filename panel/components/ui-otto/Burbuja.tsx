@@ -6,7 +6,7 @@
 // y otro la vuelve a plegar. Si el turno tuvo una barandilla, un error o una
 // derivación, el mini resumen de una línea se ve al costado sin abrir nada.
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Bitacora, type PasoBitacora } from './Bitacora';
 
 export type ResumenTurno = {
@@ -51,7 +51,7 @@ function MiniResumen({ resumen, className = '' }: { resumen: ResumenTurno; class
   );
 }
 
-export function BurbujaCliente({ texto, hora }: { texto: string; hora: string }) {
+export function BurbujaCliente({ texto, hora }: { texto: ReactNode; hora: string }) {
   return (
     <div className="max-w-[440px] self-start">
       <div className="rounded-[10px_10px_10px_3px] border border-borde bg-lino px-3.5 py-2.5 text-[15px] leading-[1.45]">
@@ -69,7 +69,7 @@ export function BurbujaLucia({
   resumen,
   bitacora,
 }: {
-  texto: string;
+  texto: ReactNode;
   hora: string;
   /** true cuando el mensaje necesitó una herramienta/decisión especial (la «i» se ve en Cobre) */
   destacada?: boolean;
@@ -128,7 +128,7 @@ export function BurbujaMostrador({
   autor,
   inicial,
 }: {
-  texto: string;
+  texto: ReactNode;
   hora: string;
   autor: string;
   inicial: string;

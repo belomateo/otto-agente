@@ -22,7 +22,7 @@
 // al confirmar, así que nunca hay drift entre lo que se mostró y lo que quedó guardado.
 
 import { useEffect, useState } from 'react';
-import { enviar, ErrorApi } from '@/components/api/cliente';
+import { enviar, ErrorApi, obtener } from '@/components/api/cliente';
 import { ETIQUETA_TIPO_TURNO } from '@/lib/etiquetas';
 import type { FilaCliente } from '@/lib/queries/clientes';
 
@@ -89,20 +89,25 @@ function BuscadorCliente({
   const [busqueda, setBusqueda] = useState('');
   const [resultados, setResultados] = useState<FilaCliente[] | null>(null);
   const [buscando, setBuscando] = useState(false);
+  const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
 
   useEffect(() => {
     if (modo !== 'buscar' || clienteElegido || !busqueda.trim()) {
       setResultados(null);
+      setErrorBusqueda(null);
       return;
     }
     setBuscando(true);
+    setErrorBusqueda(null);
     const id = setTimeout(async () => {
       try {
-        const r = await fetch(`/api/clientes?q=${encodeURIComponent(busqueda.trim())}`);
-        const j = await r.json();
+        // obtener() (no fetch crudo) para no confundir un 403 de permisos con "no existe" —
+        // r.json() sin mirar r.ok mostraba "Nadie con ese nombre o teléfono" para los dos casos.
+        const j = await obtener<{ clientes: FilaCliente[] }>(`/api/clientes?q=${encodeURIComponent(busqueda.trim())}`);
         setResultados(j.clientes ?? []);
-      } catch {
+      } catch (e) {
         setResultados([]);
+        setErrorBusqueda(e instanceof ErrorApi ? e.message : 'No se pudo buscar');
       } finally {
         setBuscando(false);
       }
@@ -145,6 +150,8 @@ function BuscadorCliente({
             <div className="mt-1.5 flex flex-col gap-1 rounded-otto border border-borde bg-lino p-1.5">
               {buscando ? (
                 <div className="px-2 py-1.5 text-[13px] text-grafito">Buscando…</div>
+              ) : errorBusqueda ? (
+                <div className="px-2 py-1.5 text-[13px] text-ladrillo">{errorBusqueda}</div>
               ) : resultados && resultados.length > 0 ? (
                 resultados.slice(0, 5).map((c) => (
                   <button
