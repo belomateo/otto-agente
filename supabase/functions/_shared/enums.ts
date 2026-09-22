@@ -92,7 +92,10 @@ export type TipoLink = typeof TIPOS_LINK[number];
 // AGENTE.md § 7 · clientes_evento_check, clientes_rol_check, clientes_dia_o_noche_check (0023).
 export const EVENTOS = ["casamiento", "graduacion", "fiesta", "laboral", "otro"] as const;
 export type Evento = typeof EVENTOS[number];
-export const ROLES_CLIENTE = ["novio", "invitado", "graduado", "padre", "otro"] as const;
+// Rol de quien USA el traje (no de quien escribe — Mateo, 21/9: Otto viste hombres, sin roles
+// femeninos a propósito; si escribe una mujer, el rol es el del hombre para el que consulta).
+// "padrino" sumado en la migración 0060 (logica, 21/9); "madre" deliberadamente no existe.
+export const ROLES_CLIENTE = ["novio", "invitado", "graduado", "padre", "padrino", "otro"] as const;
 export const DIA_O_NOCHE = ["dia", "noche"] as const;
 
 // Estados de turno (turnos_estado_check, paneles 0011). Los que liberan el hueco no cuentan
