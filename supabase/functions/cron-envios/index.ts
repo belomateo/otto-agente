@@ -36,11 +36,35 @@ const dbEnlaces: Db = {
   },
 };
 
+// Registrar que la plantilla salió, insistiendo un poco. El envío ya ocurrió y no se puede
+// deshacer, así que lo único que queda es dejar constancia: mientras no la haya, el rescate de
+// los 15 minutos puede repetir el mensaje. Tres intentos con una pausa corta cubren el caso
+// normal (un parpadeo de la base). Si la base está caída más que eso, el sistema entero está
+// caído y esto es el menor de los problemas — pero al menos se informa, que es lo que faltaba.
+const INTENTOS_REGISTRO = 3;
+const PAUSA_REGISTRO_MS = 400;
+
+async function registrarConReintento(id: string, wamid: string, texto: string): Promise<boolean> {
+  for (let intento = 1; intento <= INTENTOS_REGISTRO; intento++) {
+    const { error } = await supabase.rpc("envio_terminar", {
+      p_id: id,
+      p_ok: true,
+      p_wa_message_id: wamid,
+      p_texto: texto,
+      p_error: null,
+    });
+    if (!error) return true;
+    console.error(`envio_terminar falló (intento ${intento}/${INTENTOS_REGISTRO})`, id, error.message);
+    if (intento < INTENTOS_REGISTRO) await new Promise((r) => setTimeout(r, PAUSA_REGISTRO_MS * intento));
+  }
+  return false;
+}
+
 async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
   const { data, error } = await supabase.rpc("envios_pendientes", { p_tipo: tipo, p_tz: TZ });
   if (error) throw new Error(`envios_pendientes(${tipo}): ${error.message}`);
   const candidatos = (data ?? []) as Candidato[];
-  const r = { tipo, candidatos: candidatos.length, enviados: 0, errores: 0, omitidos: [] as string[] };
+  const r = { tipo, candidatos: candidatos.length, enviados: 0, errores: 0, omitidos: [] as string[], sin_registrar: [] as string[] };
 
   for (const c of candidatos) {
     const plantilla = armarPlantilla(tipo, {
@@ -64,9 +88,22 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
 
     try {
       const wamid = await enviarPlantilla(WA, c.telefono, plantilla);
-      const { error: e } = await supabase.rpc("envio_terminar", { p_id: id, p_ok: true, p_wa_message_id: wamid, p_texto: plantilla.texto, p_error: null });
-      if (e) console.error("se envió pero no se pudo registrar", id, e);
-      r.enviados++;
+      // La plantilla YA salió: el cliente la tiene en el celular. Si acá no se puede registrar,
+      // la fila queda en 'reservado' y el rescate de envio_reservar (0021: estado 'reservado' y
+      // actualizado_at de hace más de 15 minutos) la vuelve a mandar — el mismo recordatorio dos
+      // veces al mismo cliente, y encima cuesta plata porque es una plantilla de Meta.
+      // Antes esto era un console.error suelto y se contaba como enviado: nadie se enteraba.
+      // Hallazgo de la auditoría del 22/9.
+      const registrado = await registrarConReintento(id, wamid, plantilla.texto);
+      if (registrado) {
+        r.enviados++;
+      } else {
+        // Salió de verdad, así que NO es un error de envío — pero tampoco es un éxito limpio:
+        // queda expuesto a que el rescate lo repita. Se cuenta aparte y se nombra, para que la
+        // corrida no informe "todo bien" cuando hay algo que puede duplicarse.
+        r.sin_registrar.push(c.referencia);
+        console.error("se envió pero no se pudo registrar tras reintentar", id, c.referencia);
+      }
     } catch (err) {
       await supabase.rpc("envio_terminar", { p_id: id, p_ok: false, p_wa_message_id: null, p_texto: plantilla.texto, p_error: String(err) });
       r.errores++;

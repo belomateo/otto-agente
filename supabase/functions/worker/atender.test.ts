@@ -297,14 +297,29 @@ prueba("número fuera de LUCIA_TELEFONOS: ni turno ni Meta, y queda anotado", as
 // Acá se afirma la parte del WORKER: que el turno CORRA con la charla derivada, avisándole con
 // yaDerivada. Quién se calla y quién no lo decide el turno (_shared/turno, de agente) y se
 // prueba allá; el worker no tiene que saber nada de eso.
-prueba("charla derivada: el turno corre igual, avisado de que ya la tiene una persona", async (c) => {
+// OJO CON EL ORDEN, que es lo que falló acá (auditoría del 22/9). La primera versión de esta
+// prueba mandaba el mensaje con la charla todavía ACTIVA y recién después la marcaba 'derivada'.
+// Eso probaba la carrera (alguien toma la charla mientras el worker espera quietud), no el caso
+// real — y tapó durante un día que registrar_mensaje_entrante NUNCA encolaba con la charla
+// derivada, así que el arreglo del worker no corría nunca en producción. Se arregló en 0063.
+// Ahora se deriva PRIMERO y el mensaje entra con la charla ya derivada, que es lo que pasa de
+// verdad cuando alguien del local tomó la charla y el cliente sigue escribiendo.
+prueba("charla derivada: el mensaje entra, encola y el turno corre avisado (0063)", async (c) => {
+  // Una charla derivada de entrada: el cliente escribe DESPUÉS de que la tomaron.
   await mensajeDelCliente(c, TEL, "hola");
   await c.sql.query(
     "update conversaciones set estado = 'derivada' where cliente_id = (select id from clientes where telefono = $1)",
     [TEL],
   );
-  const { d, turno } = armar(c);
+  await c.sql.query("delete from cola_trabajos");
+  await mensajeDelCliente(c, TEL, "sigo escribiendo con la charla ya derivada");
 
+  // Lo primero que hay que afirmar es que HAY trabajo: sin esto, todo lo de abajo pasaría
+  // igual con Lucía muda, que es exactamente como se escondió el bug.
+  const enCola = (await c.sql.query("select count(*)::int as n from cola_trabajos")).rows[0].n;
+  assertEquals(enCola, 1, "con la charla derivada el mensaje tiene que encolar (0063)");
+
+  const { d, turno } = armar(c);
   await atenderCola(c.db, d, "worker-prueba");
   assertEquals(turno.llamadas.length, 1);
   assertEquals(turno.llamadas[0].yaDerivada, true);
