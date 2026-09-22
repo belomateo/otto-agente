@@ -7,6 +7,10 @@
 // `franjas_turnos` es aparte: cuándo se dan turnos, con varias franjas por día y su propia
 // cantidad de probadores; se puede borrar una franja (la entidad es `borrable`) y queda en el
 // historial. `duraciones_turno` solo edita los minutos: el tipo lo pone el código de agente.
+// `cierres_agenda` (0061) son fechas puntuales sin turnos aparte del horario semanal — feriados,
+// cierres excepcionales — conectado a /api/configuracion/cierres (paneles, pedido de Mateo
+// 21/9, cerrado por logica el 22/9). Esta página entera ya es solo-admin: GET /api/configuracion
+// exige admin, así que no hace falta gatear la sección de cierres aparte.
 
 import { useState } from 'react';
 import { Cargando } from '@/components/ui-otto/Cargando';
@@ -17,6 +21,7 @@ import { useEdicion } from '@/components/api/useEdicion';
 import { useToastLocal } from '@/components/ui-otto/useToastLocal';
 import { AccionesEdicion, CAMPO, ETIQUETA, TARJETA } from '../AccionesEdicion';
 import { useConfiguracion } from '../ConfiguracionContexto';
+import { fechaLarga } from '@/lib/formato';
 import type { Configuracion } from '@/lib/queries/configuracion';
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -26,6 +31,7 @@ type FilaHorario = Configuracion['agenda']['horarios'][number];
 type FilaFranja = Configuracion['agenda']['franjas'][number];
 type FilaDuracion = Configuracion['agenda']['duraciones'][number];
 type FilaConfig = NonNullable<Configuracion['agenda']['configuracion']>;
+type FilaCierre = Configuracion['agenda']['cierres'][number];
 
 // ---------- Horario del local ----------
 
@@ -358,6 +364,122 @@ function ConfiguracionAgendaForm({ fila, onCambio }: { fila: FilaConfig; onCambi
   );
 }
 
+// ---------- Cierres puntuales (feriados) ----------
+
+// GET/POST /api/configuracion/cierres, DELETE /api/configuracion/cierres/<fecha> (0061, pedido
+// de Mateo 21/9): además del horario semanal de arriba, una fecha puntual (feriado, cierre
+// excepcional) puede quedar sin turnos. Cerrar NO cancela los turnos que ya tenía esa fecha —
+// si hay, el servidor devuelve 409 con cuántos son (turno-alta.ts:14, mismo criterio que
+// pisar_urgencia: una decisión de negocio, nunca implícita) y acá se muestra para que confirmen
+// a sabiendas antes de reenviar con confirmar: true.
+
+function CierreExistente({ fila, onCambio }: { fila: FilaCierre; onCambio: () => void }) {
+  const { toast, mostrar } = useToastLocal();
+  const [borrando, setBorrando] = useState(false);
+
+  async function reabrir() {
+    setBorrando(true);
+    try {
+      await enviar(`/api/configuracion/cierres/${fila.fecha}`, 'DELETE');
+      onCambio();
+    } catch (e) {
+      mostrar(e instanceof ErrorApi ? e.message : 'No se pudo reabrir', true);
+      setBorrando(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2.5 border-t border-borde-suave py-2 first:border-t-0">
+      <div className="min-w-0 flex-1">
+        <div className="text-[14.5px] font-medium">{fechaLarga(fila.fecha)}</div>
+        {fila.motivo && <div className="text-[14px] text-grafito md:text-xs">{fila.motivo}</div>}
+      </div>
+      <button type="button" onClick={reabrir} disabled={borrando} className="flex-none text-[14px] text-ladrillo disabled:opacity-50">
+        {borrando ? 'Reabriendo…' : 'Reabrir'}
+      </button>
+      {toast}
+    </div>
+  );
+}
+
+function NuevoCierre({ onCreado }: { onCreado: () => void }) {
+  const [fecha, setFecha] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [turnosAfectados, setTurnosAfectados] = useState<number | null>(null);
+
+  async function crear(confirmar: boolean) {
+    setEnviando(true);
+    setError(null);
+    try {
+      await enviar('/api/configuracion/cierres', 'POST', { fecha, motivo: motivo.trim() || null, confirmar });
+      setFecha('');
+      setMotivo('');
+      setTurnosAfectados(null);
+      onCreado();
+    } catch (e) {
+      if (e instanceof ErrorApi && e.status === 409) {
+        const detalle = e.detalle as { turnos_afectados?: number } | undefined;
+        setTurnosAfectados(detalle?.turnos_afectados ?? 0);
+      } else {
+        setError(e instanceof ErrorApi ? e.message : 'No se pudo cerrar el día');
+      }
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="mt-1.5 flex flex-col gap-2 border-t border-borde-suave pt-2">
+      <div className="flex flex-wrap items-center gap-2 text-[14.5px]">
+        <input
+          type="date"
+          value={fecha}
+          onChange={(e) => {
+            setFecha(e.target.value);
+            setTurnosAfectados(null);
+          }}
+          className={`${CAMPO} w-auto`}
+        />
+        <input
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder="Motivo (opcional) — feriado, evento…"
+          className={`${CAMPO} min-w-[200px] flex-1`}
+        />
+        <button type="button" onClick={() => crear(false)} disabled={!fecha || enviando} className="rounded-otto bg-cobre px-3.5 py-2 text-[14px] font-medium text-lino disabled:opacity-50">
+          {enviando ? 'Cerrando…' : 'Cerrar este día'}
+        </button>
+      </div>
+      {turnosAfectados !== null && (
+        <div className="flex flex-wrap items-center gap-2 rounded-otto border border-ambar bg-ambar-suave px-3 py-2 text-[14px] text-ambar">
+          <span className="flex-1">
+            Ese día ya tiene {turnosAfectados} turno{turnosAfectados === 1 ? '' : 's'}. Cerrarlo no los cancela, quedan como están.
+          </span>
+          <button type="button" onClick={() => crear(true)} disabled={enviando} className="flex-none rounded-otto border border-ambar bg-lino px-3 py-1.5 text-[14px] font-medium text-ambar disabled:opacity-50">
+            {enviando ? 'Cerrando…' : 'Cerrar igual'}
+          </button>
+        </div>
+      )}
+      {error && <div className="text-[13px] text-ladrillo">{error}</div>}
+    </div>
+  );
+}
+
+function CierresAgenda({ cierres, onCambio }: { cierres: FilaCierre[]; onCambio: () => void }) {
+  return (
+    <div className={TARJETA}>
+      {cierres.length === 0 ? (
+        <div className="text-[14px] text-[#8A8578] md:text-xs">Sin feriados ni cierres cargados.</div>
+      ) : (
+        cierres.map((c) => <CierreExistente key={c.fecha} fila={c} onCambio={onCambio} />)
+      )}
+      <NuevoCierre onCreado={onCambio} />
+    </div>
+  );
+}
+
 // ---------- Página ----------
 
 export default function AgendaPage() {
@@ -367,7 +489,7 @@ export default function AgendaPage() {
   if (error) return <EstadoError mensaje={error} onReintentar={recargar} />;
   if (!datos) return null;
 
-  const { horarios, franjas, duraciones, configuracion } = datos.agenda;
+  const { horarios, franjas, duraciones, configuracion, cierres } = datos.agenda;
   const probadoresLocal = configuracion?.cantidad_probadores ?? 1;
 
   return (
@@ -378,6 +500,11 @@ export default function AgendaPage() {
           const fila = horarios.find((h) => h.dia_semana === dia);
           return fila ? <HorarioEditable key={`${fila.id}-${fila.version}`} fila={fila} onCambio={recargar} /> : <DiaCerrado key={dia} diaSemana={dia} onCambio={recargar} />;
         })}
+      </section>
+
+      <section className="flex flex-col gap-2.5">
+        <h2 className="mt-1 text-[14px] font-semibold uppercase tracking-[.05em] text-grafito md:text-[11px]">Feriados y cierres puntuales</h2>
+        <CierresAgenda cierres={cierres} onCambio={recargar} />
       </section>
 
       <section className="flex flex-col gap-2.5">
