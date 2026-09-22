@@ -71,12 +71,36 @@ const seccion = (t) => console.log(`\n[${t}]`);
 const tiene = (o, claves) => Boolean(o) && claves.every((k) => k in o);
 
 const admin = createClient(SB_URL, SERVICE, { auth: { persistSession: false, autoRefreshToken: false } });
-const db = new pg.Client({ connectionString: DB_URL });
-// Sin esto, un corte de red (pasó de verdad, dos veces seguidas) tira un 'error' no manejado en
-// el Client y mata el proceso ENTERO antes de que el try/catch/finally de más abajo llegue a
-// limpiar() — con clientes reales en la misma base (Lucía en producción, 18/9), eso significa
-// dejar residuo de prueba sin avisar en vez de, como mínimo, intentar la limpieza igual.
-db.on("error", (e) => console.error("  ⚠️  la conexión de control se cortó (seguimos, la consulta en curso va a fallar y el flujo normal la va a manejar):", e.message));
+let db = new pg.Client({ connectionString: DB_URL });
+function vigilarDb() {
+  // Sin esto, un corte de red (pasó de verdad, dos veces seguidas) tira un 'error' no manejado
+  // en el Client y mata el proceso ENTERO antes de que el try/catch/finally de más abajo llegue
+  // a limpiar() — con clientes reales en la misma base (Lucía en producción, 18/9), eso
+  // significa dejar residuo de prueba sin avisar en vez de, como mínimo, intentar la limpieza.
+  db.on("error", (e) => console.error("  ⚠️  la conexión de control se cortó (seguimos, la consulta en curso va a fallar y el flujo normal la va a manejar):", e.message));
+}
+vigilarDb();
+// Hallazgo de front (22/9): un corte a mitad de corrida no solo hacía fallar la consulta en
+// curso — dejaba MUERTA la conexión para el resto del proceso, así que limpiar()/
+// restaurarReales() (que usan esta misma conexión) fallaban también, y una tabla singleton
+// como configuracion_agenda (una sola fila para todo el negocio, sin patrón de nombre que
+// verificarLimpieza() pueda filtrar) quedaba con un valor de prueba (dias_reserva_urgencia en
+// 300) afectando a clientes reales hasta que alguien lo notó a mano. Antes de la limpieza final
+// se asegura una conexión viva, reconectando si hace falta.
+async function asegurarConexion() {
+  try {
+    await db.query("select 1");
+    return;
+  } catch {
+    console.error("  ⚠️  la conexión de control seguía muerta: reconectando para poder limpiar igual...");
+  }
+  try {
+    await db.end();
+  } catch {}
+  db = new pg.Client({ connectionString: DB_URL });
+  vigilarDb();
+  await db.connect();
+}
 const q = async (s, p = []) => (await db.query(s, p)).rows;
 
 // ---------- panel ----------
@@ -397,6 +421,19 @@ async function verificarLimpieza() {
   }
   const { data: objs } = await admin.storage.from("catalogo").list(creados.filas.find((f) => f.tabla === "catalogo_alquiler")?.id ?? "nada");
   ok((objs ?? []).length === 0, "no quedaron fotos de prueba en storage");
+
+  // Hallazgo de front (22/9): esta prueba dejó configuracion_agenda.dias_reserva_urgencia en un
+  // valor de prueba (300) por horas, afectando huecos reales — restaurarReales() (arriba) volvió
+  // a fallar en silencio en una corrida anterior por un corte de conexión, y como es una fila
+  // ÚNICA (sin patrón de nombre que filtrar) nada de lo de arriba lo hubiera visto. Esto no
+  // depende de la foto de esta corrida (que puede estar corrupta si YA venía mal): compara
+  // contra el rango real del negocio (docs/ficha-del-negocio.md, "recomendado entre 60 y 7 días
+  // antes"), así agarra el caso de que el propio snapshot ya esté pisado.
+  const dru = (await q("select dias_reserva_urgencia from configuracion_agenda"))[0]?.dias_reserva_urgencia;
+  ok(
+    dru >= 7 && dru <= 60,
+    `configuracion_agenda.dias_reserva_urgencia sigue en un valor real de negocio, no de prueba (${dru}, esperado entre 7 y 60)`
+  );
 }
 
 const historial = (tabla, id) =>
@@ -1717,10 +1754,55 @@ try {
       quitado.status === 200 && quitado.datos.perfil?.estado === "rechazado",
       `un admin le saca el acceso a alguien del equipo, reusando 'rechazado' (${quitado.status}, estado ${quitado.datos.perfil?.estado})`
     );
+    // 401, no 403: con la sesión ya cortada (revocar_sesiones, más abajo), getUser() ni
+    // siquiera encuentra un usuario — no llega a la parte que compara el estado. Antes de este
+    // cambio daba 403 (la sesión seguía siendo válida, solo que RLS cortaba los datos); ahora es
+    // más estricto todavía, no menos.
     const yaSinAcceso = await api(sq, "GET", "/api/bandeja");
-    ok(yaSinAcceso.status === 403, `esa persona ya no entra a nada (${yaSinAcceso.status})`);
+    ok(yaSinAcceso.status === 401, `esa persona ya no entra a nada, ni siquiera con la sesión que tenía abierta (${yaSinAcceso.status})`);
+    // Hallazgo de la auditoría, confirmado por Mateo 22/9: no alcanza con que RLS corte el
+    // acceso a datos — la sesión ya emitida (Q se logueó de verdad al principio del arnés,
+    // sq viene de iniciarSesion) tiene que quedar cortada también.
+    const sesionesDeQ = (await q("select count(*)::int n from auth.sessions where user_id = $1", [Q.id]))[0].n;
+    ok(sesionesDeQ === 0, `quitar el acceso también corta la sesión que ya tenía abierta (${sesionesDeQ})`);
     const noExiste = await api(sa, "DELETE", "/api/accesos/usuarios/11111111-1111-1111-1111-111111111111");
     ok(noExiste.status === 404, `un id que no existe → 404 (${noExiste.status})`);
+  }
+
+  seccion("Resetear la clave de alguien, sin depender de mail (0062, pedido de Mateo 22/9)");
+  {
+    const R = await crearUsuario("resetear");
+    await q("update perfiles set rol = 'equipo', estado = 'aprobado' where id = $1", [R.id]);
+    const sr = await iniciarSesion(R.email, R.password);
+    const yaTieneSesion = (await q("select count(*)::int n from auth.sessions where user_id = $1", [R.id]))[0].n;
+    ok(yaTieneSesion > 0, `fixture: R tiene una sesión real antes de resetear (${yaTieneSesion})`);
+
+    const sinAdmin = await api(sn, "POST", `/api/accesos/usuarios/${R.id}/resetear-clave`);
+    ok(sinAdmin.status === 403, `un 'equipo' no resetea la clave de nadie (${sinAdmin.status})`);
+
+    const noExiste = await api(sa, "POST", "/api/accesos/usuarios/11111111-1111-1111-1111-111111111111/resetear-clave");
+    ok(noExiste.status === 404, `un id que no existe → 404 (${noExiste.status})`);
+
+    const reset = await api(sa, "POST", `/api/accesos/usuarios/${R.id}/resetear-clave`);
+    ok(
+      reset.status === 200 && reset.datos.perfil?.rol === "equipo" && reset.datos.perfil?.estado === "aprobado" && reset.datos.perfil?.debe_cambiar_clave === true,
+      `admin resetea: rol y estado intactos, debe cambiar la clave (${reset.status}, ${JSON.stringify(reset.datos.perfil)})`
+    );
+    ok(
+      typeof reset.datos.clave_temporal === "string" && reset.datos.clave_temporal.length >= 20 && typeof reset.datos.aviso === "string",
+      `viene una contraseña temporal con entropía real, una sola vez (largo ${reset.datos.clave_temporal?.length})`
+    );
+
+    const sesionesTrasReset = (await q("select count(*)::int n from auth.sessions where user_id = $1", [R.id]))[0].n;
+    ok(sesionesTrasReset === 0, `resetear la clave también corta la sesión que ya tenía abierta (${sesionesTrasReset})`);
+    ok(!(await puedeEntrarCon(R.email, R.password)), "la clave vieja ya no sirve para entrar");
+
+    const sConLaNueva = await iniciarSesion(R.email, reset.datos.clave_temporal);
+    const bloqueadaHastaCambiar = await api(sConLaNueva, "GET", "/api/bandeja");
+    ok(
+      bloqueadaHastaCambiar.status === 403 && bloqueadaHastaCambiar.datos.codigo === "debe_cambiar_clave",
+      `con la clave nueva entra, pero tiene que cambiarla antes de usar el panel (${bloqueadaHastaCambiar.status}, codigo ${bloqueadaHastaCambiar.datos.codigo})`
+    );
   }
 
   seccion("Invitar por mail (decisión de Mateo, 17/9)");
@@ -2054,6 +2136,7 @@ try {
   await frenarPanel(panel);
   seccion("Limpieza");
   try {
+    await asegurarConexion();
     await limpiar();
     await verificarLimpieza();
   } catch (e) {

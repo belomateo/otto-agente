@@ -67,9 +67,23 @@ export async function resolverSolicitud(sesion: Sesion, id: string, aprobar: boo
  * 'rechazado', el mismo que deja sin acceso a quien nunca se aprobó (es_usuario_aprobado() y
  * es_admin() solo pasan con 'aprobado'). Nadie puede tocar su propio perfil (0007/0010, base):
  * eso da 42501, no hace falta chequearlo acá.
+ *
+ * Hallazgo de la auditoría, confirmado por Mateo (22/9): esto cortaba el acceso a DATOS (RLS),
+ * pero la sesión ya emitida seguía viva — se vio en vivo con una cuenta rechazada el 19/9 que
+ * podía seguir renovando su sesión. revocar_sesiones() (0062) borra sus auth.sessions (cascada
+ * a refresh_tokens): no puede volver a entrar. Es la misma limitación que documenta Supabase
+ * para cualquier "cerrar sesión" — un access token YA EMITIDO sigue siendo válido hasta que
+ * expira solo (por defecto, hasta 1 hora), nadie puede invalidarlo antes. Si esto falla no se
+ * revierte el rechazo (lo principal, cortar el acceso a datos, ya se cumplió): se loguea y
+ * listo, es defensa en profundidad, no la garantía principal.
  */
 export async function quitarAcceso(sesion: Sesion, perfilId: string) {
-  return sesion.supabase.from('perfiles').update({ estado: 'rechazado' }).eq('id', perfilId).select('id, nombre, rol, estado').maybeSingle();
+  const r = await sesion.supabase.from('perfiles').update({ estado: 'rechazado' }).eq('id', perfilId).select('id, nombre, rol, estado').maybeSingle();
+  if (!r.error && r.data) {
+    const { error: eSesiones } = await sesion.supabase.rpc('revocar_sesiones', { p_perfil: perfilId });
+    if (eSesiones) console.error('[api] se rechazó el acceso pero no se pudieron cortar sus sesiones:', eSesiones.message);
+  }
+  return r;
 }
 
 /**
@@ -131,4 +145,21 @@ export async function completarAltaAdmin(sesion: Sesion, perfilId: string) {
  */
 export async function cambiarRol(sesion: Sesion, perfilId: string, rol: 'admin' | 'equipo') {
   return sesion.supabase.rpc('cambiar_rol', { p_perfil: perfilId, p_rol: rol });
+}
+
+/**
+ * Reseteo de clave sin depender de mail (0062, pedido de Mateo 22/9): reusa el mecanismo de la
+ * alta directa (0059) en vez de armar un flujo por correo — Resend en modo sandbox rebota a
+ * cualquiera que no sea la cuenta dueña, así que un mail de reseteo hoy no le llegaría a nadie
+ * del equipo. La ruta ya cambió la clave en auth.users (service role, admin.ts) antes de llamar
+ * esto: acá solo queda dejar debe_cambiar_clave en true (forzar_cambio_clave, exige aprobado) y
+ * cortarle cualquier sesión que tuviera abierta (revocar_sesiones, 0062) — la clave nueva no
+ * sirve de nada si la sesión vieja sigue viva.
+ */
+export async function marcarClaveReseteada(sesion: Sesion, perfilId: string) {
+  const r = await sesion.supabase.rpc('forzar_cambio_clave', { p_perfil: perfilId });
+  if (r.error) return r;
+  const { error: eSesiones } = await sesion.supabase.rpc('revocar_sesiones', { p_perfil: perfilId });
+  if (eSesiones) console.error('[api] se reseteó la clave pero no se pudieron cortar sus sesiones:', eSesiones.message);
+  return r;
 }

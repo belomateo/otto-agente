@@ -1300,6 +1300,23 @@ export type Database = {
       }
       es_admin: { Args: never; Returns: boolean }
       es_usuario_aprobado: { Args: never; Returns: boolean }
+      forzar_cambio_clave: {
+        Args: { p_perfil: string }
+        Returns: {
+          creado_at: string
+          debe_cambiar_clave: boolean
+          estado: string
+          id: string
+          nombre: string | null
+          rol: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "perfiles"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       immutable_unaccent: { Args: { "": string }; Returns: string }
       mostrador_enviar: {
         Args: { p_conversacion: string; p_texto: string }
@@ -1339,6 +1356,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      revocar_sesiones: { Args: { p_perfil: string }; Returns: undefined }
       terminar_cambio_clave: { Args: never; Returns: undefined }
       turno_confirmar_por_boton: {
         Args: { p_conversacion: string; p_turno: string }
