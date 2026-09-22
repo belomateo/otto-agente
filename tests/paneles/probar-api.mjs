@@ -128,6 +128,13 @@ async function frenarPanel(p) {
 }
 
 // ---------- sesiones ----------
+// Hallazgo de logica (21/9, sobre esta misma auditoría): signInWithPassword crea la sesión del
+// lado de GoTrue pase lo que pase con persistSession — eso es lo que guarda o no en ESTE
+// cliente, no si el servidor la crea. Sin cerrarlas, cada corrida de este arnés (arranca el
+// 12/9) deja sesiones vivas para siempre en la cuenta real que usa: 308 encontradas. Cada
+// iniciarSesion() de acá en más se registra, y limpiar() las cierra todas al final — igual que
+// ya se hace con los datos, la sesión también es residuo.
+const sesionesAbiertas = [];
 async function iniciarSesion(email, password) {
   const jar = new Map();
   const sb = createServerClient(SB_URL, ANON, {
@@ -138,6 +145,7 @@ async function iniciarSesion(email, password) {
   });
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) throw new Error("no se pudo iniciar sesión: " + error.message);
+  sesionesAbiertas.push(sb);
   await new Promise((r) => setTimeout(r, 50));
   if (jar.size === 0) throw new Error("el inicio de sesión no dejó cookies");
   const directo = createClient(SB_URL, ANON, {
@@ -147,11 +155,22 @@ async function iniciarSesion(email, password) {
   return { id: data.user.id, email, cookie: () => [...jar].map(([n, v]) => `${n}=${v}`).join("; "), directo };
 }
 // Para confirmar que una contraseña vieja (temporal, ya cambiada) dejó de servir: a diferencia
-// de iniciarSesion(), no tira si falla — acá fallar es el resultado esperado.
+// de iniciarSesion(), no tira si falla — acá fallar es el resultado esperado. Si por lo que sea
+// SÍ entra, también queda registrada para que limpiar() la cierre.
 async function puedeEntrarCon(email, password) {
   const sb = createClient(SB_URL, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
   const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (!error) sesionesAbiertas.push(sb);
   return !error;
+}
+async function cerrarSesiones() {
+  for (const sb of sesionesAbiertas) {
+    try {
+      await sb.auth.signOut();
+    } catch (e) {
+      console.error("  no se pudo cerrar una sesión de prueba:", e.message);
+    }
+  }
 }
 async function api(ses, metodo, ruta, cuerpo) {
   const headers = {};
@@ -297,6 +316,7 @@ async function restaurarReales() {
 // de prueba (más abajo, por cliente_id); su historial, antes, porque la fila desaparece.
 const turnosExtra = [];
 async function limpiar() {
+  await cerrarSesiones();
   if (turnosExtra.length) {
     await q("delete from historial_ediciones where tabla = 'turnos' and fila_id = any($1::uuid[])", [turnosExtra]);
   }
@@ -1070,7 +1090,9 @@ try {
     ok(
       // herramientas: >= 13 (las de H1.4), no === 13: agente suma herramientas nuevas con el
       // tiempo (p. ej. confirmar_turno, 16/9) y esto no es un control de cuántas hay.
-      x.status === 200 && x.datos.reglas.length >= 1 && x.datos.reglas.every((r) => tiene(r, ["i", "t", "id", "version"])) && x.datos.agenda.horarios.length === 6 && x.datos.agenda.duraciones.length === 6 && x.datos.agenda.configuracion?.cantidad_probadores === 3 && x.datos.herramientas.length >= 13 && Boolean(x.datos.presentacion),
+      // horarios: 7, no 6 — el domingo ahora tiene su propia fila (activo=false, 0061, pedido
+      // de Mateo 21/9): antes no tenía fila y por eso eran 6.
+      x.status === 200 && x.datos.reglas.length >= 1 && x.datos.reglas.every((r) => tiene(r, ["i", "t", "id", "version"])) && x.datos.agenda.horarios.length === 7 && x.datos.agenda.duraciones.length === 6 && x.datos.agenda.configuracion?.cantidad_probadores === 3 && x.datos.herramientas.length >= 13 && Boolean(x.datos.presentacion),
       `Configuración (${x.status}): ${x.datos.reglas?.length} reglas, ${x.datos.agenda?.horarios.length} horarios, ${x.datos.herramientas?.length} herramientas`
     );
     const y = await api(sa, "GET", `/api/historial?tabla=perfiles&id=${A.id}`);
@@ -1309,6 +1331,60 @@ try {
       Boolean(bloqueadoPrompt.error) && (lecturaPrompt.data ?? []).length === 0 && (lecturaPromptAdmin.data ?? []).length >= 1,
       `sin pasar por mi ruta: un 'equipo' no lee ni inserta en prompt_base (RLS, 0045), un admin sí lo lee (equipo ${(lecturaPrompt.data ?? []).length}, admin ${(lecturaPromptAdmin.data ?? []).length})`
     );
+  }
+
+  seccion("Cierres puntuales de agenda (0061, pedido de Mateo 21/9): feriados y cierres excepcionales");
+  {
+    const sinAdmin = await api(sn, "GET", "/api/configuracion/cierres");
+    ok(sinAdmin.status === 403, `un 'equipo' no ve los cierres (${sinAdmin.status})`);
+
+    const malaFecha = await api(sa, "POST", "/api/configuracion/cierres", { fecha: "31-03-2031" });
+    ok(malaFecha.status === 400, `fecha mal formada → 400 (${malaFecha.status})`);
+
+    const FECHA_SIN_TURNOS = "2031-03-15";
+    const alta = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_SIN_TURNOS, motivo: "Feriado de prueba" });
+    ok(alta.status === 201 && alta.datos.cierre?.fecha === FECHA_SIN_TURNOS && alta.datos.cierre?.motivo === "Feriado de prueba", `admin cierra una fecha sin turnos (${alta.status})`);
+
+    const dup = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_SIN_TURNOS });
+    ok(dup.status === 409, `cerrar la misma fecha dos veces → 409 (${dup.status})`);
+
+    const lista = await api(sa, "GET", "/api/configuracion/cierres");
+    ok(lista.status === 200 && lista.datos.cierres.some((c) => c.fecha === FECHA_SIN_TURNOS), `la lista trae el cierre recién creado (${lista.status}, ${lista.datos.cierres?.length})`);
+
+    const sinBorrar = await api(sn, "DELETE", `/api/configuracion/cierres/${FECHA_SIN_TURNOS}`);
+    ok(sinBorrar.status === 403, `un 'equipo' no reabre una fecha (${sinBorrar.status})`);
+
+    const borrada = await api(sa, "DELETE", `/api/configuracion/cierres/${FECHA_SIN_TURNOS}`);
+    ok(borrada.status === 200 && borrada.datos.cierre?.fecha === FECHA_SIN_TURNOS, `admin reabre la fecha (${borrada.status})`);
+    const yaNo = await api(sa, "DELETE", `/api/configuracion/cierres/${FECHA_SIN_TURNOS}`);
+    ok(yaNo.status === 404, `reabrirla de nuevo → 404 (${yaNo.status})`);
+
+    // Con turnos ya agendados: no cancela nada solo, avisa cuántos hay y pide confirmar.
+    const FECHA_CON_TURNOS = "2031-03-20";
+    const turnoDelDia = await nuevoTurno(`${FECHA_CON_TURNOS}T13:00:00Z`);
+    const sinConfirmar = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_CON_TURNOS });
+    ok(
+      sinConfirmar.status === 409 && sinConfirmar.datos.detalle?.turnos_afectados === 1,
+      `cerrar un día con 1 turno, sin confirmar → 409 avisando cuántos hay (${sinConfirmar.status}, ${sinConfirmar.datos.detalle?.turnos_afectados})`
+    );
+    const noSeCreoNada = (await q("select count(*)::int n from cierres_agenda where fecha = $1", [FECHA_CON_TURNOS]))[0].n;
+    ok(noSeCreoNada === 0, "sin confirmar, no queda ningún cierre a medio guardar");
+
+    const conConfirmar = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_CON_TURNOS, confirmar: true });
+    ok(conConfirmar.status === 201, `confirmando, cierra igual (${conConfirmar.status})`);
+    const turnoSigueIgual = (await q("select estado from turnos where id = $1", [turnoDelDia]))[0];
+    ok(turnoSigueIgual.estado === "sin-confirmar", `el turno existente no se toca solo — sigue como estaba (${turnoSigueIgual.estado})`);
+
+    // Limpieza propia de esta sección (cierres_agenda no usa id uuid, no entra en creados.filas).
+    await q("delete from cierres_agenda where fecha = any($1::date[])", [[FECHA_SIN_TURNOS, FECHA_CON_TURNOS]]);
+  }
+  {
+    const g = await api(sa, "GET", "/api/configuracion");
+    ok(g.status === 200 && Array.isArray(g.datos.agenda?.cierres), `GET /api/configuracion trae agenda.cierres (${g.status}, ${g.datos.agenda?.cierres?.length})`);
+  }
+  {
+    const dom = (await q("select activo from horarios where dia_semana = 0"))[0];
+    ok(dom?.activo === false, `domingo tiene su propia fila, explícitamente cerrado — no por ausencia (activo: ${dom?.activo})`);
   }
 
   seccion("Decisiones #7 y #9 (0030) — franjas de turnos y reserva de urgencia");

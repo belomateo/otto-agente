@@ -18,6 +18,9 @@ export type Configuracion = {
     horarios: (Fila<'horarios'> & { dia: string })[];
     /** Cuándo se dan turnos (0030): varias franjas por día, ordenadas por día y hora. */
     franjas: (Fila<'franjas_turnos'> & { dia: string })[];
+    /** Fechas puntuales cerradas (0061): feriados y cierres excepcionales, aparte del horario
+     *  semanal de arriba. */
+    cierres: Fila<'cierres_agenda'>[];
     duraciones: Pick<Fila<'duraciones_turno'>, 'id' | 'tipo' | 'duracion_min' | 'version'>[];
     configuracion: Pick<
       Fila<'configuracion_agenda'>,
@@ -31,12 +34,13 @@ export type Configuracion = {
 };
 
 export async function obtenerConfiguracion(db: ClienteDb): Promise<Configuracion> {
-  const [reglas, contexto, horarios, franjas, duraciones, config, herramientas, enlaces, notas, prompt] =
+  const [reglas, contexto, horarios, franjas, cierres, duraciones, config, herramientas, enlaces, notas, prompt] =
     await Promise.all([
       db.from('reglas_agente').select('id, numero, texto, activo, version').order('numero'),
       db.from('contexto_agente').select('id, clave, valor, version').order('clave'),
       db.from('horarios').select('*').order('dia_semana'),
       db.from('franjas_turnos').select('*').order('dia_semana').order('desde'),
+      db.from('cierres_agenda').select('*').order('fecha'),
       db.from('duraciones_turno').select('id, tipo, duracion_min, version').order('duracion_min').order('tipo'),
       db
         .from('configuracion_agenda')
@@ -47,7 +51,7 @@ export async function obtenerConfiguracion(db: ClienteDb): Promise<Configuracion
       db.from('notas_dueno').select('*').order('creado_at', { ascending: false }),
       db.from('prompt_base').select('version, editado_por, editado_at').maybeSingle(),
     ]);
-  for (const r of [reglas, contexto, horarios, franjas, duraciones, config, herramientas, enlaces, notas, prompt]) {
+  for (const r of [reglas, contexto, horarios, franjas, cierres, duraciones, config, herramientas, enlaces, notas, prompt]) {
     if (r.error) throw r.error;
   }
   const filasContexto = contexto.data ?? [];
@@ -58,6 +62,7 @@ export async function obtenerConfiguracion(db: ClienteDb): Promise<Configuracion
     agenda: {
       horarios: (horarios.data ?? []).map((h) => ({ ...h, dia: DIAS_LARGOS[h.dia_semana] })),
       franjas: (franjas.data ?? []).map((f) => ({ ...f, dia: DIAS_LARGOS[f.dia_semana] })),
+      cierres: cierres.data ?? [],
       duraciones: duraciones.data ?? [],
       configuracion: config.data,
     },

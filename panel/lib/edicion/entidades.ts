@@ -23,7 +23,9 @@ export const TEMAS_FRAGMENTO = [
   'que-no-hacemos', 'descuentos', 'novio', 'graduado', 'invitado',
 ] as const;
 export const EVENTOS = ['casamiento', 'graduacion', 'fiesta', 'laboral', 'otro'] as const;
-export const ROLES_CLIENTE = ['novio', 'invitado', 'graduado', 'padre', 'otro'] as const;
+// padrino sumado el 21/9 (migración 0060 de logica, base_rol_padrino) — sin roles femeninos:
+// Mateo fue explícito, Otto viste hombres.
+export const ROLES_CLIENTE = ['novio', 'invitado', 'graduado', 'padre', 'padrino', 'otro'] as const;
 
 const texto = (max: number) =>
   z.string().trim().min(1, 'No puede quedar vacío').max(max, `Máximo ${max} caracteres`);
