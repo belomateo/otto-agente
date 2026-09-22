@@ -445,7 +445,7 @@ verificar contra la base) viven en `scripts/guiones-agente.cjs`, escritos como e
 cliente desde el celular; son transporte-agnósticos, así que un solo lugar sirve para las dos
 corridas que existen: `scripts/probar-turno.js` contra el emulador (teléfonos
 `+5493410001NNN`) y `tests/sql/guiones-desplegado.mjs` contra el worker real (teléfonos
-`5490000000NNN`, sin «+» — cierre de Fase 2, control 5 de H2.1: los 19 tienen que pasar contra
+`5490000000NNN`, sin «+» — cierre de Fase 2, control 5 de H2.1: los 20 tienen que pasar contra
 lo desplegado, no solo contra el emulador). Mínimos para la V1:
 
 `novio-noche` · `invitado-casamiento` · `graduado-desde-otra-ciudad` ·
@@ -461,7 +461,10 @@ mail — tiene que agendar igual, no volver a pedirlo, supuesto #35) ·
 `catalogo-modelo-puntual` (pedido de Mateo, 16/9: pregunta por un modelo puntual y
 `consultar_catalogo` filtra a esa prenda sola, no menciona el resto del catálogo) ·
 `dos-turnos-permitidos` (pedido de Mateo, 16/9: pide un segundo turno además del que ya tiene y
-lo agenda igual, sin rechazarlo)
+lo agenda igual, sin rechazarlo) · `derivada-reclamo-sigue-agresion-calla` (auditoría del 22/9:
+un reclamo tranquilo deriva y SIGUE contestando después, ya derivada; una agresión posterior, en
+cambio, la calla — sin crear una segunda fila en derivaciones. Ejercita de punta a punta el
+arreglo del 21/9, "una charla derivada ya no es muda")
 
 El tester (modo agente) los corre todos cada vez que se toca prompt, fragmentos,
 herramientas o barandillas, y verifica contra la base: si dijo que agendó, hay

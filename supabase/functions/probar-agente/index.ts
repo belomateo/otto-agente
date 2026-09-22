@@ -83,8 +83,13 @@ async function manejar(req: Request): Promise<Response> {
       [conv.id, mensaje, ahora.toISOString()],
     );
 
-    // AGENTE.md § 3 paso 5, primera línea: conversación derivada → no responde Lucía.
-    if (conv.estado === "derivada") {
+    // AGENTE.md § 3 paso 5, primera línea: conversación CERRADA → no responde Lucía (decisión del
+    // equipo, no se deshace sola). Derivada ya NO corta acá (pedido de Mateo, 21/9: "una charla
+    // derivada ya no es muda") — se le pasa yaDerivada a correrTurno y el turno decide si se
+    // calla (enojo/pide_persona) o sigue contestando, mismo criterio que el worker real (logica).
+    // Hallazgo de la auditoría, 22/9: este corte se había quedado con la regla vieja y tapaba
+    // por completo el arreglo del 21/9 en el emulador — ningún guión podía probarlo.
+    if (conv.estado !== "activa" && conv.estado !== "derivada") {
       return Response.json({ cliente_id: filaCliente.id, conversacion_id: conv.id, pausada: true, mensajes: [] });
     }
 
@@ -96,6 +101,7 @@ async function manejar(req: Request): Promise<Response> {
       tz: TZ,
       calendario: calendarioDeEnsayo,
       derivacionTel: DERIVACION_TEL,
+      yaDerivada: conv.estado === "derivada",
     });
 
     return Response.json({

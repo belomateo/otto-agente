@@ -84,7 +84,12 @@ async function correrUno(url, nombre) {
         for (const mensaje of g.mensajes) {
           ultimaRespuesta = await mandar(telefono, mensaje);
           resultado.respuestas.push(ultimaRespuesta.mensajes || []);
-          if (ultimaRespuesta.derivo) break; // si ya derivó, no tiene sentido seguir mandando mensajes del guion
+          // Corregido, auditoría 22/9: hasta acá, cortar apenas derivo:true asumía que una charla
+          // derivada queda muda para siempre — la regla de ANTES del 21/9. Desde "una charla
+          // derivada ya no es muda" (pedido de Mateo), Lucía puede seguir contestando después de
+          // derivar, así que el guion sigue mandando el resto de sus mensajes igual. Cortar acá
+          // era además parte de por qué el arreglo del 21/9 pasó desapercibido: ningún guion
+          // llegaba a mandarle un segundo mensaje a una charla ya derivada.
         }
 
         for (const [ok, detalle] of await g.verificar(sql, telefono, resultado.respuestas, ultimaRespuesta)) {
