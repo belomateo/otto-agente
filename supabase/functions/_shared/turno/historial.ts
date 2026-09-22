@@ -35,3 +35,17 @@ export function ultimasLineasParaClasificar(historial: MensajeChat[], mensajeAct
   const previas = historial.slice(-2).map((m) => `${m.role === "user" ? "Cliente" : "Lucía"}: ${m.content}`);
   return [...previas, `Cliente: ${mensajeActual}`].join("\n");
 }
+
+// Cuándo fue el mensaje justo ANTES de esta ráfaga (mismo corte `hasta` que leerHistorial, ver
+// arriba) — para saber si pasó un hueco largo desde la última vez que se hablaron. null si nunca
+// hablaron antes de esta ráfaga. Pedido de Mateo, 21/9: se presenta de nuevo si pasaron más de 7
+// días (turno.ts lo usa para ensanchar esPrimerMensaje).
+export async function ultimoMensajeAntesDe(db: Db, conversacionId: string, hasta: Date): Promise<Date | null> {
+  const [f] = await db.consulta<{ enviado_at: Date | string }>(
+    `select enviado_at from mensajes
+      where conversacion_id = $1 and enviado_at <= $2::timestamptz
+      order by enviado_at desc limit 1`,
+    [conversacionId, hasta.toISOString()],
+  );
+  return f ? new Date(f.enviado_at) : null;
+}

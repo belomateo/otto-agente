@@ -240,9 +240,17 @@ El **extractor** (`LLM_EXTRACTOR`) corre después de cada turno, lee el intercam
 y devuelve JSON estricto contra este schema. Solo escribe lo que el cliente dijo;
 nunca infiere.
 
+**`rol` es de quien USA el traje, nunca de quien escribe** (Mateo, 21/9 — el mismo
+error que ya había pasado una vez en vivo: una madre consultando por su hijo
+quedaba guardada con rol `padre` por error). Otto viste hombres, a propósito sin
+roles femeninos: si escribe una mujer, casi siempre consulta para un hombre — el
+prompt le pide preguntar para quién es y guardar el rol de esa persona, nunca
+adivinarlo. `padrino` se sumó el 21/9 (migración 0060); `madre` no existe a
+propósito.
+
 ```
 nombre · evento (casamiento / graduacion / fiesta / laboral / otro)
-fecha_evento · rol (novio / invitado / graduado / padre / otro)
+fecha_evento · rol (novio / invitado / graduado / padre / padrino / otro)
 dia_o_noche · talle_aprox · ciudad · color_preferido · presupuesto_mencionado
 email (hito 2.3, formato validado en código, en minúscula)
 turno_id (lo pone código) · recordatorio_enviado_at (código)

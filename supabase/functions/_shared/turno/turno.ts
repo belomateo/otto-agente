@@ -28,12 +28,13 @@ import type { Calendario } from "../herramientas/tipos.ts";
 import { clasificar } from "../llm/clasificador.ts";
 import { extraer } from "../llm/extractor.ts";
 import { correrPrincipal, type ContenidoLlm, type LlamadaLlm, type MensajeLlm, type ResultadoPrincipal } from "../llm/principal.ts";
+import { diasEntre, fechaLocal } from "../tiempo.ts";
 import { trazaNueva } from "../traza.ts";
 import type { AccesoStorage } from "../whatsapp/medios.ts";
 import { contextoDeHerramientas } from "./contexto_herramientas.ts";
-import { armarContextoDelTurno } from "./contexto.ts";
+import { armarContextoDelTurno, UMBRAL_DIAS_REPRESENTACION } from "./contexto.ts";
 import { derivacionDuraPorEventoInminente, derivacionDuraPorPalabraClave } from "./derivacion_dura.ts";
-import { leerHistorial, ultimasLineasParaClasificar, type MensajeChat } from "./historial.ts";
+import { leerHistorial, ultimasLineasParaClasificar, ultimoMensajeAntesDe, type MensajeChat } from "./historial.ts";
 import { pidePersonaPorPalabraClave } from "./pide_persona.ts";
 import { agruparRafaga, MAXIMO_CARACTERES_RAFAGA } from "./rafaga.ts";
 import { eventosDeLaTraza, registrarConsumo, registrarEventos, type EventoAgente } from "./bitacora.ts";
@@ -69,9 +70,15 @@ const MOTIVOS_CON_TEXTO_FALLO: readonly MotivoDerivacion[] = ["barandilla_doble"
 // que Lucía se calle en un turno de una charla ya derivada, textuales: el cliente se enoja, o
 // pide hablar directamente con un humano. Todo lo demás (una pregunta de horarios, un "urgente
 // necesito esto hoy", lo que sea) lo sigue contestando normal, aunque la charla ya la tenga una
-// persona — mismo agrupamiento que MOTIVOS_CON_TEXTO_RECLAMO (reclamo y cliente_enojado ya se
-// tratan igual en todo el resto del código).
-const MOTIVOS_DE_SILENCIO_DERIVADA: readonly MotivoDerivacion[] = MOTIVOS_CON_TEXTO_RECLAMO;
+// persona.
+// OJO, corregido el 21/9 (Mateo, tanda de preguntas): un reclamo escrito TRANQUILO no es motivo
+// de silencio — Lucía lo sigue contestando (ya está derivada, así que "deriva" ya está
+// cumplido). Solo la AGRESIÓN (cliente_enojado, por TONO — insulta, grita en mayúsculas, usa
+// groserías o amenaza) calla. La primera versión de esto reusaba MOTIVOS_CON_TEXTO_RECLAMO
+// (reclamo + cliente_enojado), que es el agrupamiento correcto para "qué texto fijo mandar al
+// DERIVAR por primera vez" pero NO para "cuándo callarse estando ya derivada": son dos preguntas
+// distintas que se resolvían con la misma lista por descuido.
+const MOTIVOS_DE_SILENCIO_DERIVADA: readonly MotivoDerivacion[] = ["cliente_enojado"];
 
 export type ResultadoTurno = {
   mensajesAlCliente: string[];
@@ -235,8 +242,8 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
           resultado = quedarseCalladaDerivada();
           return resultado;
         }
-        // Otro motivo (prenda_danada, corporativo, evento_inminente): ya está derivada, no se
-        // vuelve a derivar por esto — sigue el turno normal más abajo, Lucía puede contestar.
+        // Otro motivo (reclamo tranquilo, prenda_danada, corporativo, evento_inminente): ya está
+        // derivada, no se vuelve a derivar por esto — sigue el turno normal, Lucía contesta.
         eventos.push({
           tipo: "pensamiento",
           detalle: { etapa: "derivada-sigue", motivo: dura.motivo, porQue: `${dura.porQue}, pero la charla ya está derivada: no se deriva de nuevo, sigue contestando` },
@@ -253,10 +260,14 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
     // Paso 4b — el clasificador, red para la intención de derivar cuando no hay palabra clave.
     historial = await leerHistorial(db, p.conversacionId, rafaga.desde);
+    const ultimoMensajeAnterior = await ultimoMensajeAntesDe(db, p.conversacionId, rafaga.desde);
+    const diasDesdeUltimoMensaje = ultimoMensajeAnterior ? diasEntre(fechaLocal(ultimoMensajeAnterior, p.tz), fechaLocal(p.ahora, p.tz)) : null;
     // Sin nada antes de esta ráfaga, es la primera vez que Lucía le contesta algo en esta charla
     // (hallazgo M2 del tester, 15/9: lo usa presentacion_repetida para no dejar que se vuelva a
-    // presentar en un mensaje que no es el primero).
-    const esPrimerMensaje = historial.length === 0;
+    // presentar en un mensaje que no es el primero). Pedido de Mateo, 21/9: un hueco de 7+ días
+    // sin hablar se trata igual que el primer mensaje — se presenta de nuevo, y presentacion_
+    // repetida.ts ya no se lo corta (usa este mismo booleano, sin tocar su código).
+    const esPrimerMensaje = historial.length === 0 || (diasDesdeUltimoMensaje !== null && diasDesdeUltimoMensaje >= UMBRAL_DIAS_REPRESENTACION);
     const clasificacion = await clasificar(ultimasLineasParaClasificar(historial, mensaje), p.fetcher);
     if (!clasificacion) {
       eventos.push({ tipo: "error", detalle: { etapa: "clasificar", error: "sin respuesta del clasificador; se sigue sin derivar por esta vía" } });
@@ -295,7 +306,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
     // Paso 5 — armar contexto, y paso 6 — el principal con herramientas.
     const [contexto, prompt, herramientas] = await Promise.all([
-      armarContextoDelTurno(db, { clienteId: p.clienteId, ahora: p.ahora, tz: p.tz }),
+      armarContextoDelTurno(db, { clienteId: p.clienteId, ahora: p.ahora, tz: p.tz, diasDesdeUltimoMensaje }),
       p.prompt ?? leerPrompt(),
       definicionesParaElModelo(db),
     ]);
