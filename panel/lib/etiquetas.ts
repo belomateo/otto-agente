@@ -11,11 +11,17 @@ export const ETIQUETA_EVENTO: Record<string, string> = {
   otro: 'Otro',
 };
 
+// Describe a quien USA el traje, no a quien escribe el mensaje (0060, decisión de Mateo
+// 21/9): hubo una mamá guardada como 'padre' porque la etiqueta decía "Padre o madre" y
+// alguien del mostrador leyó el campo como "quién es el cliente" en vez de "de quién es el
+// traje". Sin roles femeninos a propósito — Otto viste hombres; si escribe una mujer, el rol
+// es el del hombre para el que consulta (mismo texto que el comment de la columna en la base).
 export const ETIQUETA_ROL: Record<string, string> = {
   novio: 'Novio',
   invitado: 'Invitado',
   graduado: 'Graduado',
-  padre: 'Padre o madre',
+  padre: 'Padre',
+  padrino: 'Padrino',
   otro: 'Otro',
 };
 

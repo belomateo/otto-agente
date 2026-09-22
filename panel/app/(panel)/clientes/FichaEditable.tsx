@@ -90,7 +90,7 @@ function Interior({ ficha, onRecargar }: { ficha: FichaDeCliente; onRecargar: ()
           <Campo label="Email" colSpan type="email" value={edicion.valor.email ?? ''} onChange={(e) => cambiar('email', e.target.value || null)} />
           <Select label="Evento" opciones={ETIQUETA_EVENTO} value={edicion.valor.evento} onChange={(v) => cambiar('evento', v)} />
           <Campo label="Fecha (AAAA-MM-DD)" value={edicion.valor.fecha_evento ?? ''} onChange={(e) => cambiar('fecha_evento', e.target.value || null)} />
-          <Select label="Rol" opciones={ETIQUETA_ROL} value={edicion.valor.rol} onChange={(v) => cambiar('rol', v)} />
+          <Select label="Rol (de quién es el traje)" opciones={ETIQUETA_ROL} value={edicion.valor.rol} onChange={(v) => cambiar('rol', v)} />
           <Select label="Día / Noche" opciones={ETIQUETA_DIA_O_NOCHE} value={edicion.valor.dia_o_noche} onChange={(v) => cambiar('dia_o_noche', v)} />
           <Campo label="Talle" value={edicion.valor.talle_aprox ?? ''} onChange={(e) => cambiar('talle_aprox', e.target.value || null)} />
           <Campo label="Ciudad" value={edicion.valor.ciudad ?? ''} onChange={(e) => cambiar('ciudad', e.target.value || null)} />
