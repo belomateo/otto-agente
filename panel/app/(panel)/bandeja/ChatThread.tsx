@@ -9,12 +9,18 @@
 // en las últimas 24 hs — el 409 de la base explica el motivo exacto si no se puede.
 //
 // Mandar una foto (POST /api/bandeja/<id>/foto, multipart, mismas reglas que responder) pedido
-// de Mateo 16/9, ítem 3: mismo botón que ya estaba pero desconectado. Falta que paneles exponga
-// una URL en la lectura de mensajes para mostrar la foto en la burbuja — hasta entonces se
-// avisa "Foto" en vez del texto crudo. El de audio sigue sin conectar, no era parte del pedido.
+// de Mateo 16/9, ítem 3: mismo botón que ya estaba pero desconectado.
+//
+// Ver y escuchar los adjuntos (pedido original de Mateo, 19/9 — logica lo marcó como backend
+// listo y nunca conectado, auditoría del 22/9): cada mensaje trae `adjunto` cuando tiene uno
+// (entrante o mandado desde acá), con su estado — ContenidoAdjunto (Adjunto.tsx) decide qué
+// mostrar y pide la URL firmada de /api/medios/<id> recién al abrir la foto o darle play al
+// audio. El de audio SALIENTE (grabar y mandar desde el mostrador) sigue sin conectar, no era
+// parte de ninguno de los dos pedidos.
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { ContenidoAdjunto } from './Adjunto';
 import { BurbujaCliente, BurbujaLucia, BurbujaMostrador } from '@/components/ui-otto/Burbuja';
 import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
@@ -24,7 +30,7 @@ import { useUsuario } from '@/components/nav/UsuarioContext';
 import { SONDEO_LISTAS_MS, useDatos } from '@/components/api/useDatos';
 import { useAccionesCharla } from '@/components/api/useAccionesCharla';
 import { fechaEnZona } from '@/lib/formato';
-import type { Charla } from '@/lib/queries/bandeja';
+import type { Charla, MensajeCharla } from '@/lib/queries/bandeja';
 
 // La ventana de WhatsApp se puede cerrar entre que se escribe un mensaje y que el worker lo
 // toma (segundos después, paneles 0042/logica): el mensaje queda en la charla pero nunca sale.
@@ -44,11 +50,10 @@ function AvisoNoEnviado({ motivo }: { motivo: 'ventana_cerrada' | 'error_al_envi
 // la foto y recién ahí se entere de que no sirve.
 const TIPOS_FOTO_ACEPTADOS = 'image/jpeg,image/png';
 
-// Todavía no hay URL para mostrar la foto en la burbuja (paneles: la lectura de mensajes no la
-// expone), tampoco para las que manda el cliente — se avisa que es una foto en vez de mostrar
-// el texto crudo "(imagen)" que arma textoDeMensaje.
-function textoDeBurbuja(m: { tipo: string; texto: string }) {
-  return m.tipo === 'imagen' ? '📷 Foto' : m.texto;
+// Con adjunto (audio o foto, de cualquier autor), ContenidoAdjunto arma la burbuja entera;
+// si no, el texto tal cual lo arma textoDeMensaje.
+function contenidoDeBurbuja(m: MensajeCharla) {
+  return m.adjunto ? <ContenidoAdjunto mensajeId={m.id} adjunto={m.adjunto} /> : m.texto;
 }
 
 function separador(fecha: string) {
@@ -268,11 +273,11 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
               <div key={m.id} className="contents">
                 {!compacto && nuevoDia && <span className="self-center rounded-pill bg-[#EFEBE3] px-3 py-[3px] text-[14px] text-grafito md:text-xs">{separador(m.fecha)}</span>}
                 {m.autor === 'cliente' ? (
-                  <BurbujaCliente texto={textoDeBurbuja(m)} hora={m.hora} />
+                  <BurbujaCliente texto={contenidoDeBurbuja(m)} hora={m.hora} />
                 ) : m.autor === 'mostrador' ? (
-                  <BurbujaMostrador texto={textoDeBurbuja(m)} hora={m.hora} autor="Equipo" inicial="E" />
+                  <BurbujaMostrador texto={contenidoDeBurbuja(m)} hora={m.hora} autor="Equipo" inicial="E" />
                 ) : (
-                  <BurbujaLucia texto={textoDeBurbuja(m)} hora={m.hora} resumen={esUltimoLucia ? resumen : undefined} bitacora={esUltimoLucia ? bitacora : undefined} />
+                  <BurbujaLucia texto={contenidoDeBurbuja(m)} hora={m.hora} resumen={esUltimoLucia ? resumen : undefined} bitacora={esUltimoLucia ? bitacora : undefined} />
                 )}
                 {m.no_enviado_motivo && <AvisoNoEnviado motivo={m.no_enviado_motivo} />}
               </div>
