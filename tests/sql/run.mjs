@@ -493,11 +493,16 @@ async function testRegistroYCola() {
       "update conversaciones set estado = 'derivada' where cliente_id = (select id from clientes where telefono = $1)",
       [TEL]
     );
+    // Cambió el 22/9 (0063): antes esta prueba afirmaba que con la charla derivada NO se
+    // encolaba, y pasaba en verde — justo cuando el pedido de Mateo del 21/9 (supuesto #47) era
+    // lo contrario. El worker ya estaba arreglado, pero esta función nunca encolaba, así que el
+    // arreglo no corría nunca y esta prueba lo confirmaba al revés. Ahora afirma lo que de
+    // verdad se pide: derivada TAMBIÉN encola, y quién se calla lo decide el turno.
     const colaAntes = await contar("cola_trabajos");
     await registrar("wamid.T111-3");
     assert(
-      (await contar("mensajes")) === 3 && (await contar("cola_trabajos")) === colaAntes,
-      "con la charla derivada, el mensaje se guarda pero Lucía no recibe trabajo"
+      (await contar("mensajes")) === 3 && (await contar("cola_trabajos")) === colaAntes + 1,
+      "con la charla derivada el mensaje SÍ encola: el turno decide si contesta (supuesto #47)"
     );
 
     const job = (await client.query(
@@ -660,7 +665,10 @@ async function testEnviosProgramados() {
     const cA = (await q("select id from conversaciones where cliente_id = $1", [a]))[0].id;
     assert((await confirmar(tK, cA)) === "no_corresponde", "el botón de otro cliente no confirma un turno ajeno");
 
-    // Con la charla derivada, el botón se encola igual; un "confirmo" escrito, no.
+    // Con la charla derivada encolan LOS DOS desde 0063 (22/9): el texto porque ahora toda
+    // charla derivada encola y es el turno quien decide si contesta (supuesto #47), y el botón
+    // porque siempre tuvo su excepción propia. Antes el texto NO encolaba y esta prueba lo
+    // afirmaba — era la regla vieja, la que dejaba muda a Lucía en una charla derivada.
     const m = await cliente("5490000001414");
     const tM = await turno(m, "2030-06-12T15:00:00-03:00", { probador: 3 });
     await q("insert into conversaciones (cliente_id, estado) values ($1, 'derivada')", [m]);
@@ -673,7 +681,7 @@ async function testEnviosProgramados() {
     await q("select registrar_mensaje_entrante('wamid.T114-BTN', '5490000001414', null, 'button', 'Confirmo', now(), $1::jsonb)", [
       JSON.stringify({ type: "button", button: { text: "Confirmo", payload: `CONFIRMO:${tM}` } }),
     ]);
-    assert(conTexto === 0 && (await colaDe()) === 1, "con la charla derivada, el botón Confirmo se encola y un 'confirmo' escrito no");
+    assert(conTexto === 1 && (await colaDe()) === 2, "con la charla derivada encolan tanto un 'confirmo' escrito como el botón (0063)");
 
     let codigo = null;
     await client.query("savepoint como_anon");
