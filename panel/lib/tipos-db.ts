@@ -99,6 +99,27 @@ export type Database = {
         }
         Relationships: []
       }
+      cierres_agenda: {
+        Row: {
+          creado_at: string
+          creado_por: string | null
+          fecha: string
+          motivo: string | null
+        }
+        Insert: {
+          creado_at?: string
+          creado_por?: string | null
+          fecha: string
+          motivo?: string | null
+        }
+        Update: {
+          creado_at?: string
+          creado_por?: string | null
+          fecha?: string
+          motivo?: string | null
+        }
+        Relationships: []
+      }
       clientes: {
         Row: {
           actualizado_at: string
