@@ -197,3 +197,39 @@ prueba("g. dos clientes piden el mismo hueco: entra uno solo y el otro recibe hu
   )).rows.map((f) => Number(f.probador));
   assertEquals(probadores, [1, 2]);
 });
+
+// Cierres puntuales contra la tabla real (pedido de Mateo, 21/9). Lo que se prueba aca y no se
+// puede probar con calcularHuecos suelta: que agendaDesdeBase LEA cierres_agenda y que la fecha
+// llegue como el dia correcto. Ese es el riesgo real — si la fecha se convierte a Date y vuelve,
+// el huso la corre un dia y se cierra el 24 en vez del 25. Por eso la consulta usa to_char.
+// Despues de los 7 dias de reserva que fija fijarAgenda(): con un evento lejano, los dias de
+// esta misma semana no se ofrecen, asi que probar sobre ellos daria cero huecos por el motivo
+// equivocado. 2030-06-10 es lunes y 2030-06-11 martes.
+const LUNES_LIBRE = "2030-06-10";
+const MARTES_LIBRE = "2030-06-11";
+
+prueba("un dia cargado en cierres_agenda deja de ofrecer turnos", async (sql, db) => {
+  const agenda = agendaDesdeBase(db, TZ);
+  const pedir = () => agenda.huecos({ desde: MARTES_LIBRE, hasta: MARTES_LIBRE, tipo: "invitado", ahora: AHORA, fechaEvento: EVENTO_LEJANO });
+
+  const antes = await pedir();
+  assert(antes.huecos.length > 0, "el martes tiene que tener turnos antes de cerrarlo");
+
+  await sql.query("insert into cierres_agenda (fecha, motivo) values ($1::date, $2)", [MARTES_LIBRE, "PRUEBA feriado"]);
+  const despues = await pedir();
+  assertEquals(despues.huecos, [], "cerrado el martes, no puede quedar ni un turno");
+});
+
+prueba("cerrar un dia no se lleva puesto al de al lado (el huso no corre la fecha)", async (sql, db) => {
+  const agenda = agendaDesdeBase(db, TZ);
+  await sql.query("insert into cierres_agenda (fecha, motivo) values ($1::date, $2)", [MARTES_LIBRE, "PRUEBA feriado"]);
+  const r = await agenda.huecos({ desde: LUNES_LIBRE, hasta: MARTES_LIBRE, tipo: "invitado", ahora: AHORA, fechaEvento: EVENTO_LEJANO });
+  const dias = [...new Set(r.huecos.map((h) => horaLocal(new Date(h.inicio), TZ) && h.inicio))];
+  assert(r.huecos.length > 0, "el lunes sigue abierto");
+  // Ni un solo hueco puede caer el martes, y tiene que haber del lunes: si el huso corriera la
+  // fecha, se cerraria el lunes y el martes quedaria abierto — exactamente al reves.
+  const enTz = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: TZ });
+  assert(r.huecos.every((h) => enTz(h.inicio) !== MARTES_LIBRE), "quedo un turno el dia cerrado");
+  assert(r.huecos.some((h) => enTz(h.inicio) === LUNES_LIBRE), "se cerro el lunes por error");
+  assert(dias.length > 0);
+});
