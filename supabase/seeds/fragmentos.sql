@@ -24,8 +24,8 @@
 -- fragmento lo devuelve a esta versión.
 insert into fragmentos (id, tema, titulo, texto, editado_por) values
   ('a9f10000-0000-4000-8000-000000000101', 'que-incluye', 'Qué incluye el precio',
-   'El precio del alquiler incluye el ambo (saco y pantalón) y el servicio de sastrería y tintorería antes y después del evento, para que lo recibas listo para usar. La camisa, la corbata y los zapatos se alquilan aparte, para completar el look.',
-   'confirmado por la dueña, 22/9: "el ambo solo, camisa corbata y zapatos aparte" — reemplaza el seed de H1.6'),
+   'El precio del alquiler incluye el ambo —o sea el traje: saco y pantalón— y el servicio de sastrería y tintorería antes y después del evento, para que lo recibas listo para usar. La camisa, la corbata y los zapatos no vienen incluidos: se alquilan aparte, para completar el look.',
+   'confirmado por la dueña, 22/9: "el ambo solo, camisa corbata y zapatos aparte" — reemplaza el seed de H1.6. Ampliado por logica, 23/9 (barrido de 486 agentes, vocabulario de búsqueda): "ambo —o sea el traje—" para que enganche con quien busca "traje" o "ambo" indistinto; aplicado en la base, sincronizado acá'),
 
   ('a9f10000-0000-4000-8000-000000000201', 'como-funciona', 'Cómo es el alquiler, paso a paso',
    'Primero venís al local con turno: el asesor te muestra modelos, te probás el que más te guste y te toma las medidas. Si lo alquilás, la sastrería lo ajusta a tu medida. El traje se retira (lo pasás a buscar) un día antes del evento, con una prueba final para ver que esté perfecto, y se devuelve un día hábil después: lo devolvés acá mismo. En total te quedás con el traje 3 días. Si viajás o no podés retirarlo ese día, se coordina el retiro uno o dos días antes. La tintorería corre por nuestra cuenta.',
@@ -56,8 +56,8 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
    'respuestas de Sofía 17/9'),
 
   ('a9f10000-0000-4000-8000-000000000501', 'talles', 'Talles',
-   'Tenemos trajes de alquiler desde el XS hasta el 4XL. No hay talles para niños: es ropa de hombre adulto. El talle justo se ve en el local, probándolo, y la sastrería lo ajusta. Si tu talle no entra en ese rango, dejá que el equipo del local te confirme cómo seguir.',
-   'Mateo, 21/9: el piso confirmado es XS y no existen los talles de nene (antes decía "desde el talle 4", mal). El techo 4XL es interpretación de logica sobre un "XS a 4XL" que dijo Mateo en otra respuesta, marcado como supuesto, no confirmación de esta vuelta — no repetir el número de saco (68) que tenía antes: nadie lo confirmó y un número inventado manda a alguien al local al pedo. Reemplaza el seed de H1.6'),
+   'Tenemos trajes de alquiler de hombre adulto, en talles del XS al 4XL. Si preguntás hasta qué número o talle tenemos: el 4XL es el talle más grande que manejamos y el XS el más pequeño. No trabajamos talles de niño: para un nene no tenemos nada, es ropa de hombre adulto. El talle justo se ve en el local, probándolo, y la sastrería lo ajusta. Si sos grandote y el 4XL no te entra, o tu talle queda fuera de ese rango, dejá que el equipo del local te confirme cómo seguir.',
+   'Mateo, 21/9: el piso confirmado es XS y no existen los talles de nene (antes decía "desde el talle 4", mal). El techo 4XL es interpretación de logica sobre un "XS a 4XL" que dijo Mateo en otra respuesta, marcado como supuesto, no confirmación de esta vuelta — no repetir el número de saco (68) que tenía antes: nadie lo confirmó y un número inventado manda a alguien al local al pedo. Ampliado por logica, 23/9 (barrido de 486 agentes, vocabulario de búsqueda): mismo dato, sumadas las palabras con las que pregunta un cliente real ("hasta qué número", "grandote") sin cambiar ningún talle. Aplicado en la base, sincronizado acá'),
 
   ('a9f10000-0000-4000-8000-000000000601', 'a-medida', 'Hecho a tu medida',
    'En Mr Otto el alquiler es a medida: en el turno te prueban el traje, te toman las medidas y la sastrería hace los arreglos que hagan falta (achicar, alargar, las mangas, el ruedo del pantalón) para que te quede perfecto el día del evento. Si hace falta, se confecciona. Las medidas se toman siempre en el local, y la sastrería y la tintorería ya están incluidas.',
@@ -71,9 +71,9 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
    '¿Con cuánto tiempo conviene reservar? Lo ideal es entre 60 y 7 días antes del evento, así hay tiempo para elegir y para que la sastrería ajuste todo sin apuro. Si es urgente y el evento es en pocos días, igual llegás: siempre buscamos la forma. Si el evento es hoy o mañana, te paso con un asesor del local, que hace lo posible por encontrarte un lugar en la agenda.',
    'seed H1.6'),
 
-  ('a9f10000-0000-4000-8000-000000000801', 'accesorios', 'Completar el look',
+  ('a9f10000-0000-4000-8000-000000000801', 'accesorios', 'Completar el look: camisa, corbata, cinto y zapatos',
    'Para completar el look alquilamos camisa, corbata, cinturón (cinto) y zapatos, según lo que necesites. Si preferís quedártelos, esas prendas se pueden comprar con descuento por alquilar con nosotros. En el turno el equipo te ayuda a combinar todo, así resolvés el look completo de una vez.',
-   'seed H1.6'),
+   'seed H1.6. Título ampliado por logica, 23/9 (barrido de 486 agentes, vocabulario de búsqueda): el título original no nombraba las prendas, así que una consulta como "tienen corbata" no enganchaba con él (el título pesa en el ranking). Texto sin cambios. Aplicado en la base, sincronizado acá'),
 
   ('a9f10000-0000-4000-8000-000000000901', 'objecion-precio', 'Si le parece caro (borrador)',
    'Si te parece caro, es entendible: es plata y es una decisión importante. Lo que pagás no es solo el traje: es un alquiler a medida, con la sastrería que lo ajusta para que te quede perfecto y la tintorería antes y después, todo incluido. Son prendas de calidad y diseños nuevos, y te llevás una solución completa. En precio, calidad y servicio es de lo mejor del mercado, y lo que más nos importa es que ese día tu apariencia sea lo primero.',
@@ -99,9 +99,9 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
    'Alquilando con nosotros, las prendas para completar el look se pueden comprar con descuento. Sobre el alquiler en sí, cualquier rebaja, promo o descuento especial lo decide una persona del equipo, no se define por este canal.',
    'seed H1.6'),
 
-  ('a9f10000-0000-4000-8000-000000001302', 'descuentos', 'Descuento por grupo (casamiento)',
+  ('a9f10000-0000-4000-8000-000000001302', 'descuentos', 'Descuento por grupo',
    'Para casamientos, si son más de tres personas (cuatro o más) las que alquilan juntas, hay un 15% de descuento sobre el ambo. El descuento es solo sobre el ambo: los accesorios (camisa, corbata, cinturón, zapatos) quedan afuera. Es únicamente para casamientos, no aplica a graduaciones ni a otros eventos.',
-   'confirmado por la dueña, 22/9, textual: "grupos de casamiento, mas de 3 personas 15% de descuento en el ambo (no incluye accesorios el descuento)"'),
+   'confirmado por la dueña, 22/9, textual: "grupos de casamiento, mas de 3 personas 15% de descuento en el ambo (no incluye accesorios el descuento)". Título recortado por agente, 23/9: "(casamiento)" en el título le ganaba el primer puesto a novio/invitado en una consulta que solo dice "casorio"/"casamiento" sin más contexto (el peso 1.5 del título, mismo patrón que el hallazgo de logica del 20/9 con la venta) — el texto ya deja clarísimo que es para casamientos, no hacía falta repetirlo en el título'),
 
   ('a9f10000-0000-4000-8000-000000001401', 'novio', 'El que se casa (guion)',
    '¡Felicitaciones! Si te casás, buscamos un look especial para vos: el novio tiene que estar impecable, como todos los que se casan con nosotros. Para recomendarte bien conviene saber la fecha del casamiento, si es de día o de noche, si es en salón, campo o iglesia, y si ya tenés una idea de estilo o de colores. Con eso te mostramos dos looks y te proponemos un turno para probarlos con tiempo, así la sastrería lo deja perfecto para el gran día.',
