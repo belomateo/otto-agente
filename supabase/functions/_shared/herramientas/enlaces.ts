@@ -8,11 +8,15 @@
 import type { Db } from "../db.ts";
 import type { TipoLink } from "../enums.ts";
 
+// Hallazgo de logica, 22/9: renombró el link de reseñas a "Reseñas Google" (plural) y quedó como
+// NO CARGADO — el \b después de "rese(ñ|n)a" no engancha con la "s" del plural. "resena" ahora
+// acepta el plural con una "s?" opcional; mismo criterio para mapa/web por si alguien hace lo
+// mismo ahí.
 export const NOMBRE_DEL_LINK: Record<TipoLink, RegExp> = {
-  mapa: /^mapa\b/i,
-  resena: /^rese(ñ|n)a\b/i,
-  web: /^web\b.*\balquiler\b/i,
-  "web-venta": /^web\b.*\bventa\b/i,
+  mapa: /^mapas?\b/i,
+  resena: /^rese(ñ|n)as?\b/i,
+  web: /^webs?\b.*\balquiler\b/i,
+  "web-venta": /^webs?\b.*\bventa\b/i,
 };
 
 export type Enlace = { nombre: string; url: string };

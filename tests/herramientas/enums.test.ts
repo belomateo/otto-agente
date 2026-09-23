@@ -137,6 +137,20 @@ Deno.test({
     }),
 });
 
+// Hallazgo de logica, 22/9: cargó el link de reseñas como "Reseñas Google" (plural) y
+// enlaceDeTipo siguió diciendo NO CARGADO — el \b después de "rese(ñ|n)a" no engancha con la "s"
+// del plural. Cada tipo ahora acepta el plural con una "s?" opcional; código puro, sin base.
+Deno.test("enlacesDeTipo reconoce el nombre en plural (mapa/reseña/web), no solo el singular", () => {
+  const enlaces = [
+    { nombre: "Mapas", url: "https://maps.example/1" },
+    { nombre: "Reseñas Google", url: "https://g.page/r/x/review" },
+    { nombre: "Web Mr Otto — alquiler", url: "https://alquiler.example" },
+  ];
+  assertEquals(enlacesDeTipo(enlaces, "mapa").length, 1);
+  assertEquals(enlacesDeTipo(enlaces, "resena").length, 1);
+  assertEquals(enlacesDeTipo(enlaces, "web").length, 1);
+});
+
 Deno.test({
   name: "ficha: evento, rol y día o noche de guardar_datos_cliente = checks de clientes",
   sanitizeOps: false,
