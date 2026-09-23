@@ -24,12 +24,12 @@
 -- fragmento lo devuelve a esta versión.
 insert into fragmentos (id, tema, titulo, texto, editado_por) values
   ('a9f10000-0000-4000-8000-000000000101', 'que-incluye', 'Qué incluye el precio',
-   'El precio del alquiler incluye el traje (saco y pantalón) y el servicio de sastrería y tintorería antes y después del evento, para que lo recibas listo para usar. El traje no viene con camisa: la camisa y el resto de las prendas para completar el look van aparte, y se alquilan o se compran según lo que necesites.',
-   'seed H1.6'),
+   'El precio del alquiler incluye el ambo (saco y pantalón) y el servicio de sastrería y tintorería antes y después del evento, para que lo recibas listo para usar. La camisa, la corbata y los zapatos se alquilan aparte, para completar el look.',
+   'confirmado por la dueña, 22/9: "el ambo solo, camisa corbata y zapatos aparte" — reemplaza el seed de H1.6'),
 
   ('a9f10000-0000-4000-8000-000000000201', 'como-funciona', 'Cómo es el alquiler, paso a paso',
-   'Primero venís al local con turno: el asesor te muestra modelos, te probás el que más te guste y te toma las medidas. Si lo alquilás, la sastrería lo ajusta a tu medida. El traje se retira (lo pasás a buscar) un día antes del evento, con una prueba final para ver que esté perfecto, y se devuelve un día hábil después: lo devolvés acá mismo. Si viajás o no podés retirarlo ese día, se coordina el retiro uno o dos días antes. La tintorería corre por nuestra cuenta.',
-   'respuestas de Sofía 17/9'),
+   'Primero venís al local con turno: el asesor te muestra modelos, te probás el que más te guste y te toma las medidas. Si lo alquilás, la sastrería lo ajusta a tu medida. El traje se retira (lo pasás a buscar) un día antes del evento, con una prueba final para ver que esté perfecto, y se devuelve un día hábil después: lo devolvés acá mismo. En total te quedás con el traje 3 días. Si viajás o no podés retirarlo ese día, se coordina el retiro uno o dos días antes. La tintorería corre por nuestra cuenta.',
+   'respuestas de Sofía 17/9; "3 días" confirmado por la dueña, 22/9'),
 
   ('a9f10000-0000-4000-8000-000000000202', 'como-funciona', 'El turno en el local',
    'Te esperamos en España 764, Rosario. Se permite un acompañante por persona y hay 10 minutos de tolerancia. Si alquilás, para reservar el traje se abona el 100% en el local. Si no podés venir, avisanos y lo reprogramamos.',
@@ -48,8 +48,8 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
    'respuestas de Sofía 17/9'),
 
   ('a9f10000-0000-4000-8000-000000000401', 'ubicacion-horarios', 'Dónde estamos',
-   'El local queda en calle España 764, Rosario, y todo se hace ahí: la prueba, los ajustes, el retiro y la devolución. Lo mejor es venir con turno, así el equipo te dedica el tiempo que hace falta. El local abre más horas que las de los turnos de alquiler: los horarios de atención y de turnos salen de la agenda.',
-   'respuestas de Sofía 17/9'),
+   'El local queda en calle España 764, Rosario, y todo se hace ahí: la prueba, los ajustes, el retiro y la devolución. Lo mejor es venir con turno, así el equipo te dedica el tiempo que hace falta. El local abre más horas que las de los turnos de alquiler: los horarios de atención y de turnos salen de la agenda. También atienden por teléfono.',
+   'respuestas de Sofía 17/9; "también atienden por teléfono" confirmado por la dueña, 22/9'),
 
   ('a9f10000-0000-4000-8000-000000000402', 'ubicacion-horarios', 'Venir sin turno',
    'Podés pasar por el local sin turno, solo a mirar los modelos. Si en ese momento hay lugar, también te podés medir y dejar tu alquiler hecho. Con turno igual es mejor: el asesor te dedica todo el tiempo que haga falta.',
@@ -98,6 +98,10 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
   ('a9f10000-0000-4000-8000-000000001301', 'descuentos', 'Descuentos',
    'Alquilando con nosotros, las prendas para completar el look se pueden comprar con descuento. Sobre el alquiler en sí, cualquier rebaja, promo o descuento especial lo decide una persona del equipo, no se define por este canal.',
    'seed H1.6'),
+
+  ('a9f10000-0000-4000-8000-000000001302', 'descuentos', 'Descuento por grupo (casamiento)',
+   'Para casamientos, si son más de tres personas (cuatro o más) las que alquilan juntas, hay un 15% de descuento sobre el ambo. El descuento es solo sobre el ambo: los accesorios (camisa, corbata, cinturón, zapatos) quedan afuera. Es únicamente para casamientos, no aplica a graduaciones ni a otros eventos.',
+   'confirmado por la dueña, 22/9, textual: "grupos de casamiento, mas de 3 personas 15% de descuento en el ambo (no incluye accesorios el descuento)"'),
 
   ('a9f10000-0000-4000-8000-000000001401', 'novio', 'El que se casa (guion)',
    '¡Felicitaciones! Si te casás, buscamos un look especial para vos: el novio tiene que estar impecable, como todos los que se casan con nosotros. Para recomendarte bien conviene saber la fecha del casamiento, si es de día o de noche, si es en salón, campo o iglesia, y si ya tenés una idea de estilo o de colores. Con eso te mostramos dos looks y te proponemos un turno para probarlos con tiempo, así la sastrería lo deja perfecto para el gran día.',
