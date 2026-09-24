@@ -11,7 +11,7 @@ const TZ = "America/Argentina/Cordoba";
 const TURNO = "2d7f6c1e-8a3b-4c5d-9e0f-1a2b3c4d5e6f";
 const CHARLA = "0b1c2d3e-4f50-4617-8293-a4b5c6d7e8f9";
 
-Deno.test("recordatorio: nombre, día y hora en orden, y un botón por acción con el turno", () => {
+Deno.test("recordatorio: nombre, día y hora en el formato del texto aprobado, y SIN botones", () => {
   const p = armarPlantilla("recordatorio_18h", {
     nombre: "juan pérez",
     inicio: new Date("2030-06-06T16:00:00-03:00"),
@@ -19,29 +19,63 @@ Deno.test("recordatorio: nombre, día y hora en orden, y un botón por acción c
     linkResena: null,
   }, TZ);
   assert(!("falta" in p));
-  assertEquals(p.nombre, "recordatorio_turno_18h");
+  assertEquals(p.nombre, "recordatorio_turno");  // el nombre real registrado en Meta
   assertEquals(p.idioma, "es_AR");
-  assertEquals(p.cuerpo, ["Juan", "jueves 6 de junio", "16:00"]);
-  assertEquals(p.botones, [`CONFIRMO:${TURNO}`, `REPROGRAMAR:${TURNO}`]);
-  assert(p.texto.startsWith("Hola, Juan. Te recordamos tu turno en Otto Su Misura: mañana jueves 6 de junio a las 16:00"));
+  // El día va capitalizado y la hora con punto y "hs": es como lo escribió la dueña en el texto
+  // que se registra en Meta, y la variable tiene que entrar igual que el ejemplo aprobado.
+  assertEquals(p.cuerpo, ["Juan", "Jueves 6 de Junio", "16.00hs"]);
+  // Sin botones (Mateo, 16/9 y 24/9). Mandar un component de botón para una plantilla registrada
+  // sin botones hace que Meta rechace el envío: esta afirmación es la que evita ese error.
+  assertEquals(p.botones, []);
+  assert(p.texto.startsWith("Hola Juan!"));
+  assert(p.texto.includes("Te recordamos el turno para alquilar tu traje:"));
+  assert(p.texto.includes("🗓️Día: Jueves 6 de Junio"));
+  assert(p.texto.includes("⏱️Hora: 16.00hs"));
+  assert(p.texto.includes("España 764"));
+  assert(p.texto.includes("avisanos en caso de que no puedas asistir"));
 });
 
-Deno.test("agradecimiento: sin el link de reseña no se arma; con el link, va como {{2}}", () => {
-  const sin = armarPlantilla("agradecimiento_resena", { nombre: "Ana", inicio: null, referencia: TURNO, linkResena: null }, TZ);
-  assert("falta" in sin && sin.falta.includes("reseñas"));
-  const con = armarPlantilla("agradecimiento_resena", { nombre: "Ana", inicio: null, referencia: TURNO, linkResena: "https://g.page/r/x" }, TZ);
-  assert(!("falta" in con));
-  assertEquals(con.cuerpo, ["Ana", "https://g.page/r/x"]);
-  assertEquals(con.botones, []);
+Deno.test("agradecimiento: UNA sola variable, porque el link quedó fijo adentro de la plantilla de Meta", () => {
+  // La plantilla `agradecimiento` que Mateo registró el 23/9 declara un solo parámetro: el link de
+  // reseñas está escrito adentro del cuerpo. Mandar dos hace que Meta rechace el envío, así que
+  // esta afirmación es la que evita ese error. El linkResena del panel ya no interviene: se pasa
+  // null a propósito para comprobar que igual se arma.
+  const p = armarPlantilla("agradecimiento_resena", { nombre: "Ana", inicio: null, referencia: TURNO, linkResena: null }, TZ);
+  assert(!("falta" in p));
+  assertEquals(p.nombre, "agradecimiento");
+  assertEquals(p.cuerpo, ["Ana"]);
+  assertEquals(p.botones, []);
+  // El texto que se guarda en la charla tiene que ser el mismo que recibe el cliente, link incluido.
+  assert(p.texto.includes("👉 https://g.page/r/CYt3m6AmKYylEBM/review"));
+  assert(p.texto.includes("@otto_sumisura"));
 });
 
-Deno.test("recontacto: la misma plantilla para el primero y el segundo, con la charla en los botones", () => {
+Deno.test("los nombres son los que están registrados en Meta, no los que habíamos planeado", () => {
+  const n = (tipo: Parameters<typeof armarPlantilla>[0]) => {
+    const p = armarPlantilla(tipo, {
+      nombre: "Ana",
+      inicio: new Date("2030-06-06T16:00:00-03:00"),
+      referencia: TURNO,
+      linkResena: null,
+    }, TZ);
+    assert(!("falta" in p));
+    return p.nombre;
+  };
+  assertEquals(n("recordatorio_18h"), "recordatorio_turno");
+  assertEquals(n("agradecimiento_resena"), "agradecimiento");
+  assertEquals(n("recontacto_1"), "recontacto_cliente");
+  assertEquals(n("recontacto_2"), "recontacto_cliente");
+});
+
+Deno.test("recontacto: la misma plantilla para el primero y el segundo, sin botones", () => {
   for (const tipo of ["recontacto_1", "recontacto_2"] as const) {
     const p = armarPlantilla(tipo, { nombre: "MARTÍN", inicio: null, referencia: CHARLA, linkResena: null }, TZ);
     assert(!("falta" in p));
-    assertEquals(p.nombre, "recontacto_turno_pendiente");
+    assertEquals(p.nombre, "recontacto_cliente");  // el nombre real registrado en Meta
     assertEquals(p.cuerpo, ["Martín"]);
-    assertEquals(p.botones, [`RECONTACTO_SI:${CHARLA}`, `RECONTACTO_LUEGO:${CHARLA}`]);
+    assertEquals(p.botones, []);
+    assert(p.texto.startsWith("¡Hola Martín! 😊"));
+    assert(p.texto.includes("¿Querés que agendemos un turno?"));
   }
 });
 

@@ -617,7 +617,16 @@ prueba("una burbuja en duda no se reenvía: se marca y la charla va a una person
   //    como un mensaje del mostrador (sin la marca interna, que el cliente no tiene que ver).
   assertEquals(salidas.length, 1);
   const aviso = salidas[0] ?? "";
-  assert(/en un rato te escriben/.test(aviso), `el aviso al cliente, mandó: ${JSON.stringify(salidas)}`);
+  // El texto lo edita el dueño desde el panel (contexto_agente.texto_derivacion_fallo), así que
+  // acá NO se escribe a mano: se compara contra el que está configurado. Lo que se prueba es que
+  // salga el aviso, no que diga una frase concreta. Estaba escrito a mano hasta el 24/9, cuando
+  // Mateo lo cambió desde el panel —algo que el panel existe para permitir— y esta prueba se puso
+  // en rojo sin que hubiera ningún error: la peor clase de alarma, la que enseña a ignorarlas.
+  const [cfg] = (await c.sql.query(
+    "select valor from contexto_agente where clave = 'texto_derivacion_fallo'",
+  )).rows as { valor: string }[];
+  assert(cfg?.valor?.trim(), "falta texto_derivacion_fallo en contexto_agente");
+  assertEquals(aviso, cfg.valor, `sale el aviso configurado; mandó: ${JSON.stringify(salidas)}`);
   assert(!aviso.includes("[mostrador]"), "la marca interna no le llega al cliente");
 });
 

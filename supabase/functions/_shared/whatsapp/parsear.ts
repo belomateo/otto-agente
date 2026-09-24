@@ -22,9 +22,12 @@ const esObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !
 const lista = (v: unknown): Obj[] => (Array.isArray(v) ? v.filter(esObj) : []);
 const texto = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
 
-// En la base el tipo va en castellano, como lo leen el turno (agruparRafaga filtra 'texto') y el
-// panel. Solo se traduce el texto: 'button' lo reconoce registrar_mensaje_entrante para el
-// "Confirmo" (1.14), y los demás no los contesta Lucía todavía.
+// En la base el tipo va en castellano, como lo leen el turno y el panel. Solo se traduce el
+// texto: 'button' queda como 'button' y Lucía SÍ lo lee — rafaga.ts lo tiene en
+// TIPOS_QUE_SON_TEXTO desde el 15/9, porque el label que tocó el cliente es una frase que eligió
+// en vez de escribir. (Decía "los demás no los contesta Lucía todavía": era falso desde ese día.
+// Corregido el 24/9.) El "Confirmo" era la excepción, lo resolvía atender.ts en código antes de
+// correr el turno; hoy ninguna plantilla lleva botones, así que por acá no entra ninguno.
 const TIPO_EN_LA_BASE: Record<string, string> = { text: "texto" };
 
 // Lo que llega por `messages` pero no es un mensaje para contestar: una reacción (el 👍 a un

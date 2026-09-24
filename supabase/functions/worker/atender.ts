@@ -614,8 +614,13 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${conv.estado}: Lucía no contesta` });
     return;
   }
-  // "Necesito reprogramar" (1.14) queda anotado. Es un 'button', no 'texto': todavía no entra en
-  // la ráfaga de Lucía.
+  // "Necesito reprogramar" (1.14) queda anotado, y además SIGUE DE LARGO: el turno corre y Lucía
+  // lo lee. Decía lo contrario ("todavía no entra en la ráfaga") y era cierto por tres horas el
+  // 15/9, hasta que c638651 sumó 'button' a TIPOS_QUE_SON_TEXTO (rafaga.ts): desde entonces el
+  // label del botón le llega a Lucía como si el cliente lo hubiera tipeado, y reprogramar_turno
+  // lo resuelve igual. Corregido el 24/9 con la auditoría de las plantillas.
+  // Hoy ninguna plantilla lleva botones (plantillas.ts), así que esta rama está dormida: queda
+  // por si alguna vuelve a tenerlos.
   if (boton?.accion === "reprogramar") {
     await evento(db, t.conversacion_id, "ok", { etapa: "boton-reprogramar", turno_id: boton.turnoId });
   }
