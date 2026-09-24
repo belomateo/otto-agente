@@ -221,10 +221,10 @@ prueba("supuesto #33 resuelto: solo una foto (sin texto) contesta con el texto f
   assertEquals(resultado.derivo, false);
   // El turno pasa por prepararParaEnviar (decisión #17, hito 2.3) antes de guardar: el «¿» del
   // texto fijo se saca ahí, no en contexto_agente (el dueño lo sigue editando con buena
-  // ortografía en el panel).
-  assertEquals(resultado.mensajesAlCliente, [
-    sinSignosDeApertura("Por ahora no puedo leer esto. ¿Me contás en un mensaje de texto qué necesitás? Así te ayudo enseguida."),
-  ]);
+  // ortografía en el panel). Y el dueño edita el texto en sí desde el panel (hallazgo de logica,
+  // 24/9): se compara contra el valor vigente, no una redacción congelada.
+  const { valor: textoNoSoportado } = await fila(sql, "select valor from contexto_agente where clave = 'texto_mensaje_no_soportado'");
+  assertEquals(resultado.mensajesAlCliente, [sinSignosDeApertura(textoNoSoportado)]);
 });
 
 prueba("supuesto #33, caso parecido: nada nuevo en la ráfaga sigue sin contestar nada (no se confunde con soloNoTexto)", async ({ ctx, conversacionId }) => {
@@ -272,9 +272,12 @@ prueba("cliente_enojado: el clasificador lo detecta por tono, sin decir 'reclamo
 
   assertEquals(resultado.derivo, true);
   assertEquals(resultado.motivoDerivacion, "cliente_enojado");
+  // El dueño edita texto_derivacion_reclamo desde el panel (hallazgo de logica, 24/9): se compara
+  // contra el valor vigente, no una redacción congelada.
+  const { valor: textoReclamo } = await fila(sql, "select valor from contexto_agente where clave = 'texto_derivacion_reclamo'");
   assertEquals(
     resultado.mensajesAlCliente,
-    ["Te leo. Esto lo sigue alguien del local: en un rato te escriben."],
+    [sinSignosDeApertura(textoReclamo)],
     "no queda muda: el texto fijo de reclamo reemplaza cualquier despedida propia, no discute",
   );
   const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
@@ -313,7 +316,10 @@ prueba("reclamo por palabra clave (código, sin LLM) también deriva con el text
 
   assertEquals(resultado.derivo, true);
   assertEquals(resultado.motivoDerivacion, "reclamo");
-  assertEquals(resultado.mensajesAlCliente, ["Te leo. Esto lo sigue alguien del local: en un rato te escriben."]);
+  // El dueño edita texto_derivacion_reclamo desde el panel (hallazgo de logica, 24/9): se compara
+  // contra el valor vigente, no una redacción congelada.
+  const { valor: textoReclamo } = await fila(sql, "select valor from contexto_agente where clave = 'texto_derivacion_reclamo'");
+  assertEquals(resultado.mensajesAlCliente, [sinSignosDeApertura(textoReclamo)]);
   const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
   assertEquals([der?.motivo, der?.estado], ["reclamo", "pendiente"]);
 });
@@ -384,7 +390,12 @@ prueba("dos saltos del mismo turno derivan barandilla_doble de verdad: fila en d
 
   assertEquals(resultado.derivo, true);
   assertEquals(resultado.motivoDerivacion, "barandilla_doble");
-  assertEquals(resultado.mensajesAlCliente, ["Se me complicó de este lado. Ya avisé a alguien del local y en un rato te escriben."]);
+  // Hallazgo de logica, 24/9: el dueño edita texto_derivacion_fallo desde el panel (para eso
+  // existe), así que congelar la redacción acá hace que la prueba se ponga en rojo cada vez que
+  // la usa — no es un bug. Se compara contra lo que hay en contexto_agente en este momento: lo
+  // que importa es que salga el aviso CONFIGURADO, no una redacción particular.
+  const { valor: textoFallo } = await fila(sql, "select valor from contexto_agente where clave = 'texto_derivacion_fallo'");
+  assertEquals(resultado.mensajesAlCliente, [sinSignosDeApertura(textoFallo)]);
   const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
   assertEquals([der?.motivo, der?.estado], ["barandilla_doble", "pendiente"]);
   assertEquals((await fila(sql, "select estado from conversaciones where id = $1", [conversacionId])).estado, "derivada");
@@ -465,7 +476,11 @@ prueba("una consulta de venta que el modelo no resuelve (ni link ni derivación)
 
   assertEquals(resultado.derivo, true);
   assertEquals(resultado.motivoDerivacion, "barandilla_doble");
-  assertEquals(resultado.mensajesAlCliente, ["Se me complicó de este lado. Ya avisé a alguien del local y en un rato te escriben."]);
+  // Hallazgo de logica, 24/9: mismo criterio que el test de más arriba — el dueño edita
+  // texto_derivacion_fallo desde el panel, así que se compara contra el valor vigente en vez de
+  // congelar una redacción.
+  const { valor: textoFallo } = await fila(sql, "select valor from contexto_agente where clave = 'texto_derivacion_fallo'");
+  assertEquals(resultado.mensajesAlCliente, [sinSignosDeApertura(textoFallo)]);
   const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
   assertEquals([der?.motivo, der?.estado], ["barandilla_doble", "pendiente"]);
 });
