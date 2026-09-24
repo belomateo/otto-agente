@@ -241,21 +241,27 @@ prueba("derivar_a_persona escribe la derivación, pausa la charla y corta el tur
 // cliente_enojado la despedida QUE ESCRIBE EL MODELO se sigue descartando (no se discute con
 // alguien caliente), pero ya no queda mudo: un texto fijo aprobado (texto_derivacion_reclamo,
 // sembrado en contexto_agente) la reemplaza. Hasta el 18/9 esto daba mensajesAlCliente: [].
-prueba("derivar_a_persona con motivo descuento o reclamo reemplaza la despedida por el texto fijo, no la deja muda", async ({ ctx }) => {
+// Hallazgo de logica, 24/9 (mismo criterio en las dos pruebas de acá): el dueño edita estos
+// textos desde el panel (para eso existe), así que se compara contra el valor vigente en
+// contexto_agente en vez de congelar una redacción — lo que importa es que salga el texto
+// CONFIGURADO, no una frase particular.
+prueba("derivar_a_persona con motivo descuento o reclamo reemplaza la despedida por el texto fijo, no la deja muda", async ({ ctx, sql }) => {
   const r = await ejecutarHerramienta("derivar_a_persona", { motivo: "descuento", mensaje_al_cliente: "Le paso tu consulta al equipo." }, ctx);
   esOk(r);
   assert((r.efectos?.mensajesAlCliente?.length ?? 0) > 0, "el cliente recibe el texto fijo, no queda mudo");
-  assertEquals(r.efectos?.mensajesAlCliente, ["Te leo. Esto lo sigue alguien del local: en un rato te escriben."]);
+  const { valor: textoReclamo } = await fila(sql, "select valor from contexto_agente where clave = 'texto_derivacion_reclamo'");
+  assertEquals(r.efectos?.mensajesAlCliente, [textoReclamo]);
 });
 
 // El otro camino mudo que encontró la auditoría del 19/9: un motivo que SÍ permite despedida
 // propia (no está en MOTIVOS_SIN_MENSAJE), pero el modelo mandó null o solo espacios — antes eso
 // también daba []. Ahora cae al genérico de siempre (texto_derivacion_dura_generica), red de
 // contención igual que en cualquier otra derivación sin texto propio.
-prueba("derivar_a_persona sin mensaje_al_cliente (motivo que sí lo permite) cae al texto genérico, no queda muda", async ({ ctx }) => {
+prueba("derivar_a_persona sin mensaje_al_cliente (motivo que sí lo permite) cae al texto genérico, no queda muda", async ({ ctx, sql }) => {
   const r = await ejecutarHerramienta("derivar_a_persona", { motivo: "pide_persona", mensaje_al_cliente: "   " }, ctx);
   esOk(r);
-  assertEquals(r.efectos?.mensajesAlCliente, ["Te paso con alguien del equipo para que te ayude con esto. En un rato te escriben."]);
+  const { valor: textoGenerico } = await fila(sql, "select valor from contexto_agente where clave = 'texto_derivacion_dura_generica'");
+  assertEquals(r.efectos?.mensajesAlCliente, [textoGenerico]);
 });
 
 // Hallazgo de logica, 19/9, auditando la entrega de arriba: los 4 textos de derivación salen de
