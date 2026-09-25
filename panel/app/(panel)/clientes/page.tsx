@@ -32,7 +32,11 @@ export default function ClientesPage() {
     return () => clearTimeout(id);
   }, [busqueda]);
 
-  const ruta = `/api/clientes${evento ? `?evento=${evento}` : ''}${busquedaFiltro.trim() ? `${evento ? '&' : '?'}q=${encodeURIComponent(busquedaFiltro.trim())}` : ''}`;
+  const filtros = `${evento ? `?evento=${evento}` : ''}${busquedaFiltro.trim() ? `${evento ? '&' : '?'}q=${encodeURIComponent(busquedaFiltro.trim())}` : ''}`;
+  const ruta = `/api/clientes${filtros}`;
+  // Exporta lo mismo que se está viendo (mismos filtros), pero con la ficha completa: mail,
+  // talle, ciudad, presupuesto… lo que la tabla recorta para entrar en pantalla.
+  const rutaCsv = `/api/clientes/csv${filtros}`;
   const { datos, cargando, error, recargar } = useDatos<{ clientes: FilaCliente[]; total: number }>(ruta);
   const lista = datos?.clientes ?? [];
 
@@ -77,6 +81,17 @@ export default function ClientesPage() {
               Mes: todos ▾
             </span>
             <span className="ml-auto text-[14px] tabular-nums text-grafito md:text-[12.5px]">{lista.length} clientes</span>
+            {/* Un <a> y no un fetch: la ruta es del mismo dominio, viaja la cookie de sesión y el
+                navegador baja el archivo solo. Sin clientes no hay nada que exportar. */}
+            {lista.length > 0 && (
+              <a
+                href={rutaCsv}
+                download
+                className="rounded-pill border border-borde bg-lino px-3 py-1.5 text-[14px] font-medium text-grafito hover:border-cobre md:text-[12.5px]"
+              >
+                Exportar CSV
+              </a>
+            )}
           </div>
           {contenido ?? (
             <div className="overflow-hidden rounded-otto border border-borde bg-lino">
