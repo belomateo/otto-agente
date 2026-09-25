@@ -9,11 +9,12 @@ export const HORA_MS = 60 * 60 * 1000;
 const HACE_UN_MINUTO = new Date(AHORA.getTime() - 60 * 1000);
 
 // Una traza con las herramientas que se llamaron bien y lo que devolvieron.
-export function traza(p: { herramientas?: string[]; precios?: number[]; horas?: string[] } = {}): Traza {
+export function traza(p: { herramientas?: string[]; precios?: number[]; horas?: string[]; accesorios?: string[] } = {}): Traza {
   const t = trazaNueva();
   for (const h of p.herramientas ?? []) t.llamadas.push({ herramienta: h, argumentos: {}, ok: true });
   t.preciosDevueltos.push(...(p.precios ?? []));
   t.horasDevueltas.push(...(p.horas ?? []));
+  t.accesoriosDevueltos.push(...(p.accesorios ?? []));
   return t;
 }
 

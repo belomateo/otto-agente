@@ -19,6 +19,7 @@ import pg from "npm:pg@8.13.1";
 import { type ClienteSql, dbDesde } from "../_shared/db.ts";
 import { calendarioDeEnsayo } from "../_shared/herramientas/tipos.ts";
 import { correrTurno } from "../_shared/turno/turno.ts";
+import { promptDeLucia } from "../worker/prompt.ts";
 
 const TZ = Deno.env.get("NEGOCIO_TZ") || "America/Argentina/Cordoba";
 const DERIVACION_TEL = Deno.env.get("DERIVACION_ALQUILER_TEL")?.trim() || null;
@@ -93,6 +94,12 @@ async function manejar(req: Request): Promise<Response> {
       return Response.json({ cliente_id: filaCliente.id, conversacion_id: conv.id, pausada: true, mensajes: [] });
     }
 
+    // El mismo prompt que el worker real: el de la base (prompt_vigente()), no el prompt.md que
+    // viaja con la función. Hallazgo del 25/9: once tandas de cambios del 19 al 23/9 estaban en la
+    // plantilla del repo y nunca llegaron a prompt_base. El emulador leía el archivo, así que los
+    // guiones daban bien, mientras el WhatsApp de verdad atendía con la versión del 17/9. Probar
+    // otra cosa que la que recibe el cliente es no probar.
+    const { texto: prompt } = await promptDeLucia(db, ahora);
     const resultado = await correrTurno(db, {
       clienteId: filaCliente.id,
       telefono,
@@ -102,6 +109,7 @@ async function manejar(req: Request): Promise<Response> {
       calendario: calendarioDeEnsayo,
       derivacionTel: DERIVACION_TEL,
       yaDerivada: conv.estado === "derivada",
+      prompt,
     });
 
     return Response.json({

@@ -4,6 +4,7 @@
 // local (horarios) y el de los turnos de alquiler (franjas_turnos). Los horarios concretos de
 // un turno salen siempre de buscar_horarios.
 
+import { accesoriosEn } from "../barandillas/accesorio_sin_herramienta.ts";
 import { buscarFragmentos } from "../conocimiento/busqueda.ts";
 import { SECCIONES, type Seccion } from "../enums.ts";
 import { describirHorarios, leerFranjas, leerHorarioDelLocal } from "./horario_laboral.ts";
@@ -36,6 +37,7 @@ export const buscarInformacion: Herramienta<Args> = {
     const datos: Record<string, unknown> = {
       fragmentos: encontrados.map(({ tema, titulo, texto }) => ({ tema, titulo, texto })),
     };
+    ctx.traza.accesoriosDevueltos.push(...encontrados.flatMap((f) => accesoriosEn(f.texto)));
     if (args.seccion === "ubicacion-horarios" || encontrados.some((f) => f.tema === "ubicacion-horarios")) {
       const local = await leerHorarioDelLocal(ctx.db);
       const { franjas } = await leerFranjas(ctx.db);

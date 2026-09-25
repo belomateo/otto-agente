@@ -160,6 +160,29 @@ Deno.test("una sola línea con emoji no es una lista (caso parecido, no se rompe
   assert(salida.length > 1);
 });
 
+Deno.test("nunca corta justo después de dos puntos: la frase que presenta la lista va con la lista (25/9)", () => {
+  // Visto en vivo con la lista del primer mensaje: «…necesito:» salía sola en un globo y los
+  // cuatro datos en el siguiente. Es el texto tal cual lo mandó Lucía.
+  const primerMensaje = [
+    "Hola, soy Lucía, asistente de Mr Otto.",
+    "",
+    "Para reservarte un turno en el local necesito:",
+    "",
+    "1️⃣ Tu nombre",
+    "2️⃣ Para qué evento es",
+    "3️⃣ La fecha del evento",
+    "4️⃣ Tu mail (si querés)",
+    "",
+    "Mandámelos como te quede cómodo y te busco horarios.",
+  ].join(SALTO);
+  const salida = prepararParaEnviar([primerMensaje]);
+  assert(salida.length > 1, "con este largo tiene que salir en más de una parte");
+  for (const parte of salida) assert(!parte.trimEnd().endsWith(":"), `una parte termina en dos puntos: «${parte}»`);
+  const conLaFrase = salida.filter((p) => p.includes("necesito:"));
+  assertEquals(conLaFrase.length, 1);
+  assert(conLaFrase[0].includes("1️⃣ Tu nombre") && conLaFrase[0].includes("4️⃣ Tu mail"), "la frase quedó separada de su lista");
+});
+
 Deno.test("si todo el mensaje es la lista, sale en uno solo aunque sea largo", () => {
   const largaDeVerdad = Array.from({ length: 12 }, (_, i) => `${i % 10}⃣ Paso número ${i} con su explicación bien larga para estirar el texto.`).join(SALTO);
   assert(largaDeVerdad.length > HASTA_DOS_MENSAJES);

@@ -11,6 +11,7 @@
 // respete esa prioridad al recomendar. La prioridad se rompe justamente cuando hay `modelo`: ahí
 // importa la coincidencia, no el orden.
 
+import { accesoriosEn } from "../barandillas/accesorio_sin_herramienta.ts";
 import { textosDeSeccion } from "../conocimiento/busqueda.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
@@ -91,6 +92,9 @@ export const consultarCatalogo: Herramienta<Args> = {
     // precio_sin_herramienta chequea que Lucía no diga un número que no salió de acá. Meter el 0
     // sería autorizarla a decirlo.
     ctx.traza.preciosDevueltos.push(...modelos.map((m) => m.precio_base).filter((p): p is number => p !== null));
+    // Lo que incluye (y las descripciones) son textos de la casa: si nombran la camisa o los
+    // zapatos, Lucía los puede repetir sin que accesorio_sin_herramienta la frene.
+    ctx.traza.accesoriosDevueltos.push(...accesoriosEn([queIncluye, ...modelos.map((m) => m.descripcion ?? "")].join("\n")));
     const sinPrecio = modelos.filter((m) => m.precio_base === null).length;
     const datos: Record<string, unknown> = { modelos, que_incluye: queIncluye, modelos_cargados_en_total: total };
     if (sinPrecio > 0) {

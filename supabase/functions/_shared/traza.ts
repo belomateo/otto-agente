@@ -5,7 +5,9 @@
 //   · agendar_turno solo acepta un hueco que esté en huecosOfrecidos (salió de buscar_horarios
 //     en este mismo turno);
 //   · precio_sin_herramienta solo acepta montos que estén en preciosDevueltos;
-//   · horario_sin_herramienta solo acepta horas que estén en horasDevueltas.
+//   · horario_sin_herramienta solo acepta horas que estén en horasDevueltas;
+//   · accesorio_sin_herramienta acepta, sin consultar_accesorios, los accesorios nombrados en un
+//     texto de la casa que una herramienta devolvió en este turno (accesoriosDevueltos).
 // El turno (H1.7) arranca una traza nueva por turno y siembra horasDevueltas con los turnos
 // del cliente que ya le pasa en el contexto.
 
@@ -26,10 +28,11 @@ export type Traza = {
   huecosOfrecidos: HuecoOfrecido[];
   preciosDevueltos: number[];
   horasDevueltas: string[]; // "HH:MM"
+  accesoriosDevueltos: string[]; // en singular y sin tilde: "zapato", "cinturon"
 };
 
 export function trazaNueva(): Traza {
-  return { llamadas: [], huecosOfrecidos: [], preciosDevueltos: [], horasDevueltas: [] };
+  return { llamadas: [], huecosOfrecidos: [], preciosDevueltos: [], horasDevueltas: [], accesoriosDevueltos: [] };
 }
 
 export function llamoA(traza: Traza, herramienta: string, soloSiSalioBien = true): boolean {

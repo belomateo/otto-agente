@@ -101,7 +101,11 @@ function cortesPosibles(t: string): Corte[] {
   // sí valen: cortar justo antes o justo después de la lista la deja entera.
   const bloques = bloquesDePasos(t);
   const adentro = (i: number) => bloques.some((b) => i > b.desde && i < b.hasta);
-  return [...porFin.values()].filter((c) => !adentro(c.fin)).sort((a, b) => a.fin - b.fin);
+  // Y nunca justo después de dos puntos: anuncian lo que sigue. Visto en vivo el 25/9 con la
+  // lista del primer mensaje: «Para reservarte un turno necesito:» salía sola en un globo y los
+  // cuatro datos en el siguiente.
+  const anunciaLoQueSigue = (i: number) => t.slice(0, i).trimEnd().endsWith(":");
+  return [...porFin.values()].filter((c) => !adentro(c.fin) && !anunciaLoQueSigue(c.fin)).sort((a, b) => a.fin - b.fin);
 }
 
 function partir(t: string, partes: number): string[] {

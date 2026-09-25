@@ -35,10 +35,21 @@ const MAXIMO_OPCIONES = 16;
 // siga sin estar en la ficha.
 const ETAPA_EVENTO_PEDIR_MAIL = "pedir_mail";
 
+// Pedido de Mateo, 25/9: en una charla nueva, si el cliente solo saludó, Lucía manda la lista de
+// lo que necesita para el turno (contexto_agente.lista_para_agendar), y esa lista ya pide el
+// mail. Si el cliente no lo dio, volver a pedirlo al ofrecer horarios es pedirlo dos veces. Así
+// que cuenta como pedido cualquier mensaje que le salió al cliente en esta charla nombrando el
+// mail —la lista, o una persona del equipo que lo pidió desde el panel—, no solo la marca de acá.
+// Con \m…\M, "mail" es una palabra entera: el "gmail" de una dirección que se repite no cuenta.
+const MENCIONA_EL_MAIL = "\\m(e-?mail|mail|correo)\\M";
+
 async function yaSePidioElMail(db: Db, conversacionId: string): Promise<boolean> {
   const filas = await db.consulta(
-    "select 1 from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = $2 limit 1",
-    [conversacionId, ETAPA_EVENTO_PEDIR_MAIL],
+    `select 1 from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = $2
+     union all
+     select 1 from mensajes where conversacion_id = $1 and direccion = 'saliente' and contenido ~* $3
+     limit 1`,
+    [conversacionId, ETAPA_EVENTO_PEDIR_MAIL, MENCIONA_EL_MAIL],
   );
   return filas.length > 0;
 }

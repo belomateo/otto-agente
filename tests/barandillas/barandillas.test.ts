@@ -423,6 +423,17 @@ Deno.test("accesorio_sin_herramienta no salta con la herramienta en la traza, ni
   await noSalta(accesorioSinHerramienta, entrada("¿Para qué evento necesitás el traje?"));
 });
 
+Deno.test("accesorio_sin_herramienta no salta si el accesorio salió de un texto de la casa en este turno (25/9)", async () => {
+  // Lo de «qué incluye», que consultar_catalogo devuelve con cada precio: «la camisa, la corbata
+  // y los zapatos se alquilan aparte». Visto en vivo: repetirlo terminaba derivando la charla.
+  const conQueIncluye = traza({ herramientas: ["consultar_catalogo"], accesorios: ["camisa", "corbata", "zapato"] });
+  await noSalta(accesorioSinHerramienta, entrada("La camisa, la corbata y los zapatos se alquilan aparte.", { traza: conQueIncluye }));
+  // Singular o plural da lo mismo: es el mismo dato.
+  await noSalta(accesorioSinHerramienta, entrada("El zapato se alquila aparte.", { traza: conQueIncluye }));
+  // Caso parecido: un accesorio que ese texto NO nombraba sigue siendo de memoria.
+  await salta(accesorioSinHerramienta, entrada("Los zapatos y el cinturón se alquilan aparte.", { traza: conQueIncluye }));
+});
+
 // ── reglas ───────────────────────────────────────────────────────────────────────────────
 
 Deno.test("deriva_y_pregunta salta con derivar_a_persona y una pregunta, y saca la pregunta", async () => {
