@@ -81,6 +81,31 @@ prueba("consultar_catalogo filtra por color y talle, suma qué incluye y deja lo
   assertEquals([...new Set(ctx.traza.preciosDevueltos)].sort((a, b) => a - b), [111, 222]);
 });
 
+prueba("consultar_catalogo: un modelo con precio_base en 0 no tiene precio, y no entra en la traza", async ({ ctx, sql }) => {
+  // El 0 no es un precio: es "todavía no lo cargaron". La columna es not null con check >= 0, así
+  // que 0 es lo que queda cuando se activa un modelo sin ponerle precio. Antes se devolvía tal
+  // cual y Lucía le decía "$0" a un cliente — pasó en el red-team del 24/9 con los cinco modelos
+  // reales activos en 0. Si esta afirmación se cae, volvió ese bug.
+  await soloEstosModelos(sql);
+  await soloEstosFragmentos(sql, [{ tema: "que-incluye", titulo: "Qué incluye el precio", texto: "El precio incluye sastrería y tintorería." }]);
+  await crearModelo(sql, { modelo: "Sin precio", precio: 0, colores: ["Negro"], talles: ["50"] });
+  await crearModelo(sql, { modelo: "Con precio", precio: 333, colores: ["Gris"], talles: ["50"] });
+
+  const r = await ejecutarHerramienta("consultar_catalogo", { color: null, talle: null }, ctx);
+  esOk(r);
+  const modelos = r.datos.modelos as { modelo: string; precio_base: number | null }[];
+  assertEquals(
+    modelos.map((m) => [m.modelo, m.precio_base]).sort(),
+    [["Con precio", 333], ["Sin precio", null]],
+  );
+  // La nota le dice a Lucía qué hacer con eso: no inventar y no decir que sale cero.
+  assertMatch(String(r.datos.nota_precios), /NO des precio|no des ningún precio/i);
+  // Y el 0 no queda autorizado en la traza, que es contra lo que la barandilla
+  // precio_sin_herramienta chequea que Lucía no diga un número que no salió de acá.
+  assertEquals(ctx.traza.preciosDevueltos.includes(0), false);
+  assertEquals([...new Set(ctx.traza.preciosDevueltos)], [333]);
+});
+
 prueba("consultar_catalogo filtra a un modelo puntual cuando el cliente pregunta por uno solo (decisión de Mateo, 16/9)", async ({ ctx, sql }) => {
   await soloEstosModelos(sql);
   await soloEstosFragmentos(sql, [{ tema: "que-incluye", titulo: "Qué incluye el precio", texto: "El precio incluye sastrería y tintorería." }]);

@@ -29,7 +29,12 @@ function limpioOnull(v: unknown): string | null {
   return s === "" ? null : s;
 }
 
-export function validarExtraccion(cruda: Record<string, unknown>): { ficha: Partial<Ficha>; descartados: string[] } {
+// `hoy` en la zona del negocio (AAAA-MM-DD). Se pasa y no se calcula acá para que la validación
+// sea pura y testeable, igual que el resto de la función.
+export function validarExtraccion(
+  cruda: Record<string, unknown>,
+  hoy?: string,
+): { ficha: Partial<Ficha>; descartados: string[] } {
   const ficha: Partial<Ficha> = {};
   const descartados: string[] = [];
   for (const campo of CAMPOS_FICHA) {
@@ -39,13 +44,26 @@ export function validarExtraccion(cruda: Record<string, unknown>): { ficha: Part
     if (campo === "rol" && !(ROLES_CLIENTE as readonly string[]).includes(valor)) { descartados.push(`rol="${valor}"`); continue; }
     if (campo === "dia_o_noche" && !(DIA_O_NOCHE as readonly string[]).includes(valor)) { descartados.push(`dia_o_noche="${valor}"`); continue; }
     if (campo === "fecha_evento" && !esFechaValida(valor)) { descartados.push(`fecha_evento="${valor}" (no es AAAA-MM-DD)`); continue; }
+    // Una fecha que ya pasó no es un dato: es el modelo poniéndole un año que el cliente nunca
+    // dijo. Los otros tres caminos que escriben la ficha ya la rechazaban (guardar_datos_cliente,
+    // agendar_turno:73, buscar_horarios:71) y este no, así que el extractor —que corre en el
+    // finally de CADA turno— podía pisar la ficha con una fecha pasada. Y el daño no se veía acá:
+    // a partir de ese momento buscar_horarios y agendar_turno rechazan todo, Lucía le dice al
+    // cliente que SU fecha ya pasó, y no hay forma de que saque turno. Red-team del 24/9: en 2 de
+    // 6 charlas, "20 de junio" quedó como 2025-06-20 y "25 de octubre" como 2025-10-25, con el
+    // cliente pidiendo el turno dos veces y sin conseguirlo nunca.
+    if (campo === "fecha_evento" && hoy && valor < hoy) { descartados.push(`fecha_evento="${valor}" (ya pasó: hoy es ${hoy})`); continue; }
     if (campo === "email" && !formatoDeEmailValido(valor)) { descartados.push(`email="${valor}" (no tiene forma de mail)`); continue; }
     ficha[campo] = valor;
   }
   return { ficha, descartados };
 }
 
-export async function extraer(turnoCompletoTexto: string, fetcher?: typeof fetch): Promise<ResultadoExtractor | null> {
+export async function extraer(
+  turnoCompletoTexto: string,
+  fetcher?: typeof fetch,
+  hoy?: string,
+): Promise<ResultadoExtractor | null> {
   const r = await llamarChat(
     {
       model: Deno.env.get("LLM_EXTRACTOR") ?? "",
@@ -66,6 +84,6 @@ export async function extraer(turnoCompletoTexto: string, fetcher?: typeof fetch
     console.error("extraer: la respuesta no fue JSON válido", r.contenido, e);
     return null;
   }
-  const { ficha, descartados } = validarExtraccion(cruda);
+  const { ficha, descartados } = validarExtraccion(cruda, hoy);
   return { ficha, descartados, tokensIn: r.uso.tokensIn, tokensOut: r.uso.tokensOut, tokensCacheados: r.uso.tokensCacheados, ms: r.ms };
 }

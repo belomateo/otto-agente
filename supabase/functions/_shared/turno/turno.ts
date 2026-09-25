@@ -482,7 +482,9 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
         const textoLucia = resultado ? resultado.mensajesAlCliente.join("\n") : "";
         const turnoActual = `Cliente: ${mensaje}` + (textoLucia ? `\nLucía: ${textoLucia}` : "");
         const turnoTexto = [...historial.map((m) => `${m.role === "user" ? "Cliente" : "Lucía"}: ${m.content}`), turnoActual].join("\n");
-        const extraccion = await extraer(turnoTexto, p.fetcher);
+        // El "hoy" del negocio va sí o sí: sin él, el extractor escribiría en la ficha una fecha
+        // de evento que ya pasó y dejaría al cliente sin poder sacar turno nunca (ver extractor.ts).
+        const extraccion = await extraer(turnoTexto, p.fetcher, fechaLocal(p.ahora, p.tz));
         if (!extraccion) {
           eventos.push({ tipo: "error", detalle: { etapa: "extraer", error: "sin respuesta del extractor" } });
         } else {

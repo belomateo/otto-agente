@@ -79,11 +79,25 @@ export const consultarCatalogo: Herramienta<Args> = {
       descripcion: f.descripcion === null ? null : String(f.descripcion),
       colores: nombresDeColores(f.colores),
       talles: Array.isArray(f.talles) ? f.talles.map(String) : [],
-      precio_base: Number(f.precio_base),
+      // precio_base 0 NO es un precio: es "todavía no lo cargaron". La columna es not null con
+      // check >= 0, así que no hay forma de dejarla vacía y 0 es lo que queda cuando se carga un
+      // modelo sin precio. Devolverlo tal cual hacía que Lucía le dijera "$0" a un cliente — pasó
+      // en el red-team del 24/9, y el propio seed lo había advertido por escrito
+      // (seeds/catalogo_alquiler.sql:9-12) antes de que alguien activara los cinco modelos en 0.
+      precio_base: Number(f.precio_base) > 0 ? Number(f.precio_base) : null,
       tiene_fotos: Number(f.fotos) > 0,
     }));
-    ctx.traza.preciosDevueltos.push(...modelos.map((m) => m.precio_base));
+    // Solo los precios de verdad entran en la traza: es la lista contra la que la barandilla
+    // precio_sin_herramienta chequea que Lucía no diga un número que no salió de acá. Meter el 0
+    // sería autorizarla a decirlo.
+    ctx.traza.preciosDevueltos.push(...modelos.map((m) => m.precio_base).filter((p): p is number => p !== null));
+    const sinPrecio = modelos.filter((m) => m.precio_base === null).length;
     const datos: Record<string, unknown> = { modelos, que_incluye: queIncluye, modelos_cargados_en_total: total };
+    if (sinPrecio > 0) {
+      datos.nota_precios = sinPrecio === modelos.length
+        ? "Ningún modelo tiene el precio cargado (precio_base en null). NO des ningún precio ni digas que sale cero: contá el modelo y lo que incluye, y decí que el precio lo confirma el equipo del local."
+        : "Algunos modelos vienen con precio_base en null: de esos NO des precio ni digas que salen cero, decí que lo confirma el equipo del local.";
+    }
     if (modelos.length === 0) {
       datos.nota = total === 0
         ? "No hay ningún modelo cargado todavía. No des precios ni describas modelos: si el cliente los pide, derivá con motivo dato_no_encontrado."
