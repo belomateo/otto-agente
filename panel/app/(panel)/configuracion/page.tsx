@@ -1,9 +1,10 @@
 'use client';
 
 // Configuración › Lucía — conectado a GET /api/configuracion (reglas, contexto) y
-// GET/PUT /api/configuracion/prompt-base (H1.8/H1.9, paneles). El contexto real son 7 claves
-// fijas de contexto_agente (presentacion, tono, ancla_de_valor y los 4 textos de derivación/
-// turno), no un solo cuadro de texto libre como en el mock: cada una se edita por separado.
+// GET/PUT /api/configuracion/prompt-base (H1.8/H1.9, paneles). El contexto real son las claves
+// de contexto_agente (presentacion, la lista para el turno, tono, ancla_de_valor y los textos
+// fijos de derivación/turno), no un solo cuadro de texto libre como en el mock: cada una se
+// edita por separado.
 // Las reglas no se borran desde el panel (la entidad no es `borrable`): "Activa" en false es
 // cómo se deja de aplicar una sin perder su historial ni renumerar las demás.
 
@@ -26,16 +27,35 @@ type FilaRegla = Configuracion['reglas'][number];
 
 const LABEL_CONTEXTO: Record<string, string> = {
   presentacion: 'Presentación — lo primero que dice en cada charla nueva',
+  lista_para_agendar: 'Lista para el turno — la manda después de presentarse, si el cliente solo saludó',
   tono: 'Tono — cómo habla',
   ancla_de_valor: 'Ancla de valor — por qué elegir Mr. Otto',
   texto_derivacion_dura_generica: 'Derivación genérica — cuando pasa la charla a una persona sin un motivo más puntual',
+  texto_derivacion_fallo: 'Derivación por duda — cuando prefiere que un dato lo confirme el equipo',
+  texto_derivacion_reclamo: 'Derivación por reclamo — cuando el cliente reclama o está enojado',
+  texto_derivacion_corporativo: 'Derivación corporativa — pedidos de empresas y uniformes',
   texto_evento_inminente: 'Evento hoy o mañana — cuando deriva porque el evento ya está encima',
   texto_mensaje_no_soportado: 'Mensaje no soportado — cuando el cliente manda algo que no puede leer (audio, ubicación…)',
+  texto_adjunto_pendiente: 'Adjunto en camino — mientras termina de recibir una foto o un audio',
   texto_turno_confirmado: 'Turno confirmado — lo que dice al agendar',
 };
-// El orden en que se editan: presentación primero (ya tenía su lugar en el canvas), el resto
-// alfabético por clave para que sea estable entre cargas.
-const ORDEN_CONTEXTO = ['presentacion', 'tono', 'ancla_de_valor', 'texto_turno_confirmado', 'texto_evento_inminente', 'texto_derivacion_dura_generica', 'texto_mensaje_no_soportado'];
+// El orden en que se editan: presentación y la lista primero (es lo que ve el cliente al
+// arrancar), después cómo habla y los textos fijos. Una clave nueva que no esté acá va al final.
+const ORDEN_CONTEXTO = [
+  'presentacion',
+  'lista_para_agendar',
+  'tono',
+  'ancla_de_valor',
+  'texto_turno_confirmado',
+  'texto_evento_inminente',
+  'texto_derivacion_dura_generica',
+  'texto_derivacion_fallo',
+  'texto_derivacion_reclamo',
+  'texto_derivacion_corporativo',
+  'texto_mensaje_no_soportado',
+  'texto_adjunto_pendiente',
+];
+const posicion = (clave: string) => (ORDEN_CONTEXTO.includes(clave) ? ORDEN_CONTEXTO.indexOf(clave) : ORDEN_CONTEXTO.length);
 
 function TarjetaLucia() {
   return (
@@ -73,7 +93,7 @@ function ContextoEditable({ fila, onCambio }: { fila: FilaContexto; onCambio: ()
       {corto ? (
         <input value={edicion.valor.valor} onChange={(e) => edicion.setValor({ ...edicion.valor, valor: e.target.value })} className={CAMPO} />
       ) : (
-        <textarea value={edicion.valor.valor} onChange={(e) => edicion.setValor({ ...edicion.valor, valor: e.target.value })} rows={3} className={`${CAMPO} resize-y leading-[1.6]`} />
+        <textarea value={edicion.valor.valor} onChange={(e) => edicion.setValor({ ...edicion.valor, valor: e.target.value })} rows={fila.clave === 'lista_para_agendar' ? 7 : 3} className={`${CAMPO} resize-y leading-[1.6]`} />
       )}
       {toast}
       <AccionesEdicion sucio={edicion.sucio} guardando={edicion.guardando} onGuardar={guardar} onDeshacer={edicion.deshacer} onVerHistorial={() => setHistorial(true)} />
@@ -245,7 +265,7 @@ export default function ConfiguracionLuciaPage() {
   if (error) return <EstadoError mensaje={error} onReintentar={recargar} />;
   if (!datos) return null;
 
-  const contextoOrdenado = [...datos.contexto].sort((a, b) => ORDEN_CONTEXTO.indexOf(a.clave) - ORDEN_CONTEXTO.indexOf(b.clave));
+  const contextoOrdenado = [...datos.contexto].sort((a, b) => posicion(a.clave) - posicion(b.clave));
 
   return (
     <>
