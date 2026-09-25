@@ -16,6 +16,15 @@ export const CLAVE_TEXTO_EVENTO_INMINENTE = "texto_evento_inminente";
 export const CLAVE_TEXTO_DERIVACION_DURA_GENERICA = "texto_derivacion_dura_generica";
 export const CLAVE_TEXTO_DERIVACION_RECLAMO = "texto_derivacion_reclamo";
 export const CLAVE_TEXTO_DERIVACION_FALLO = "texto_derivacion_fallo";
+// corporativo: la regla 12 pide juntar cinco datos (cuántas personas, rubro, prendas actuales,
+// logo, proveedor) ANTES de que el equipo llame. Pero corporativo/uniforme son derivación dura
+// por palabra clave, que corre ANTES del modelo y corta el turno: Lucía nunca llegaba a preguntar
+// nada y el equipo recibía el contacto en blanco (red-team del 24/9, reproducido 2/2).
+// La salida no es sacar el freno —perderíamos la garantía de que el contacto llegue— sino que el
+// mensaje del traspaso haga ya la primera pregunta. De ahí en adelante la charla queda 'derivada'
+// pero Lucía SIGUE contestando (corporativo no está en MOTIVOS_DE_SILENCIO_DERIVADA), así que
+// junta los otros cuatro datos en los turnos siguientes y el equipo los lee en la charla.
+export const CLAVE_TEXTO_DERIVACION_CORPORATIVO = "texto_derivacion_corporativo";
 
 // Respaldos en código (hallazgo de logica, 19/9, auditando la entrega de "ninguna derivación
 // queda muda"): los 4 textos de arriba salen de contexto_agente, editables desde el panel sin
@@ -30,9 +39,11 @@ const RESPALDOS = {
   [CLAVE_TEXTO_DERIVACION_DURA_GENERICA]: "Te paso con alguien del equipo para que te ayude con esto. En un rato te escriben.",
   [CLAVE_TEXTO_DERIVACION_RECLAMO]: "Te leo. Esto lo sigue alguien del local: en un rato te escriben.",
   [CLAVE_TEXTO_DERIVACION_FALLO]: "Se me complicó de este lado. Ya avisé a alguien del local y en un rato te escriben.",
+  [CLAVE_TEXTO_DERIVACION_CORPORATIVO]:
+    "Los pedidos para empresas y uniformes los sigue un equipo aparte de Mr Otto, y ya les avisé. Para que te contacten con todo listo, ¿para cuántas personas sería?",
 } as const;
 
-type ClaveDerivacion = keyof typeof RESPALDOS;
+export type ClaveDerivacion = keyof typeof RESPALDOS;
 
 // Como textoDeContexto, pero nunca null: si la fila está vacía o no existe, cae al respaldo de
 // código. usoRespaldo queda para que quien llama pueda dejar rastro (datos.falta) de que hay una

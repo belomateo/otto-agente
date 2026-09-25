@@ -16,6 +16,8 @@ import type { Db } from "../db.ts";
 import type { MotivoDerivacion } from "../enums.ts";
 import { actualizarFicha, leerFicha } from "../herramientas/ficha.ts";
 import {
+  type ClaveDerivacion,
+  CLAVE_TEXTO_DERIVACION_CORPORATIVO,
   CLAVE_TEXTO_DERIVACION_DURA_GENERICA,
   CLAVE_TEXTO_DERIVACION_FALLO,
   CLAVE_TEXTO_DERIVACION_RECLAMO,
@@ -65,6 +67,20 @@ const MOTIVOS_CON_TEXTO_RECLAMO: readonly MotivoDerivacion[] = ["reclamo", "clie
 // escribir algo que pasara las barandillas), no del cliente ni de su reclamo — texto propio, con
 // tono de disculpa, en vez del genérico o el de reclamo.
 const MOTIVOS_CON_TEXTO_FALLO: readonly MotivoDerivacion[] = ["barandilla_doble"];
+// corporativo: texto propio que deriva Y hace la primera de las cinco preguntas de la regla 12.
+// Hace falta porque la derivación dura corta el turno antes del modelo, así que el mensaje del
+// traspaso es la ÚNICA oportunidad de preguntar algo en ese primer turno — sin esto el equipo
+// recibía el contacto sin un solo dato (red-team 24/9). Ver derivacion.ts para el porqué largo.
+const MOTIVOS_CON_TEXTO_CORPORATIVO: readonly MotivoDerivacion[] = ["corporativo"];
+
+// Qué texto fijo le toca a cada motivo al derivar por primera vez. Un solo lugar, porque lo
+// necesitan los dos caminos: el de la derivación dura por palabra clave y el de derivar().
+function claveDeDerivacion(motivo: MotivoDerivacion): ClaveDerivacion {
+  if (MOTIVOS_CON_TEXTO_RECLAMO.includes(motivo)) return CLAVE_TEXTO_DERIVACION_RECLAMO;
+  if (MOTIVOS_CON_TEXTO_FALLO.includes(motivo)) return CLAVE_TEXTO_DERIVACION_FALLO;
+  if (MOTIVOS_CON_TEXTO_CORPORATIVO.includes(motivo)) return CLAVE_TEXTO_DERIVACION_CORPORATIVO;
+  return CLAVE_TEXTO_DERIVACION_DURA_GENERICA;
+}
 // Pedido de Mateo, 21/9 (vía logica): una charla ya derivada deja de ser muda por completo — el
 // worker (logica) saca el bloqueo total y le pasa yaDerivada acá. Los ÚNICOS dos motivos para
 // que Lucía se calle en un turno de una charla ya derivada, textuales: el cliente se enoja, o
@@ -105,12 +121,9 @@ async function derivar(
   if (MOTIVOS_QUE_QUEDAN_MUDOS.includes(p.motivo)) {
     mensajesAlCliente = [];
   } else {
-    const clave = MOTIVOS_CON_TEXTO_RECLAMO.includes(p.motivo)
-      ? CLAVE_TEXTO_DERIVACION_RECLAMO
-      : MOTIVOS_CON_TEXTO_FALLO.includes(p.motivo)
-      ? CLAVE_TEXTO_DERIVACION_FALLO
-      : null;
-    if (clave) {
+    // Solo los motivos con texto PROPIO mandan algo desde acá; el resto lo escribe el modelo.
+    const clave = claveDeDerivacion(p.motivo);
+    if (clave !== CLAVE_TEXTO_DERIVACION_DURA_GENERICA) {
       // textoDeDerivacion nunca devuelve vacío: si la fila de contexto_agente está en blanco, cae
       // al respaldo de código (hallazgo de logica, 19/9) en vez de repetir el silencio que se
       // acaba de cerrar. usoRespaldo solo se loguea (no hay a quién devolvérselo desde acá: esta
@@ -255,8 +268,11 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
         });
       } else {
         eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivacion-dura-codigo", motivo: dura.motivo, porQue: dura.porQue } });
-        const { texto, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_DERIVACION_DURA_GENERICA);
-        if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "derivacion-dura-codigo", error: `contexto_agente.${CLAVE_TEXTO_DERIVACION_DURA_GENERICA} está vacío, se usó el respaldo de código` } });
+        // El texto depende del motivo: corporativo tiene el suyo, que además hace la primera
+        // pregunta de la regla 12 (este turno corta acá, así que es la única chance de preguntar).
+        const claveDura = claveDeDerivacion(dura.motivo);
+        const { texto, usoRespaldo } = await textoDeDerivacion(db, claveDura);
+        if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "derivacion-dura-codigo", error: `contexto_agente.${claveDura} está vacío, se usó el respaldo de código` } });
         resultado = await derivar(db, { conversacionId: p.conversacionId, motivo: dura.motivo, mensaje: texto, derivacionTel: p.derivacionTel });
         eventos.push({ tipo: "derivacion", detalle: { motivo: dura.motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "codigo" } });
         return resultado;

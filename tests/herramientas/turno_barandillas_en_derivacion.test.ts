@@ -744,3 +744,47 @@ prueba("charla con un hueco de más de 7 días: el contexto avisa, y Lucía se p
     "no se corta: el hueco largo se trata como si arrancara la charla, presentacion_repetida no interviene",
   );
 });
+
+// Corporativo/uniformes (red-team del 24/9, reproducido 2/2). La regla 12 pide juntar cinco datos
+// ANTES de que el equipo llame, pero corporativo y uniforme son derivación dura por palabra clave:
+// eso corre ANTES del modelo y CORTA el turno, así que Lucía nunca llegaba a preguntar nada y el
+// equipo recibía el contacto en blanco. La regla era imposible de cumplir.
+// El arreglo no fue sacar el freno —se perdería la garantía de que el contacto llegue— sino darle
+// a corporativo su propio texto de traspaso, que deriva Y hace la primera pregunta en el mismo
+// mensaje. Las otras cuatro las junta en los turnos siguientes: la charla queda 'derivada' pero
+// corporativo NO está en MOTIVOS_DE_SILENCIO_DERIVADA, así que Lucía sigue contestando.
+// Lo que esta prueba defiende: que el mensaje del traspaso sea el de corporativo (que pregunta) y
+// no el genérico (que no pregunta nada). Si vuelve el genérico, volvió el agujero.
+prueba("corporativo por palabra clave deriva con su propio texto, que además pregunta, no con el genérico", async ({ ctx, sql, conversacionId }) => {
+  await insertarEntrante(sql, conversacionId, "hola, necesito uniformes para mi empresa");
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    if (body.response_format?.json_schema?.name === "ficha") {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({
+          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+        }),
+      }));
+    }
+    throw new Error("la derivación dura por palabra clave no debería llamar al clasificador ni al principal");
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assertEquals(resultado.derivo, true);
+  assertEquals(resultado.motivoDerivacion, "corporativo");
+  // El dueño lo edita desde el panel, así que se compara contra el valor vigente y no contra una
+  // redacción congelada (mismo criterio que el resto de los textos fijos, hallazgo del 24/9).
+  const { valor: textoCorp } = await fila(sql, "select valor from contexto_agente where clave = 'texto_derivacion_corporativo'");
+  assertEquals(resultado.mensajesAlCliente, [sinSignosDeApertura(textoCorp)]);
+  // Y lo que hace que el arreglo SIRVA: que pregunte algo. Un traspaso mudo deja al equipo sin datos.
+  assert(resultado.mensajesAlCliente[0].includes("?"), "el traspaso de corporativo tiene que hacer una pregunta");
+  const { valor: generico } = await fila(sql, "select valor from contexto_agente where clave = 'texto_derivacion_dura_generica'");
+  assert(resultado.mensajesAlCliente[0] !== sinSignosDeApertura(generico), "no puede salir el genérico");
+  const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
+  assertEquals([der?.motivo, der?.estado], ["corporativo", "pendiente"]);
+});
