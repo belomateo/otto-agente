@@ -27,7 +27,6 @@ type FilaRegla = Configuracion['reglas'][number];
 
 const LABEL_CONTEXTO: Record<string, string> = {
   presentacion: 'Presentación — lo primero que dice en cada charla nueva',
-  lista_para_agendar: 'Lista para el turno — la manda después de presentarse, si el cliente solo saludó',
   tono: 'Tono — cómo habla',
   ancla_de_valor: 'Ancla de valor — por qué elegir Mr. Otto',
   texto_derivacion_dura_generica: 'Derivación genérica — cuando pasa la charla a una persona sin un motivo más puntual',
@@ -43,7 +42,6 @@ const LABEL_CONTEXTO: Record<string, string> = {
 // arrancar), después cómo habla y los textos fijos. Una clave nueva que no esté acá va al final.
 const ORDEN_CONTEXTO = [
   'presentacion',
-  'lista_para_agendar',
   'tono',
   'ancla_de_valor',
   'texto_turno_confirmado',
@@ -93,7 +91,7 @@ function ContextoEditable({ fila, onCambio }: { fila: FilaContexto; onCambio: ()
       {corto ? (
         <input value={edicion.valor.valor} onChange={(e) => edicion.setValor({ ...edicion.valor, valor: e.target.value })} className={CAMPO} />
       ) : (
-        <textarea value={edicion.valor.valor} onChange={(e) => edicion.setValor({ ...edicion.valor, valor: e.target.value })} rows={fila.clave === 'lista_para_agendar' ? 7 : 3} className={`${CAMPO} resize-y leading-[1.6]`} />
+        <textarea value={edicion.valor.valor} onChange={(e) => edicion.setValor({ ...edicion.valor, valor: e.target.value })} rows={3} className={`${CAMPO} resize-y leading-[1.6]`} />
       )}
       {toast}
       <AccionesEdicion sucio={edicion.sucio} guardando={edicion.guardando} onGuardar={guardar} onDeshacer={edicion.deshacer} onVerHistorial={() => setHistorial(true)} />

@@ -239,29 +239,6 @@ prueba("buscar_horarios no vuelve a pedir el mail en esta charla, ni en el mismo
   assert(eventos, "queda una marca en la bitácora, no solo en la memoria del turno");
 });
 
-prueba("buscar_horarios no pide el mail si un mensaje de Lucía ya lo pidió, como la lista del primer mensaje (Mateo, 25/9)", async ({ ctx, sql, conversacionId, agenda }) => {
-  agenda.lista = [hueco(JUEVES, "11:00", 45)];
-  const saliente = (texto: string) =>
-    sql.query("insert into mensajes (conversacion_id, direccion, tipo, contenido) values ($1, 'saliente', 'texto', $2)", [conversacionId, texto]);
-  const entrante = (texto: string) =>
-    sql.query("insert into mensajes (conversacion_id, direccion, tipo, contenido) values ($1, 'entrante', 'texto', $2)", [conversacionId, texto]);
-
-  // Lo que NO cuenta como pedido: que el cliente nombre el mail, o que Lucía repita una dirección
-  // de gmail. Con esto solo, el mail se sigue pidiendo.
-  await entrante("después te paso el mail");
-  await saliente("Anotado: juan@gmail.com");
-  const antes = await buscar(ctx, JUEVES, JUEVES, "invitado");
-  esOk(antes);
-  assertEquals(antes.datos.pedir_mail, true, "ni el mensaje del cliente ni un «gmail» son un pedido de Lucía");
-  await sql.query("delete from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = 'pedir_mail'", [conversacionId]);
-
-  // La lista del primer mensaje: ahí ya se pidió. Si el cliente no lo dio, no se insiste.
-  await saliente("Hola, soy Lucía, asistente de Mr Otto 😊\nPara reservarte un turno en el local necesito:\n1️⃣ Tu nombre\n4️⃣ Tu mail (si querés)");
-  const despues = await buscar(ctx, JUEVES, JUEVES, "invitado");
-  esOk(despues);
-  assertEquals(despues.datos.pedir_mail, undefined, "la lista ya pidió el mail: no se pide dos veces");
-});
-
 prueba("ver_turnos_cliente devuelve los que vienen y no los cancelados ni los que pasaron", async ({ ctx, sql, clienteId }) => {
   await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00"), probador: 1 });
   await crearTurno(sql, { clienteId, inicio: local(JUEVES, "11:00"), probador: 2, estado: "cancelado" });
