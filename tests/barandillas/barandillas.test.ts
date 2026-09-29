@@ -477,30 +477,23 @@ Deno.test("anuncia_sin_derivar no confunde una variante suave con «eso te lo co
 // se le bloqueó en anuncia_sin_derivar mudándose a otra ("eso te lo confirma el equipo del
 // local", la forma aprobada para otra cosa). Barandilla ESTRUCTURAL en vez de léxica: mira si el
 // turno resolvió una consulta de venta (enviar_link tipo web-venta, o derivó), no cómo lo dijo.
-// Pedido de Mateo, 21/9: ahora hacen falta las DOS cosas en el mismo turno, no una sola.
+// Pedido de Mateo, 29/9: para venta alcanza con mandar el link de la web de venta; ya no se deriva.
 function trazaConEnviarLink(tipo: string) {
   const t = trazaNueva();
   t.llamadas.push({ herramienta: "enviar_link", argumentos: { tipo }, ok: true });
   return t;
 }
 
-function trazaConLinkDeVentaYDerivacion() {
-  const t = trazaConEnviarLink("web-venta");
-  t.llamadas.push({ herramienta: "derivar_a_persona", argumentos: {}, ok: true });
-  return t;
-}
-
-Deno.test("venta_sin_resolver salta si el clasificador dio 'venta' y falta el link de venta, la derivación, o las dos", async () => {
+Deno.test("venta_sin_resolver salta si el clasificador dio 'venta' y no se mandó el link de venta", async () => {
   await salta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.", { intencion: "venta" }));
   await salta(ventaSinResolver, entrada("Mr Otto también vende trajes.", { intencion: "venta", traza: trazaConEnviarLink("mapa") }));
-  // Solo el link, sin derivar (pedido viejo, ya no alcanza):
-  await salta(ventaSinResolver, entrada("Te paso el link de la tienda online.", { intencion: "venta", traza: trazaConEnviarLink("web-venta") }));
-  // Solo derivó, sin mandar el link:
+  // Derivar ya no cuenta como resolver la venta: si no salió el link, salta igual.
   await salta(ventaSinResolver, entrada("Te leo. Esto lo sigue alguien del local.", { intencion: "venta", traza: traza({ herramientas: ["derivar_a_persona"] }) }));
 });
 
-Deno.test("venta_sin_resolver no salta si mandó el link de venta Y derivó, o si la intención no es venta (caso parecido)", async () => {
-  await noSalta(ventaSinResolver, entrada("Te paso el link y ya te conecto con alguien del equipo.", { intencion: "venta", traza: trazaConLinkDeVentaYDerivacion() }));
+Deno.test("venta_sin_resolver no salta si mandó el link de venta (con o sin derivar), o si la intención no es venta (caso parecido)", async () => {
+  // Solo el link, sin derivar: es lo que Mateo quiere (29/9), así que NO salta.
+  await noSalta(ventaSinResolver, entrada("Te paso el link, ahí te asesoran con la compra.", { intencion: "venta", traza: trazaConEnviarLink("web-venta") }));
   await noSalta(ventaSinResolver, entrada("Contale, ¿para qué evento es el traje?", { intencion: "alquiler" }));
   await noSalta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.")); // sin clasificación, no se puede saber: no salta
 });

@@ -16,14 +16,10 @@
 // derivar_a_persona, no importa qué haya escrito Lucía — el cliente se quedó sin el link y sin
 // una persona. Mismo patrón que accesorio_sin_herramienta: mira la traza, no el texto.
 //
-// Pedido de Mateo, 21/9 (le llegó por Mateo → logica): el primer pedido era "no derives, mandá el
-// link" (o sea, alcanzaba con una de las dos). Mateo lo afinó: para venta ahora hacen falta las
-// DOS cosas en el mismo turno, no una — el link para que el cliente vaya mirando YA, y la
-// derivación para que alguien del equipo lo siga (así no queda solo con un link y nadie
-// enterado). Antes bastaba mandoElLinkDeVenta(traza) || derivo(traza); ahora hace falta AND.
-// derivar_a_persona corta el turno, pero corta DESPUÉS de ejecutarse: el tools loop permite hasta
-// 6 llamadas por turno (AGENTE.md § "tools loop"), así que el modelo puede llamar enviar_link y
-// recién después derivar_a_persona en la misma vuelta sin problema.
+// Historia del criterio: primero "no derives, mandá el link"; después (21/9) Mateo pidió las DOS
+// cosas, link Y derivación; y finalmente (29/9) volvió a "solo el link": la compra la resuelve la
+// web de venta —ahí asesoran al cliente—, así que no tiene sentido ocupar a una persona del local
+// por una venta. Hoy alcanza con mandoElLinkDeVenta(traza); la derivación quedó fuera.
 
 import { type Traza } from "../traza.ts";
 import { type Barandilla, NO_SALTA } from "./tipos.ts";
@@ -34,30 +30,22 @@ function mandoElLinkDeVenta(traza: Traza): boolean {
   );
 }
 
-function derivo(traza: Traza): boolean {
-  return traza.llamadas.some((l) => l.herramienta === "derivar_a_persona" && l.ok);
-}
-
 export const ventaSinResolver: Barandilla = {
   nombre: "venta_sin_resolver",
   etapa: "reglas",
   accion: "rehacer",
   evaluar({ traza, intencion }) {
     if (intencion !== "venta") return NO_SALTA;
-    const link = mandoElLinkDeVenta(traza);
-    const derivada = derivo(traza);
-    if (link && derivada) return NO_SALTA;
-    const falta = !link && !derivada
-      ? "no mandó el link de venta ni derivó"
-      : !link
-      ? "derivó pero no mandó el link de venta"
-      : "mandó el link de venta pero no derivó";
+    // Pedido de Mateo, 29/9: la venta ya NO se deriva a una persona. Alcanza con mandar el link de
+    // la web de venta (donde al cliente lo asesoran con la compra), en el mismo turno. Antes se
+    // exigían las dos cosas —link Y derivación—; ahora sobra la derivación: la compra la resuelve
+    // la web, no el equipo del local. Lo único que se sigue mirando es que el link salga de verdad.
+    if (mandoElLinkDeVenta(traza)) return NO_SALTA;
     return {
       salta: true,
       accion: "rehacer",
-      motivo: `el clasificador entendió que la consulta es de venta y el turno ${falta}: ` +
-        "para venta hacen falta las dos cosas en el mismo turno — enviar_link con tipo web-venta " +
-        "Y derivar_a_persona con motivo dato_no_encontrado",
+      motivo: "el clasificador entendió que la consulta es de venta y el turno no mandó el link de venta: " +
+        "mandá enviar_link con tipo web-venta y decile que ahí lo asesoran con la compra de su traje. No hace falta derivar.",
     };
   },
 };
