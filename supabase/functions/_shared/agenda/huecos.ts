@@ -192,7 +192,22 @@ async function leerReglas(db: Db, tipo: TipoTurno): Promise<ReglasAgenda> {
   if (!config) throw new Error("configuracion_agenda está vacía: la agenda no puede calcular huecos.");
   const [duracion] = await db.consulta("select duracion_min from duraciones_turno where tipo = $1", [tipo]);
   if (!duracion) throw new Error(`duraciones_turno no tiene el tipo ${tipo}: la agenda no puede calcular huecos.`);
-  const { franjas } = await leerFranjas(db);
+  const { franjas: todas } = await leerFranjas(db);
+
+  // probadores_lucia (0073, pedido de Sofi 30/9): los probadores de más arriba quedan para que el
+  // equipo agende a mano (urgencias). Se recorta acá y no en calcularHuecos porque esa la usa
+  // también el panel, que sí tiene que ver todos.
+  let franjas = todas;
+  const [colLucia] = await db.consulta(
+    `select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'configuracion_agenda'
+         and column_name = 'probadores_lucia'`,
+  );
+  if (colLucia) {
+    const [lim] = await db.consulta("select probadores_lucia from configuracion_agenda limit 1");
+    const tope = lim?.probadores_lucia === null || lim?.probadores_lucia === undefined ? null : Number(lim.probadores_lucia);
+    if (tope !== null && Number.isFinite(tope)) franjas = todas.map((f) => ({ ...f, probadores: Math.min(f.probadores, tope) }));
+  }
 
   // dias_simultaneos: columna de la migración 0068. Si la migración todavía no se aplicó,
   // la columna no existe y usamos [] (sin días simultáneos) hasta que se aplique.
