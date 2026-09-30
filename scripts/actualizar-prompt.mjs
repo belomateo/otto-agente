@@ -20,7 +20,7 @@ if (!process.env.SUPABASE_DB_URL) {
   process.exit(1);
 }
 
-const contenido = readFileSync(resolve(RAIZ, "supabase/functions/_shared/prompt.md"), "utf8");
+const contenido = readFileSync(resolve(RAIZ, "plantilla-agente/02-prompt.md"), "utf8");
 const db = new pg.Client({ connectionString: process.env.SUPABASE_DB_URL });
 await db.connect();
 const t0 = Date.now();
@@ -28,12 +28,12 @@ try {
   await db.query("begin");
   // Intentar UPDATE del row activo; si no existe ninguno, INSERT.
   const upd = await db.query(
-    "UPDATE prompt_base SET contenido = $1, actualizado_at = now() WHERE activo = true RETURNING id",
+    "UPDATE prompt_base SET texto = $1, editado_at = now() WHERE unica = true RETURNING id",
     [contenido],
   );
   let accion;
   if (upd.rowCount === 0) {
-    await db.query("INSERT INTO prompt_base (contenido, activo) VALUES ($1, true)", [contenido]);
+    await db.query("INSERT INTO prompt_base (texto) VALUES ($1)", [contenido]);
     accion = "insertado";
   } else {
     accion = `actualizado (id ${upd.rows[0].id})`;

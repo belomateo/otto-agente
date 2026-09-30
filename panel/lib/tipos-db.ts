@@ -384,24 +384,30 @@ export type Database = {
           canal: string
           cliente_id: string
           estado: string
+          etiquetas: string[]
           id: string
           iniciado_at: string
+          lucia_activa: boolean
           ultimo_mensaje_at: string | null
         }
         Insert: {
           canal?: string
           cliente_id: string
           estado?: string
+          etiquetas?: string[]
           id?: string
           iniciado_at?: string
+          lucia_activa?: boolean
           ultimo_mensaje_at?: string | null
         }
         Update: {
           canal?: string
           cliente_id?: string
           estado?: string
+          etiquetas?: string[]
           id?: string
           iniciado_at?: string
+          lucia_activa?: boolean
           ultimo_mensaje_at?: string | null
         }
         Relationships: [

@@ -492,8 +492,8 @@ async function enviarFotoDelMostrador(db: Db, d: Dependencias, t: Trabajo, telef
 }
 
 async function estadoDeLaCharla(db: Db, conversacionId: string) {
-  const [f] = await db.consulta<{ estado: string; cliente_id: string; telefono: string }>(
-    `select c.estado, c.cliente_id::text as cliente_id, cl.telefono
+  const [f] = await db.consulta<{ estado: string; cliente_id: string; telefono: string; lucia_activa: boolean }>(
+    `select c.estado, c.cliente_id::text as cliente_id, cl.telefono, c.lucia_activa
        from conversaciones c join clientes cl on cl.id = c.cliente_id
       where c.id = $1::uuid`,
     [conversacionId],
@@ -614,6 +614,12 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${conv.estado}: Lucía no contesta` });
     return;
   }
+  // Botón on/off de Lucía (Mateo, 30/9): el mostrador puede silenciarla para esta charla sin
+  // derivarla. La charla sigue abierta y ellos pueden escribirle al cliente.
+  if (!conv.lucia_activa) {
+    await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: "Lucía desactivada para esta charla" });
+    return;
+  }
   // "Necesito reprogramar" (1.14) queda anotado, y además SIGUE DE LARGO: el turno corre y Lucía
   // lo lee. Decía lo contrario ("todavía no entra en la ráfaga") y era cierto por tres horas el
   // 15/9, hasta que c638651 sumó 'button' a TIPOS_QUE_SON_TEXTO (rafaga.ts): desde entonces el
@@ -637,6 +643,10 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   const despues = await estadoDeLaCharla(db, t.conversacion_id);
   if (despues?.estado !== "activa" && despues?.estado !== "derivada") {
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${despues?.estado}: Lucía no contesta` });
+    return;
+  }
+  if (!despues?.lucia_activa) {
+    await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: "Lucía desactivada para esta charla" });
     return;
   }
   // La tiene una persona: el turno corre igual, pero sabiendo que ya hay alguien atendiendo, así

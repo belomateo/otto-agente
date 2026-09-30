@@ -68,5 +68,9 @@ export function useAccionesCharla(conversacionId: string | null) {
     cerrar: () => correr((id) => enviar(`/api/bandeja/${id}/cerrar`, 'POST')),
     responder: (texto: string) => correr((id) => enviar(`/api/bandeja/${id}/mensajes`, 'POST', { texto })),
     enviarFoto: (archivo: File) => correr((id) => subirFoto(id, archivo)),
+    reabrir: () => correr((id) => enviar(`/api/bandeja/${id}/reabrir`, 'POST')),
+    toggleLucia: (activa: boolean) => correr((id) => enviar(`/api/bandeja/${id}/lucia`, 'PATCH', { activa })),
+    agregarEtiqueta: (etiqueta: string) => correr((id) => enviar(`/api/bandeja/${id}/etiqueta`, 'PATCH', { agregar: etiqueta })),
+    quitarEtiqueta: (etiqueta: string) => correr((id) => enviar(`/api/bandeja/${id}/etiqueta`, 'PATCH', { quitar: etiqueta })),
   };
 }

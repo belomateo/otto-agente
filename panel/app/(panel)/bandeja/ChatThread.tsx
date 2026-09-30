@@ -92,14 +92,18 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
   const compacto = variante === 'mobile';
   const esAdmin = useUsuario()?.rol === 'admin';
   const { datos: charla, cargando, error, recargar } = useDatos<Charla>(conversacionId ? `/api/bandeja/${conversacionId}` : null, { sondeoMs: SONDEO_LISTAS_MS });
-  const { enviando, error: errorAccion, motivo: motivoAccion, tomar, devolver, cerrar, responder, enviarFoto } = useAccionesCharla(conversacionId);
+  const { enviando, error: errorAccion, motivo: motivoAccion, tomar, devolver, cerrar, responder, enviarFoto, reabrir, toggleLucia, agregarEtiqueta, quitarEtiqueta } = useAccionesCharla(conversacionId);
   const [texto, setTexto] = useState('');
+  const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
+  const [editandoEtiqueta, setEditandoEtiqueta] = useState(false);
   const inputFotoRef = useRef<HTMLInputElement>(null);
   const listaRef = useRef<HTMLDivElement>(null);
   const primeraCargaRef = useRef(true);
 
   useEffect(() => {
     setTexto('');
+    setNuevaEtiqueta('');
+    setEditandoEtiqueta(false);
     primeraCargaRef.current = true;
   }, [conversacionId]);
 
@@ -148,6 +152,24 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
       irAlFondo();
     }
   }
+  async function onReabrir() {
+    if (await reabrir()) recargar();
+  }
+  const luciaActiva = charla.lucia_activa;
+  async function onToggleLucia() {
+    if (await toggleLucia(!luciaActiva)) recargar();
+  }
+  async function onAgregarEtiqueta() {
+    const e = nuevaEtiqueta.trim();
+    if (!e) { setEditandoEtiqueta(false); return; }
+    setEditandoEtiqueta(false);
+    setNuevaEtiqueta('');
+    if (await agregarEtiqueta(e)) recargar();
+  }
+  async function onQuitarEtiqueta(e: string) {
+    if (await quitarEtiqueta(e)) recargar();
+  }
+
   async function onFotoElegida(e: React.ChangeEvent<HTMLInputElement>) {
     const archivo = e.target.files?.[0];
     e.target.value = ''; // permite volver a elegir el mismo archivo después
@@ -185,9 +207,28 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
               La charla la tiene {charla.quien}
               {charla.cliente.email && <span className="ml-1">· {charla.cliente.email}</span>}
               {charla.cliente.etiqueta && <span className="ml-2 rounded-pill border border-borde px-2 py-0.5 text-[14px] md:text-[11px]">{charla.cliente.etiqueta}</span>}
-              <span title="Todavía no conectado" className="cursor-not-allowed rounded-pill border border-dashed border-[#C9C4B9] px-2 py-0.5 text-[14px] text-[#8A8578] md:text-[11px]">
-                + Etiqueta
-              </span>
+              {charla.etiquetas.map((e) => (
+                <span key={e} className="inline-flex items-center gap-0.5 rounded-pill border border-borde px-2 py-0.5 text-[14px] md:text-[11px]">
+                  {e}
+                  <button type="button" onClick={() => onQuitarEtiqueta(e)} className="ml-0.5 leading-none text-grafito hover:text-ladrillo" aria-label={`Quitar ${e}`}>×</button>
+                </span>
+              ))}
+              {editandoEtiqueta ? (
+                <input
+                  autoFocus
+                  type="text"
+                  value={nuevaEtiqueta}
+                  onChange={(ev) => setNuevaEtiqueta(ev.target.value)}
+                  onKeyDown={(ev) => { if (ev.key === 'Enter') { ev.preventDefault(); onAgregarEtiqueta(); } if (ev.key === 'Escape') { setEditandoEtiqueta(false); setNuevaEtiqueta(''); } }}
+                  onBlur={() => { if (!nuevaEtiqueta.trim()) setEditandoEtiqueta(false); }}
+                  className="inline-block w-24 rounded-pill border border-borde bg-white px-2 py-0.5 text-[14px] focus:outline-none md:text-[11px]"
+                  placeholder="Etiqueta…"
+                />
+              ) : (
+                <button type="button" onClick={() => setEditandoEtiqueta(true)} className="rounded-pill border border-dashed border-[#C9C4B9] px-2 py-0.5 text-[14px] text-[#8A8578] hover:border-borde hover:text-grafito md:text-[11px]">
+                  + Etiqueta
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -198,6 +239,19 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
                 Ver ficha
               </Link>
             )}
+            <button
+              type="button"
+              onClick={onToggleLucia}
+              disabled={enviando}
+              title={charla.lucia_activa ? 'Lucía está activa — hacé clic para pausarla' : 'Lucía está pausada — hacé clic para reactivarla'}
+              className={`flex-none rounded-otto px-3.5 py-2 text-[14px] font-medium disabled:opacity-50 md:text-[13.5px] ${
+                charla.lucia_activa
+                  ? 'border border-borde bg-lino text-grafito'
+                  : 'bg-cobre text-lino'
+              }`}
+            >
+              {charla.lucia_activa ? 'Lucía activa' : 'Activar Lucía'}
+            </button>
             {charla.estado !== 'cerrada' && (
               <button
                 type="button"
@@ -221,6 +275,16 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
                 className="flex-none rounded-otto border border-cobre bg-lino px-3.5 py-2 text-[14px] font-medium text-cobre disabled:opacity-50 md:text-[13.5px]"
               >
                 Devolver a Lucía
+              </button>
+            )}
+            {charla.estado === 'cerrada' && (
+              <button
+                type="button"
+                onClick={onReabrir}
+                disabled={enviando}
+                className="flex-none rounded-otto border border-cobre bg-lino px-3.5 py-2 text-[14px] font-medium text-cobre disabled:opacity-50 md:text-[13.5px]"
+              >
+                Retomar charla
               </button>
             )}
           </>
@@ -256,6 +320,16 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
               className="flex-1 rounded-otto border border-cobre bg-lino py-2 text-[14px] font-medium text-cobre disabled:opacity-50 md:text-[13px]"
             >
               Devolver a Lucía
+            </button>
+          )}
+          {charla.estado === 'cerrada' && (
+            <button
+              type="button"
+              onClick={onReabrir}
+              disabled={enviando}
+              className="flex-1 rounded-otto border border-cobre bg-lino py-2 text-[14px] font-medium text-cobre disabled:opacity-50 md:text-[13px]"
+            >
+              Retomar charla
             </button>
           )}
         </div>
