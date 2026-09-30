@@ -46,9 +46,10 @@ async function fijarAgenda(sql: pg.Client) {
   );
 }
 
-function prueba(nombre: string, fn: (sql: pg.Client, db: Db) => Promise<void>) {
+function prueba(nombre: string, fn: (sql: pg.Client, db: Db) => Promise<void>, opciones: { ignorar?: boolean } = {}) {
   Deno.test({
     name: nombre,
+    ignore: opciones.ignorar ?? false,
     sanitizeOps: false,
     sanitizeResources: false,
     fn: async () => {
@@ -233,3 +234,49 @@ prueba("cerrar un dia no se lleva puesto al de al lado (el huso no corre la fech
   assert(r.huecos.some((h) => enTz(h.inicio) === LUNES_LIBRE), "se cerro el lunes por error");
   assert(dias.length > 0);
 });
+
+// Horarios bloqueados contra la tabla real (bloqueos_agenda, 0067; pedido de la dueña, 26/9).
+// Como con los cierres, lo que no se puede probar con calcularHuecos suelta es que agendaDesdeBase
+// LEA la tabla y que fecha + hora del local lleguen como el instante correcto: la conversión se
+// hace en SQL con la zona del negocio, y un error ahí corre el bloqueo tres horas o un día. La
+// migración la aplica Mateo a mano: hasta que la tabla exista, esta prueba se saltea (y la agenda
+// sigue andando sin bloqueos, que lo prueba huecos.test.ts).
+const HAY_BLOQUEOS: boolean = await (async () => {
+  const sql = new pg.Client({ connectionString: urlDeLaBase() });
+  await sql.connect();
+  try {
+    return (await sql.query("select to_regclass('public.bloqueos_agenda') is not null as existe")).rows[0].existe === true;
+  } finally {
+    await sql.end();
+  }
+})();
+
+prueba("un horario cargado en bloqueos_agenda deja de ofrecerse, y el de un probador pasa al siguiente", async (sql, db) => {
+  const agenda = agendaDesdeBase(db, TZ);
+  const pedir = (dia: string) => agenda.huecos({ desde: dia, hasta: dia, tipo: "invitado", ahora: AHORA, fechaEvento: EVENTO_LEJANO });
+  const probadorA = (huecos: { inicio: string; probador: number }[], hm: string) =>
+    huecos.find((h) => horaLocal(new Date(h.inicio), TZ) === hm)?.probador;
+  const antes = await pedir(MARTES_LIBRE);
+  assertEquals(probadorA(antes.huecos, "17:00"), 1);
+
+  // Postgres, sin sesión de usuario: la base no le aplica la regla del equipo (queda lugar igual).
+  await sql.query(
+    `insert into bloqueos_agenda (fecha, desde, hasta, probador, motivo) values
+       ($1::date, '15:00', '16:00', null, 'PRUEBA reunión'),
+       ($1::date, '17:00', '18:00', 1, 'PRUEBA espejo roto'),
+       ($2::date, '18:00', '24:00', null, 'PRUEBA se va temprano')`,
+    [MARTES_LIBRE, LUNES_LIBRE],
+  );
+  const martes = (await pedir(MARTES_LIBRE)).huecos;
+  // Para todos: nada que pise de 15 a 16 (un turno de 45' a las 14:30 también la pisa), y el
+  // pegado de las 14:15 sigue.
+  const hs = horas(martes);
+  for (const hm of ["14:30", "14:45", "15:00", "15:15", "15:30", "15:45"]) assert(!hs.includes(hm), `se ofreció ${hm}`);
+  assert(hs.includes("14:15") && hs.includes("16:00"), hs.join(" "));
+  // Solo del probador 1: la hora se sigue ofreciendo, en el 2.
+  assertEquals(probadorA(martes, "17:00"), 2);
+  // Hasta las 24:00 del lunes: tapa hasta el cierre de la franja y no se corre al martes (que
+  // arranca 13:00 como siempre).
+  assertEquals(horas((await pedir(LUNES_LIBRE)).huecos).at(-1), "17:15");
+  assertEquals(hs[0], "13:00");
+}, { ignorar: !HAY_BLOQUEOS });

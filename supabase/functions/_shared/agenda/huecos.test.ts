@@ -2,11 +2,19 @@
 // del seed de paneles (franjas del 14/9) para ver cada caso del control.
 // Correr: deno test --no-lock --node-modules-dir=none --allow-read supabase/functions/_shared/agenda/huecos.test.ts
 
-import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
+import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
+import type { Db, Fila } from "../db.ts";
 import { dentroDeFranja, type Franja } from "../herramientas/horario_laboral.ts";
 import type { ResultadoAgenda } from "../herramientas/tipos.ts";
 import { fechaLocal, horaLocal } from "../tiempo.ts";
-import { calcularHuecos, type Ocupado, type PedidoHuecos, type ReglasAgenda } from "./huecos.ts";
+import {
+  type BloqueoAgenda,
+  calcularHuecos,
+  leerBloqueos,
+  type Ocupado,
+  type PedidoHuecos,
+  type ReglasAgenda,
+} from "./huecos.ts";
 
 const TZ = "America/Argentina/Cordoba";
 const min = (hm: string) => {
@@ -23,7 +31,10 @@ const FRANJAS: Franja[] = [
 ];
 // diasConfeccion 1 = el comportamiento de siempre (nada el día del evento). Los casos de la
 // regla nueva de Mateo (16/9) están abajo, con margen 2.
-const REGLAS: ReglasAgenda = { franjas: FRANJAS, escalonadoMin: 15, diasReservaUrgencia: null, duracionMin: 45, diasConfeccion: 1 };
+// diasSimultaneos: [] = sin días simultáneos (todos los días usan escalonado entre probadores).
+const REGLAS: ReglasAgenda = { franjas: FRANJAS, escalonadoMin: 15, diasReservaUrgencia: null, duracionMin: 45, diasConfeccion: 1, diasSimultaneos: [] };
+// Para los tests de días simultáneos (sábado, 0068): ambos probadores en el mismo slot.
+const REGLAS_SIMULTANEAS: ReglasAgenda = { ...REGLAS, diasSimultaneos: [6] };
 
 const LUNES = "2030-06-03";
 const MARTES = "2030-06-04";
@@ -41,6 +52,7 @@ const pedido = (desde: string, hasta: string, extra: Partial<PedidoHuecos> = {})
   fechaEvento: EVENTO_LEJANO,
   tz: TZ,
   cerrados: new Set<string>(),
+  bloqueos: [],
   ...extra,
 });
 const horas = (r: ResultadoAgenda) => r.huecos.map((h) => horaLocal(new Date(h.inicio), TZ));
@@ -234,4 +246,169 @@ Deno.test("cerrar un dia no toca los otros: el resto de la semana sigue igual", 
 Deno.test("una fecha cerrada que no esta en el rango no molesta (caso parecido)", () => {
   const conRuido = calcularHuecos(REGLAS, [], pedido(LUNES, LUNES, { cerrados: new Set(["2031-01-01", "2030-12-25"]) }));
   assertEquals(horas(conRuido), horas(calcularHuecos(REGLAS, [], pedido(LUNES, LUNES))));
+});
+
+// Horarios bloqueados (bloqueos_agenda, 0067; pedido de la dueña, 26/9): un rato de una fecha
+// tapado para un probador o para todos. La tabla es de paneles; acá llegan ya como instantes.
+const bloqueo = (ymd: string, desde: string, hasta: string, probador: number | null = null): BloqueoAgenda => ({
+  inicio: local(ymd, desde),
+  fin: local(ymd, hasta),
+  probador,
+});
+const conBloqueos = (bloqueos: BloqueoAgenda[], extra: Partial<PedidoHuecos> = {}) =>
+  calcularHuecos(REGLAS, [], pedido(LUNES, LUNES, { bloqueos, ...extra }));
+
+Deno.test("un horario bloqueado para todos no se ofrece en ningún probador, ni un turno que lo pise", () => {
+  const r = conBloqueos([bloqueo(LUNES, "15:00", "16:00")]);
+  // Se pisa por solapamiento, no solo por el inicio: un turno de 45' a las 14:30 termina a las
+  // 15:15, adentro del bloqueo. Del 14:30 al 15:45 no queda ninguno.
+  for (const hm of ["14:30", "14:45", "15:00", "15:15", "15:30", "15:45"]) {
+    assert(!horas(r).includes(hm), `se ofreció ${hm}, que pisa el bloqueo de 15 a 16`);
+  }
+  assertEquals(horas(r).length, 22 - 6);
+  const desde = local(LUNES, "15:00").getTime();
+  const hasta = local(LUNES, "16:00").getTime();
+  assert(r.huecos.every((h) => new Date(h.inicio).getTime() >= hasta || new Date(h.fin).getTime() <= desde));
+});
+
+Deno.test("un turno pegado al bloqueo, antes o después, sí se ofrece (caso parecido)", () => {
+  const r = conBloqueos([bloqueo(LUNES, "15:00", "16:00")]);
+  // 14:15 + 45' = 15:00, justo cuando arranca el bloqueo; 16:00 arranca justo cuando termina.
+  assertEquals(probadorA(r, "14:15"), 1);
+  assertEquals(probadorA(r, "16:00"), 1);
+});
+
+Deno.test("un bloqueo de un solo probador: esa hora se ofrece en el siguiente libre", () => {
+  const r = conBloqueos([bloqueo(LUNES, "15:00", "16:00", 1)]);
+  // Las mismas horas que sin bloqueo: los otros dos probadores están libres.
+  assertEquals(horas(r), horas(conBloqueos([])));
+  assertEquals(probadorA(r, "15:00"), 2);
+  assertEquals(probadorA(r, "14:30"), 2); // 14:30 a 15:15 también pisa el del probador 1
+  assertEquals(probadorA(r, "14:15"), 1); // termina justo a las 15
+  assertEquals(probadorA(r, "16:00"), 1);
+  // Con el 1 y el 2 bloqueados entra el 3; con los tres, esa hora no se ofrece.
+  const dos = [bloqueo(LUNES, "15:00", "16:00", 1), bloqueo(LUNES, "15:00", "16:00", 2)];
+  assertEquals(probadorA(conBloqueos(dos), "15:00"), 3);
+  assertEquals(probadorA(conBloqueos([...dos, bloqueo(LUNES, "15:00", "16:00", 3)]), "15:00"), undefined);
+  // Un bloqueo de un probador y un turno de otro a la misma hora se suman.
+  const conTurno = calcularHuecos(REGLAS, [turno(2, LUNES, "14:45", "15:30")], pedido(LUNES, LUNES, { bloqueos: [bloqueo(LUNES, "15:00", "16:00", 1)] }));
+  assertEquals(probadorA(conTurno, "15:15"), 3);
+});
+
+Deno.test("un bloqueo de un probador no le saca horarios vecinos a los otros (no es un turno: caso parecido del escalonado)", () => {
+  // Un TURNO cargado a mano a las 15:05 en el 1 saca las 15:00 y las 15:15 en todos los
+  // probadores: dos clientes no llegan con menos de un escalonado de diferencia (prueba e).
+  const conTurno = calcularHuecos(REGLAS, [turno(1, LUNES, "15:05", "15:50")], pedido(LUNES, LUNES));
+  assert(!horas(conTurno).includes("15:00") && !horas(conTurno).includes("15:15"));
+  // Un BLOQUEO del mismo rato en el 1 no es un cliente que llega: esas horas se siguen
+  // ofreciendo, en el 2.
+  const r = conBloqueos([bloqueo(LUNES, "15:05", "15:50", 1)]);
+  assertEquals(horas(r), horas(conBloqueos([])));
+  assertEquals([probadorA(r, "15:00"), probadorA(r, "15:15"), probadorA(r, "15:45")], [2, 2, 2]);
+  assertEquals(probadorA(r, "16:00"), 1);
+});
+
+Deno.test("un bloqueo hasta el final del día tapa hasta el cierre de la franja", () => {
+  // Lo que en la tabla es hasta 24:00 llega como la medianoche del día siguiente.
+  const r = conBloqueos([{ inicio: local(LUNES, "17:00"), fin: local(MARTES, "00:00"), probador: null }]);
+  assertEquals(horas(r).at(-1), "16:15"); // 16:15 + 45' = 17:00
+});
+
+Deno.test("los cierres siguen andando con bloqueos, y un bloqueo de otro día no toca este", () => {
+  const bloqueos = [bloqueo(MARTES, "13:00", "14:00")];
+  const r = calcularHuecos(REGLAS, [], pedido(LUNES, MARTES, { cerrados: new Set([LUNES]), bloqueos }));
+  assertEquals(dias(r), [MARTES]);
+  assertEquals(horas(r)[0], "14:00");
+  // El lunes sin cerrar queda entero: el bloqueo es del martes.
+  const lunes = calcularHuecos(REGLAS, [], pedido(LUNES, LUNES, { bloqueos }));
+  assertEquals(horas(lunes), horas(conBloqueos([])));
+  // Un día cerrado que además tiene un bloqueo sigue dando cero.
+  assertEquals(conBloqueos([bloqueo(LUNES, "15:00", "16:00")], { cerrados: new Set([LUNES]) }).huecos, []);
+});
+
+// leerBloqueos contra una base de mentira: lo que se prueba es qué hace cuando la tabla todavía
+// no existe (la migración 0067 puede llegar después del deploy) y cómo arma los bloqueos. Que
+// la consulta de verdad lea la tabla y convierta bien las horas está en huecos_base.test.ts.
+function baseDeMentira(existe: boolean, filas: Fila[] = []) {
+  const consultas: { sql: string; valores: unknown[] }[] = [];
+  const db: Db = {
+    consulta<T extends Fila = Fila>(sql: string, valores: unknown[] = []): Promise<T[]> {
+      consultas.push({ sql, valores });
+      if (sql.includes("to_regclass")) return Promise.resolve([{ hay: existe }] as unknown as T[]);
+      return Promise.resolve(filas as T[]);
+    },
+  };
+  return { db, consultas };
+}
+
+async function capturandoErrores<T>(fn: () => Promise<T>): Promise<{ valor: T; avisos: string[] }> {
+  const original = console.error;
+  const avisos: string[] = [];
+  console.error = (...a: unknown[]) => void avisos.push(a.map(String).join(" "));
+  try {
+    return { valor: await fn(), avisos };
+  } finally {
+    console.error = original;
+  }
+}
+
+Deno.test("sin la tabla bloqueos_agenda, leerBloqueos da cero bloqueos y lo avisa (Lucía no se queda muda)", async () => {
+  const { db, consultas } = baseDeMentira(false);
+  const { valor, avisos } = await capturandoErrores(() => leerBloqueos(db, LUNES, VIERNES, TZ));
+  assertEquals(valor, []);
+  assertEquals(consultas.length, 1, "no puede consultar una tabla que no existe: en una transacción la dejaría abortada");
+  assertEquals(avisos.length, 1);
+  assertMatch(avisos[0], /bloqueos_agenda/);
+  assertMatch(avisos[0], /0067/);
+});
+
+Deno.test("con la tabla, leerBloqueos pide el rango y la zona, y respeta el probador vacío (caso parecido)", async () => {
+  const filas = [
+    { inicio: local(LUNES, "15:00"), fin: local(LUNES, "16:00"), probador: null },
+    { inicio: local(MARTES, "13:00"), fin: local(MARTES, "13:30"), probador: 2 },
+  ];
+  const { db, consultas } = baseDeMentira(true, filas);
+  const { valor, avisos } = await capturandoErrores(() => leerBloqueos(db, LUNES, VIERNES, TZ));
+  assertEquals(avisos, []);
+  assertEquals(consultas.at(-1)?.valores, [LUNES, VIERNES, TZ]);
+  assertEquals(valor, [
+    { inicio: local(LUNES, "15:00"), fin: local(LUNES, "16:00"), probador: null },
+    { inicio: local(MARTES, "13:00"), fin: local(MARTES, "13:30"), probador: 2 },
+  ]);
+});
+
+// Días simultáneos (migración 0068, pedido de Mateo, 29/9): el sábado ambos probadores atienden
+// a la misma hora, sin escalonamiento entre ellos. Los slots son cada 45' (duración del turno)
+// y en cada uno se ofrecen todos los probadores libres.
+Deno.test("días simultáneos: en sábado los probadores se ofrecen en la misma hora, no escalonados", () => {
+  const r = calcularHuecos(REGLAS_SIMULTANEAS, [], pedido(SABADO, SABADO));
+  // Franja mañana sábado: 9:30–12:00, paso = 45'. Slots: 9:30, 10:15, 11:00 (11:00+45=11:45 ≤ 12:00 ok).
+  const hs = horas(r);
+  assertEquals(hs.filter((h) => h < "12:00"), ["09:30", "09:30", "09:30", "10:15", "10:15", "10:15", "11:00", "11:00", "11:00"]);
+  // Franja mañana tiene 3 probadores: los 3 se ofrecen en cada slot.
+  const huecosManana = r.huecos.filter((h) => horaLocal(new Date(h.inicio), TZ) < "12:00");
+  // 3 probadores × 3 slots = 9 huecos en franja mañana
+  assertEquals(huecosManana.length, 9);
+  // Cada slot tiene los 3 probadores
+  const por930 = huecosManana.filter((h) => horaLocal(new Date(h.inicio), TZ) === "09:30").map((h) => h.probador).sort();
+  assertEquals(por930, [1, 2, 3]);
+});
+
+Deno.test("días simultáneos: si hay un turno ocupado, ese probador no se ofrece pero los otros sí", () => {
+  const ocupados = [turno(1, SABADO, "09:30", "10:15")]; // probador 1 a las 9:30
+  const r = calcularHuecos(REGLAS_SIMULTANEAS, ocupados, pedido(SABADO, SABADO));
+  const por930 = r.huecos.filter((h) => horaLocal(new Date(h.inicio), TZ) === "09:30").map((h) => h.probador).sort();
+  // Con probador 1 ocupado, quedan 2 y 3 disponibles a las 9:30
+  assertEquals(por930, [2, 3]);
+});
+
+Deno.test("días simultáneos: sin días en la lista, todos los días usan escalonado normal", () => {
+  // REGLAS con diasSimultaneos:[] = sin simultáneo en ningún día: sábado escalonado igual que antes
+  const r = calcularHuecos(REGLAS, [], pedido(SABADO, SABADO));
+  const hs = horas(r);
+  // Con escalonadoMin=15 y duracionMin=45, los slots son 9:30, 9:45, 10:00... (un probador por slot)
+  assertEquals(hs.filter((h) => h < "12:00"), ["09:30", "09:45", "10:00", "10:15", "10:30", "10:45", "11:00", "11:15"]);
+  // Un solo probador por hora (el break sigue activo)
+  const huecos930 = r.huecos.filter((h) => horaLocal(new Date(h.inicio), TZ) === "09:30");
+  assertEquals(huecos930.length, 1);
 });

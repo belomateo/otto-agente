@@ -10,7 +10,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { enlaceDeTipo } from "../_shared/herramientas/enlaces.ts";
 import type { Db } from "../_shared/db.ts";
 import { enviarPlantilla } from "../_shared/whatsapp/enviar.ts";
-import { armarPlantilla, esTipoEnvio, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
+import { armarPlantilla, esTipoEnvio, primerNombre, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
 import { igualesEnTiempoConstante } from "../_shared/whatsapp/firma.ts";
 
 const SECRETO = Deno.env.get("WORKER_SECRET") ?? "";
@@ -112,11 +112,55 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
   return r;
 }
 
+// Confirmación inmediata al crear un turno desde el panel: usa la plantilla recordatorio_turno
+// (ya aprobada en Meta) con el mismo contenido que el recordatorio de 18h. Se llama desde
+// altaTurno (panel/lib/edicion/turno-alta.ts) en modo fire-and-forget. Si el turno ya tiene
+// recordatorio_enviado_at (porque se creó desde Lucía y el recordatorio ya salió), se omite.
+async function confirmarTurno(turnoId: string): Promise<Response> {
+  if (!ENCENDIDO) return Response.json({ apagado: true });
+  if (!TZ) return new Response("falta NEGOCIO_TZ", { status: 500 });
+
+  const { data: turno, error: eT } = await supabase
+    .from("turnos")
+    .select("id, inicio, recordatorio_enviado_at, clientes(nombre, telefono)")
+    .eq("id", turnoId)
+    .maybeSingle();
+  if (eT) return Response.json({ error: eT.message }, { status: 500 });
+  if (!turno) return Response.json({ omitido: true, motivo: "turno_no_existe" });
+  if (turno.recordatorio_enviado_at) return Response.json({ omitido: true, motivo: "ya_enviado" });
+
+  const cliente = (turno.clientes as { nombre: string | null; telefono: string } | null);
+  if (!cliente?.telefono) return Response.json({ omitido: true, motivo: "sin_telefono" });
+
+  const plantilla = armarPlantilla("recordatorio_18h", {
+    nombre: cliente.nombre,
+    inicio: new Date(turno.inicio as string),
+    referencia: turnoId,
+    linkResena: null,
+  }, TZ);
+  if ("falta" in plantilla) return Response.json({ omitido: true, falta: plantilla.falta });
+
+  try {
+    const wamid = await enviarPlantilla(WA, cliente.telefono, plantilla);
+    await supabase.from("turnos").update({ recordatorio_enviado_at: new Date().toISOString() }).eq("id", turnoId);
+    console.log("confirmacion_turno enviada", turnoId, wamid);
+    return Response.json({ enviado: true, wamid });
+  } catch (err) {
+    console.error("confirmacion_turno falló", turnoId, String(err));
+    return Response.json({ error: String(err) }, { status: 500 });
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST" || SECRETO === "" || !igualesEnTiempoConstante(req.headers.get("x-worker-secret") ?? "", SECRETO)) {
     return new Response("forbidden", { status: 403 });
   }
-  const { tipo } = await req.json().catch(() => ({ tipo: null }));
+  const body = await req.json().catch(() => ({ tipo: null }));
+  const { tipo } = body;
+
+  // Confirmación inmediata al crear turno desde el panel (turno-alta.ts)
+  if (tipo === "confirmacion_turno") return confirmarTurno(body.turno_id ?? "");
+
   const tipos: unknown[] = tipo === "recontacto" ? ["recontacto_1", "recontacto_2"] : [tipo];
   if (!tipos.every(esTipoEnvio)) return new Response("tipo desconocido", { status: 400 });
   if (!ENCENDIDO) return Response.json({ apagado: true, tipos });

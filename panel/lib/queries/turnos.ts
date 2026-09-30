@@ -6,6 +6,7 @@ import type { TurnoDelDia } from '@/lib/mock-data';
 import { ESTILO_ESTADO_TURNO, ETIQUETA_TIPO_TURNO } from '@/lib/etiquetas';
 import { diaDeLaSemana, diasEnMes, fechaEnZona, fechaLarga, hora, rangoDelDia, rangoDelMes, sumarDias } from '@/lib/formato';
 import { ESTADOS_LIBERAN, nombreDe, type ClienteDb } from './comun';
+import { aBloqueoDelDia, faltaLaTabla, listarBloqueos, type BloqueoDelDia } from './bloqueos';
 
 export type FilaTurno = TurnoDelDia & {
   id: string;
@@ -45,6 +46,12 @@ export type AgendaDelDia = {
   turnos: FilaTurno[];
   /** Turnos de mañana que siguen sin confirmar (chip "Sin confirmar para mañana"). */
   sin_confirmar_manana: number;
+  /** Cierre puntual de ese día (0061, lo pone solo la dueña); null = no está cerrado. Cerrado, no
+   *  se dan turnos aunque `franjas` diga que sí — `franjas` es el horario semanal, esto la excepción. */
+  cierre: { motivo: string | null } | null;
+  /** Horarios bloqueados ese día (0067), por hora y probador (primero los de todos). Ahí no se
+   *  dan turnos; los que ya estaban agendados siguen en `turnos`, no se tocan. */
+  bloqueos: BloqueoDelDia[];
 };
 
 export type AgendaSemana = {
@@ -74,7 +81,7 @@ export async function turnosDelDia(
     .order('probador', { ascending: true });
   if (!o.incluirCancelados) q = q.not('estado', 'in', ESTADOS_LIBERAN);
 
-  const [turnos, horario, franjas, config, sinConfirmar] = await Promise.all([
+  const [turnos, horario, franjas, config, sinConfirmar, cierre, bloqueos] = await Promise.all([
     q,
     db
       .from('horarios')
@@ -93,8 +100,12 @@ export async function turnosDelDia(
       .gte('inicio', manana.desde)
       .lt('inicio', manana.hasta)
       .eq('estado', 'sin-confirmar'),
+    // Contra el texto de la fecha, no contra un Date: la columna es date y el huso del servidor
+    // correría el día (el bug del feriado que avisó logica, ver turno-alta.ts).
+    db.from('cierres_agenda').select('motivo').eq('fecha', fecha).maybeSingle(),
+    listarBloqueos(db, fecha, fecha),
   ]);
-  for (const r of [turnos, horario, franjas, config, sinConfirmar]) if (r.error) throw r.error;
+  for (const r of [turnos, horario, franjas, config, sinConfirmar, cierre]) if (r.error) throw r.error;
 
   const h = horario.data && horario.data.activo ? horario.data : null;
   return {
@@ -115,6 +126,8 @@ export async function turnosDelDia(
     })),
     probadores: config.data?.cantidad_probadores ?? null,
     sin_confirmar_manana: sinConfirmar.count ?? 0,
+    cierre: cierre.data ? { motivo: cierre.data.motivo } : null,
+    bloqueos: bloqueos.map(aBloqueoDelDia),
     turnos: (turnos.data ?? []).map((t) => {
       const estilo = ESTILO_ESTADO_TURNO[t.estado] ?? ESTILO_ESTADO_TURNO['sin-confirmar'];
       return {
@@ -168,6 +181,10 @@ export type DiaDelMes = {
   /** Turnos que ocupan la agenda ese día (sin cancelados/no-vino, salvo incluirCancelados). */
   total: number;
   sin_confirmar: number;
+  /** Cierre puntual (0061); null = no está cerrado. Misma forma que AgendaDelDia.cierre. */
+  cierre: { motivo: string | null } | null;
+  /** Cuántos horarios bloqueados tiene ese día (0067). El detalle está en la agenda del día. */
+  bloqueos: number;
 };
 
 export type AgendaMes = {
@@ -178,26 +195,45 @@ export type AgendaMes = {
 // Vista Mensual (pedido de Mateo, 19/9): un conteo por día, no los turnos completos — 30 días
 // con su ficha sería demasiado dato para pintar una grilla. Una sola consulta liviana (sin
 // joins) para todo el mes, agregada acá; todos los días del mes salen en `dias`, con 0 los que
-// no tienen turnos (así front no tiene que calcular cuántos días tiene el mes).
+// no tienen turnos (así front no tiene que calcular cuántos días tiene el mes). Los cierres y
+// los bloqueos (0061/0067) van igual: una consulta por tabla para todo el mes, por el texto de
+// la fecha (columna date: ni pasa por Date ni por el huso del servidor).
 export async function turnosDelMes(db: ClienteDb, mes: string, o: { incluirCancelados?: boolean } = {}): Promise<AgendaMes> {
   const { desde, hasta } = rangoDelMes(mes);
+  const primero = `${mes}-01`;
+  const ultimo = `${mes}-${String(diasEnMes(mes)).padStart(2, '0')}`;
   let q = db.from('turnos').select('inicio, estado').gte('inicio', desde).lt('inicio', hasta);
   if (!o.incluirCancelados) q = q.not('estado', 'in', ESTADOS_LIBERAN);
-  const { data, error } = await q;
-  if (error) throw error;
+  const [turnos, cierres, bloqueos] = await Promise.all([
+    q,
+    db.from('cierres_agenda').select('fecha, motivo').gte('fecha', primero).lte('fecha', ultimo),
+    db.from('bloqueos_agenda').select('fecha').gte('fecha', primero).lte('fecha', ultimo),
+  ]);
+  if (turnos.error) throw turnos.error;
+  if (cierres.error) throw cierres.error;
+  // Sin 0067 aplicada todavía, el mes se pinta igual, sin bloqueos (ver faltaLaTabla).
+  if (bloqueos.error && !faltaLaTabla(bloqueos.error)) throw bloqueos.error;
 
   const porDia = new Map<string, { total: number; sin_confirmar: number }>();
-  for (const t of data ?? []) {
+  for (const t of turnos.data ?? []) {
     const fecha = fechaEnZona(new Date(t.inicio));
     const actual = porDia.get(fecha) ?? { total: 0, sin_confirmar: 0 };
     actual.total++;
     if (t.estado === 'sin-confirmar') actual.sin_confirmar++;
     porDia.set(fecha, actual);
   }
+  const cierrePorDia = new Map((cierres.data ?? []).map((c) => [c.fecha, { motivo: c.motivo }]));
+  const bloqueosPorDia = new Map<string, number>();
+  for (const b of bloqueos.data ?? []) bloqueosPorDia.set(b.fecha, (bloqueosPorDia.get(b.fecha) ?? 0) + 1);
 
   const dias = Array.from({ length: diasEnMes(mes) }, (_, i) => {
     const fecha = `${mes}-${String(i + 1).padStart(2, '0')}`;
-    return { fecha, ...(porDia.get(fecha) ?? { total: 0, sin_confirmar: 0 }) };
+    return {
+      fecha,
+      ...(porDia.get(fecha) ?? { total: 0, sin_confirmar: 0 }),
+      cierre: cierrePorDia.get(fecha) ?? null,
+      bloqueos: bloqueosPorDia.get(fecha) ?? 0,
+    };
   });
   return { mes, dias };
 }

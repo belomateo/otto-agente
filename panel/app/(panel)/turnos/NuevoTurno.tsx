@@ -1,74 +1,26 @@
 'use client';
 
-// «Nuevo turno» (H1.8, decisión de Mateo 16/9 y 19/9): el mostrador agenda a alguien que llegó
-// sin turno, o por teléfono. GET /api/turnos/huecos ofrece los horarios reservables de verdad
-// para el tipo y la fecha elegidos — nunca un campo de hora libre, así nadie promete un horario
-// que el POST después rechaza. POST /api/turnos hace el alta (y de paso el cliente nuevo, si
-// hace falta, en el mismo paso).
+// «Nuevo turno» — el mostrador agenda manualmente.
+// Cambio del 29/9 (Mateo): en vez de elegir de una lista de huecos calculados, el admin
+// escribe la hora directamente y elige cuántos probadores quiere ocupar (1, 2 o 3). El backend
+// (turno-alta.ts, modo libre) toma los primeros N probadores libres en ese horario; si están
+// todos ocupados, devuelve el error. La constraint GiST de la base (0011) impide solapamientos.
+// El admin puede poner cualquier hora —fuera de las franjas, en horario de urgencia, etc.— sin
+// tener que tildar nada: confiar en el criterio del equipo > mostrar advertencias.
 //
-// TIPOS_TURNO vive en lib/edicion/turno-alta.ts, pero ese archivo es 'server-only' (importa
-// calcularHuecos de supabase/functions/_shared, que tira si Turbopack lo intenta meter en el
-// bundle del cliente) — no se puede importar acá tal cual. Se deriva de ETIQUETA_TIPO_TURNO
-// (lib/etiquetas.ts, sin 'server-only', ya con las 6 etiquetas) en vez de hardcodear una lista
-// nueva: mismo criterio que ya se usó para no importar ClaveEntidad de lib/edicion/entidades.ts
-// en PanelHistorial.tsx. Las dos listas tienen que tener las mismas claves — si alguien suma un
-// tipo de turno nuevo del lado del servidor y no lo agrega acá, el select simplemente no lo
-// ofrece (no rompe nada, pero avisar si eso pasa).
-//
-// cliente_id se omite del GET de huecos a propósito (es opcional en el contrato): si ya se
-// buscó y eligió un cliente antes de ver los huecos, se podría mandar para que la vista previa
-// tenga en cuenta el margen de confección de su evento — no lo hago para no atar el orden en
-// que se llenan los campos del formulario. El POST vuelve a calcular todo con el cliente real
-// al confirmar, así que nunca hay drift entre lo que se mostró y lo que quedó guardado.
+// TIPOS_TURNO: mismo criterio que antes —derivado de ETIQUETA_TIPO_TURNO, no de server-only.
 
-import { useEffect, useState } from 'react';
-import { enviar, ErrorApi, obtener } from '@/components/api/cliente';
+import { useState } from 'react';
+import { enviar, ErrorApi } from '@/components/api/cliente';
 import { ETIQUETA_TIPO_TURNO } from '@/lib/etiquetas';
 import type { FilaCliente } from '@/lib/queries/clientes';
+import { obtener } from '@/components/api/cliente';
+import { useEffect } from 'react';
 
 const TIPOS_TURNO = Object.keys(ETIQUETA_TIPO_TURNO);
 
-type Hueco = { inicio: string; fin: string; probador: number; dentro_urgencia: boolean };
-
 const ETIQUETA = 'flex flex-col gap-1 text-[14px] font-medium text-grafito md:text-[11.5px]';
 const CAMPO = 'w-full rounded-otto border border-borde px-2.5 py-2 text-sm text-tinta outline-none focus:border-cobre';
-
-function horaCortaISO(iso: string): string {
-  return new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
-}
-
-// Huecos reales del tipo+fecha elegidos — nunca una hora libre para escribir. Los que caen
-// dentro de la reserva de urgencia se ofrecen igual, pero marcados: elegirlos exige tildar
-// "pisar la urgencia" más abajo antes de poder confirmar (checkbox explícito, nunca implícito
-// — turno-alta.ts:14, decisión de Mateo).
-function ListaHuecos({ huecos, elegido, onElegir }: { huecos: Hueco[]; elegido: Hueco | null; onElegir: (h: Hueco) => void }) {
-  if (huecos.length === 0) return <div className="text-[14px] text-grafito">No hay huecos para ese tipo y esa fecha.</div>;
-  const ordenados = [...huecos].sort((a, b) => a.inicio.localeCompare(b.inicio) || a.probador - b.probador);
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {ordenados.map((h) => {
-        const activo = elegido?.inicio === h.inicio && elegido?.probador === h.probador;
-        return (
-          <button
-            key={`${h.inicio}-${h.probador}`}
-            type="button"
-            onClick={() => onElegir(h)}
-            className={`rounded-otto border px-2.5 py-1.5 text-[13px] font-medium ${
-              activo
-                ? 'border-cobre bg-cobre text-lino'
-                : h.dentro_urgencia
-                  ? 'border-ambar bg-ambar-suave text-ambar'
-                  : 'border-borde bg-lino text-grafito'
-            }`}
-          >
-            {horaCortaISO(h.inicio)} · P{h.probador}
-            {h.dentro_urgencia && !activo && ' ⚠'}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 function BuscadorCliente({
   clienteElegido,
@@ -101,8 +53,6 @@ function BuscadorCliente({
     setErrorBusqueda(null);
     const id = setTimeout(async () => {
       try {
-        // obtener() (no fetch crudo) para no confundir un 403 de permisos con "no existe" —
-        // r.json() sin mirar r.ok mostraba "Nadie con ese nombre o teléfono" para los dos casos.
         const j = await obtener<{ clientes: FilaCliente[] }>(`/api/clientes?q=${encodeURIComponent(busqueda.trim())}`);
         setResultados(j.clientes ?? []);
       } catch (e) {
@@ -180,62 +130,31 @@ function BuscadorCliente({
 export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaInicial: string; onCerrar: () => void; onCreado: () => void }) {
   const [tipo, setTipo] = useState('');
   const [fecha, setFecha] = useState(fechaInicial);
-  const [huecos, setHuecos] = useState<Hueco[] | null>(null);
-  const [cargandoHuecos, setCargandoHuecos] = useState(false);
-  const [errorHuecos, setErrorHuecos] = useState<string | null>(null);
-  const [huecoElegido, setHuecoElegido] = useState<Hueco | null>(null);
-  const [pisarUrgencia, setPisarUrgencia] = useState(false);
+  const [hora, setHora] = useState('');
+  const [cantidadProbadores, setCantidadProbadores] = useState<1 | 2 | 3>(1);
   const [clienteElegido, setClienteElegido] = useState<{ id: string; nombre: string } | null>(null);
   const [telefono, setTelefono] = useState('');
   const [nombreNuevo, setNombreNuevo] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [alternativas, setAlternativas] = useState<Hueco[]>([]);
 
-  useEffect(() => {
-    setHuecoElegido(null);
-    setPisarUrgencia(false);
-    setAlternativas([]);
-    if (!tipo || !fecha) {
-      setHuecos(null);
-      return;
-    }
-    setCargandoHuecos(true);
-    setErrorHuecos(null);
-    fetch(`/api/turnos/huecos?fecha=${fecha}&tipo=${tipo}`)
-      .then(async (r) => {
-        const j = await r.json().catch(() => null);
-        if (!r.ok) throw new ErrorApi(r.status, j?.error ?? 'No se pudieron traer los huecos', j?.detalle);
-        setHuecos(j.huecos ?? []);
-      })
-      .catch((e) => setErrorHuecos(e instanceof ErrorApi ? e.message : 'No se pudieron traer los huecos'))
-      .finally(() => setCargandoHuecos(false));
-  }, [tipo, fecha]);
+  const puedeConfirmar = Boolean(tipo && fecha && hora && (clienteElegido || telefono.trim()));
 
-  const puedeConfirmar = Boolean(tipo && huecoElegido && (clienteElegido || telefono.trim()) && (!huecoElegido.dentro_urgencia || pisarUrgencia));
-
-  async function confirmar(hueco: Hueco) {
+  async function confirmar() {
     setEnviando(true);
     setError(null);
-    setAlternativas([]);
     try {
       await enviar('/api/turnos', 'POST', {
         ...(clienteElegido ? { cliente_id: clienteElegido.id } : { cliente_nuevo: { telefono: telefono.trim(), nombre: nombreNuevo.trim() || undefined } }),
         tipo,
-        probador: hueco.probador,
-        inicio: hueco.inicio,
-        ...(hueco.dentro_urgencia ? { pisar_urgencia: true } : {}),
+        fecha_libre: fecha,
+        hora_libre: hora,
+        cantidad_probadores: cantidadProbadores,
       });
       onCreado();
       onCerrar();
     } catch (e) {
-      if (e instanceof ErrorApi) {
-        setError(e.message);
-        const detalle = e.detalle as { alternativas?: Hueco[] } | undefined;
-        if (detalle?.alternativas?.length) setAlternativas(detalle.alternativas);
-      } else {
-        setError('No se pudo crear el turno');
-      }
+      setError(e instanceof ErrorApi ? e.message : 'No se pudo crear el turno');
     } finally {
       setEnviando(false);
     }
@@ -252,71 +171,69 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
         </div>
 
         <div className="flex flex-col gap-3">
+          {/* Tipo */}
+          <label className={ETIQUETA}>
+            Tipo
+            <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={CAMPO}>
+              <option value="">Elegir…</option>
+              {TIPOS_TURNO.map((t) => (
+                <option key={t} value={t}>
+                  {ETIQUETA_TIPO_TURNO[t]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* Fecha y hora */}
           <div className="grid grid-cols-2 gap-2">
-            <label className={ETIQUETA}>
-              Tipo
-              <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={CAMPO}>
-                <option value="">Elegir…</option>
-                {TIPOS_TURNO.map((t) => (
-                  <option key={t} value={t}>
-                    {ETIQUETA_TIPO_TURNO[t]}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className={ETIQUETA}>
               Fecha
               <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={CAMPO} />
             </label>
+            <label className={ETIQUETA}>
+              Hora
+              <input type="time" value={hora} onChange={(e) => setHora(e.target.value)} className={CAMPO} />
+            </label>
           </div>
 
-          {tipo && fecha && (
-            <div>
-              <div className={`mb-1.5 ${ETIQUETA.replace('flex flex-col gap-1 ', '')}`}>Horarios disponibles</div>
-              {cargandoHuecos ? (
-                <div className="text-[14px] text-grafito">Buscando huecos…</div>
-              ) : errorHuecos ? (
-                <div className="text-[14px] text-ladrillo">{errorHuecos}</div>
-              ) : (
-                <ListaHuecos huecos={huecos ?? []} elegido={huecoElegido} onElegir={setHuecoElegido} />
-              )}
+          {/* Probadores */}
+          <div>
+            <div className={`mb-1.5 ${ETIQUETA.replace('flex flex-col gap-1 ', '')}`}>Probadores</div>
+            <div className="flex gap-2">
+              {([1, 2, 3] as const).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setCantidadProbadores(n)}
+                  className={`rounded-otto border px-4 py-2 text-sm font-medium ${
+                    cantidadProbadores === n ? 'border-cobre bg-cobre text-lino' : 'border-borde bg-lino text-grafito'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+              <span className="self-center text-[13px] text-grafito">
+                {cantidadProbadores === 1 ? 'probador' : 'probadores'}
+              </span>
             </div>
-          )}
+          </div>
 
-          {huecoElegido?.dentro_urgencia && (
-            <label className="flex items-start gap-2 rounded-otto border border-ambar bg-ambar-suave p-2.5 text-[13px] leading-[1.4] text-ambar">
-              <input type="checkbox" checked={pisarUrgencia} onChange={(e) => setPisarUrgencia(e.target.checked)} className="mt-0.5" />
-              Ese horario está dentro del margen que normalmente se reserva por si surge algo urgente. Tildá esto solo si el cliente ya está en el local esperando.
-            </label>
-          )}
+          {/* Cliente */}
+          <BuscadorCliente
+            clienteElegido={clienteElegido}
+            onElegirCliente={setClienteElegido}
+            telefono={telefono}
+            nombre={nombreNuevo}
+            onTelefono={setTelefono}
+            onNombre={setNombreNuevo}
+          />
 
-          {huecoElegido && (
-            <BuscadorCliente
-              clienteElegido={clienteElegido}
-              onElegirCliente={setClienteElegido}
-              telefono={telefono}
-              nombre={nombreNuevo}
-              onTelefono={setTelefono}
-              onNombre={setNombreNuevo}
-            />
-          )}
-
-          {error && (
-            <div className="text-[13px] text-ladrillo">
-              {error}
-              {alternativas.length > 0 && (
-                <div className="mt-1.5">
-                  <div className="mb-1 font-medium">Próximos horarios libres:</div>
-                  <ListaHuecos huecos={alternativas} elegido={null} onElegir={(h) => confirmar(h)} />
-                </div>
-              )}
-            </div>
-          )}
+          {error && <div className="text-[13px] text-ladrillo">{error}</div>}
 
           <div className="mt-1 flex items-center gap-2.5">
             <button
               type="button"
-              onClick={() => huecoElegido && confirmar(huecoElegido)}
+              onClick={confirmar}
               disabled={!puedeConfirmar || enviando}
               className="rounded-otto bg-cobre px-4.5 py-2.5 text-sm font-medium text-lino disabled:opacity-50"
             >

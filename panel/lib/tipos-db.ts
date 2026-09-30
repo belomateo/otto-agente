@@ -8,7 +8,10 @@
 // de escribirlo. Se reemplaza solo con regenerar de verdad en cuanto Docker ande. Mismo motivo,
 // mismo día: catalogo_alquiler.orden (0044), turnos.urgencia (0046) y la función
 // mostrador_enviar_foto (0028-bis de logica, todavía sin aplicar cuando se escribió esto: la
-// firma es la que avisó por chat, no está verificada contra la base todavía).
+// firma es la que avisó por chat, no está verificada contra la base todavía). Mismo motivo, 26/9:
+// la tabla bloqueos_agenda (0067), escrita a mano contra el CREATE TABLE de la migración (que se
+// verificó con rollback contra la base real); el panel no manda creado_por, creado_por_admin ni
+// editado_por: los fija la base.
 
 export type Json =
   | string
@@ -50,6 +53,51 @@ export type Database = {
           nombre?: string
           precio?: number
           precio_compra?: number | null
+          version?: number
+        }
+        Relationships: []
+      }
+      bloqueos_agenda: {
+        Row: {
+          creado_at: string
+          creado_por: string | null
+          creado_por_admin: boolean
+          desde: string
+          editado_at: string
+          editado_por: string | null
+          fecha: string
+          hasta: string
+          id: string
+          motivo: string | null
+          probador: number | null
+          version: number
+        }
+        Insert: {
+          creado_at?: string
+          creado_por?: string | null
+          creado_por_admin?: boolean
+          desde: string
+          editado_at?: string
+          editado_por?: string | null
+          fecha: string
+          hasta: string
+          id?: string
+          motivo?: string | null
+          probador?: number | null
+          version?: number
+        }
+        Update: {
+          creado_at?: string
+          creado_por?: string | null
+          creado_por_admin?: boolean
+          desde?: string
+          editado_at?: string
+          editado_por?: string | null
+          fecha?: string
+          hasta?: string
+          id?: string
+          motivo?: string | null
+          probador?: number | null
           version?: number
         }
         Relationships: []
@@ -232,6 +280,7 @@ export type Database = {
           aviso_turno_min: number | null
           cantidad_probadores: number
           dias_reserva_urgencia: number | null
+          dias_simultaneos: number[]
           editado_at: string
           editado_por: string | null
           escalonado_min: number
@@ -243,6 +292,7 @@ export type Database = {
           aviso_turno_min?: number | null
           cantidad_probadores: number
           dias_reserva_urgencia?: number | null
+          dias_simultaneos?: number[]
           editado_at?: string
           editado_por?: string | null
           escalonado_min: number
@@ -254,6 +304,7 @@ export type Database = {
           aviso_turno_min?: number | null
           cantidad_probadores?: number
           dias_reserva_urgencia?: number | null
+          dias_simultaneos?: number[]
           editado_at?: string
           editado_por?: string | null
           escalonado_min?: number

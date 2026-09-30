@@ -15,6 +15,10 @@
 //    eso a cada hora se ofrece un solo probador, el primero libre, y si dos clientes piden la
 //    misma hora entra uno solo (supuesto #25).
 //  · un turno 'cancelado' o 'no-vino' libera su lugar; los demás estados lo ocupan.
+//  · días cerrados (cierres_agenda, 0061): ese día no hay ningún hueco.
+//  · horarios bloqueados (bloqueos_agenda, 0067, pedido de la dueña del 26/9): un rato de una
+//    fecha tapado para un probador o para todos. Ese probador no toma un turno que lo pise, y
+//    a esa hora se ofrece el siguiente libre; si el bloqueo es de todos, esa hora no se ofrece.
 //  · mismo día: solo huecos que arrancan después de `ahora`.
 //  · evento hoy o mañana (decisión #8): ningún hueco y `derivar: evento_inminente`.
 //  · con la fecha del evento, nada el día del evento ni después (supuesto #24).
@@ -33,6 +37,13 @@ import { fechaLocal, instanteLocal, MINUTOS_POR_HORA, MS_POR_MINUTO, sumarDias }
 
 export type Ocupado = { probador: number; inicio: Date; fin: Date };
 
+// Un horario bloqueado (bloqueos_agenda, 0067) ya pasado a instantes: [inicio, fin), igual que
+// un turno. probador null = todos los probadores. No es un Ocupado a propósito: un turno es un
+// cliente que llega y un bloqueo no, y la regla del escalonado ("dos turnos nunca arrancan a
+// menos de un escalonado") es sobre clientes. Si un bloqueo entrara en `ocupados`, un rato
+// tapado del probador 1 le sacaría horarios vecinos a los probadores 2 y 3, que están libres.
+export type BloqueoAgenda = { inicio: Date; fin: Date; probador: number | null };
+
 export type ReglasAgenda = {
   franjas: Franja[];
   escalonadoMin: number;
@@ -42,6 +53,11 @@ export type ReglasAgenda = {
   // confección (decisión de Mateo, el dieciséis de septiembre). Un día es solo "nada el día del
   // evento", que es lo de siempre y lo que corresponde a la prueba final, donde ya no se arregla.
   diasConfeccion: number;
+  // Días de la semana (0=dom..6=sáb) donde los probadores no se escalonan: ambos atienden a la
+  // misma hora. Pedido de Mateo, 29/9: el sábado el horario es acotado y conviene que los dos
+  // probadores estén disponibles en cada slot. En esos días el paso entre slots es la duración
+  // del turno (no escalonadoMin) y se ofrecen todos los probadores libres en el mismo instante.
+  diasSimultaneos: readonly number[];
 };
 
 export type PedidoHuecos = {
@@ -63,6 +79,12 @@ export type PedidoHuecos = {
   // Obligatorio y no opcional a propósito: si fuera opcional, quien se olvidara de pasarlo
   // abriría los feriados en silencio, que es la peor forma de fallar.
   cerrados: ReadonlySet<string>;
+  // Los horarios bloqueados del mismo rango de fechas (bloqueos_agenda, 0067). Va acá por lo
+  // mismo que `cerrados`: depende de desde/hasta, lo trae quien llama y es obligatorio, para
+  // que el typecheck no deje compilar a un llamador que se olvide de leerlos. Olvidarlo no
+  // rompe nada a la vista: la base igual rechaza el turno (turno_en_horario_bloqueado), pero
+  // Lucía y el panel seguirían ofreciendo una hora que después no se puede agendar.
+  bloqueos: readonly BloqueoAgenda[];
 };
 
 const dos = (n: number) => String(n).padStart(2, "0");
@@ -75,7 +97,10 @@ function diaDeLaSemana(ymd: string): number {
   return new Date(Date.UTC(a, m - 1, d)).getUTCDay();
 }
 
-const pisa = (o: Ocupado, inicio: Date, fin: Date) => o.inicio < fin && o.fin > inicio;
+// Se pisan si se solapan, no solo si el turno ARRANCA adentro: un turno que empieza antes y
+// termina adentro de un bloqueo también lo pisa. Los dos rangos son [inicio, fin): terminar
+// justo cuando el otro arranca no pisa.
+const pisa = (o: { inicio: Date; fin: Date }, inicio: Date, fin: Date) => o.inicio < fin && o.fin > inicio;
 
 export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: PedidoHuecos): ResultadoAgenda {
   if (!(reglas.escalonadoMin > 0) || !(reglas.duracionMin > 0)) {
@@ -110,18 +135,32 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
     // fecha en vez de por día de la semana.
     if (p.cerrados.has(dia)) continue;
     const semana = diaDeLaSemana(dia);
+    // En días simultáneos (típicamente sábado), los probadores atienden en paralelo en el mismo
+    // slot: no se escalonan y el paso entre slots es la duración del turno (no escalonadoMin).
+    // Así 9:30 tiene probador 1 y probador 2 disponibles juntos, luego 10:15, etc.
+    const esSimultaneo = reglas.diasSimultaneos.includes(semana);
+    const paso = esSimultaneo ? reglas.duracionMin : reglas.escalonadoMin;
     const franjas = reglas.franjas.filter((f) => f.diaSemana === semana).sort((a, b) => a.desde - b.desde);
     for (const f of franjas) {
-      for (let min = f.desde; min + reglas.duracionMin <= f.hasta; min += reglas.escalonadoMin) {
+      for (let min = f.desde; min + reglas.duracionMin <= f.hasta; min += paso) {
         const inicio = instanteLocal(dia, aHora(min), p.tz);
         if (inicio <= p.ahora) continue;
-        if (ocupados.some((o) => Math.abs(o.inicio.getTime() - inicio.getTime()) < escalonadoMs)) continue;
+        // Filtro de escalonado: en días normales, dos turnos nunca arrancan a menos de
+        // escalonadoMin entre sí (el equipo recibe un cliente por vez). En días simultáneos
+        // no aplica: dos clientes pueden entrar al mismo tiempo en probadores distintos.
+        if (!esSimultaneo && ocupados.some((o) => Math.abs(o.inicio.getTime() - inicio.getTime()) < escalonadoMs)) continue;
         const fin = new Date(inicio.getTime() + duracionMs);
         for (let probador = 1; probador <= f.probadores; probador++) {
-          if (!ocupados.some((o) => o.probador === probador && pisa(o, inicio, fin))) {
-            huecos.push({ inicio: inicio.toISOString(), fin: fin.toISOString(), probador });
-            break;
-          }
+          if (ocupados.some((o) => o.probador === probador && pisa(o, inicio, fin))) continue;
+          // El bloqueo se mira acá y solo acá (no en el escalonado de arriba): tapa el lugar de
+          // SU probador, o de todos si no tiene. Así uno del probador 1 hace que esa hora se
+          // ofrezca en el 2, que es lo que la agenda de Lucía necesita — ella trae UN probador
+          // por hora y, si fuera el bloqueado, la base le rechazaba el turno sin otro a mano.
+          if (p.bloqueos.some((b) => (b.probador === null || b.probador === probador) && pisa(b, inicio, fin))) continue;
+          huecos.push({ inicio: inicio.toISOString(), fin: fin.toISOString(), probador });
+          // En días normales, solo el primer probador libre por slot (el equipo no se divide).
+          // En días simultáneos se ofrecen todos los probadores que quepan.
+          if (!esSimultaneo) break;
         }
       }
     }
@@ -154,12 +193,29 @@ async function leerReglas(db: Db, tipo: TipoTurno): Promise<ReglasAgenda> {
   const [duracion] = await db.consulta("select duracion_min from duraciones_turno where tipo = $1", [tipo]);
   if (!duracion) throw new Error(`duraciones_turno no tiene el tipo ${tipo}: la agenda no puede calcular huecos.`);
   const { franjas } = await leerFranjas(db);
+
+  // dias_simultaneos: columna de la migración 0068. Si la migración todavía no se aplicó,
+  // la columna no existe y usamos [] (sin días simultáneos) hasta que se aplique.
+  // La columna en la base tiene DEFAULT '{6}' (sábado), así que en producción el sábado
+  // siempre viene de la base, no de este fallback.
+  let diasSimultaneos: number[] = [];
+  const [colExiste] = await db.consulta(
+    `select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'configuracion_agenda'
+         and column_name = 'dias_simultaneos'`,
+  );
+  if (colExiste) {
+    const [ext] = await db.consulta("select dias_simultaneos from configuracion_agenda limit 1");
+    if (ext && Array.isArray(ext.dias_simultaneos)) diasSimultaneos = ext.dias_simultaneos as number[];
+  }
+
   return {
     franjas,
     escalonadoMin: Number(config.escalonado_min),
     diasReservaUrgencia: config.dias_reserva_urgencia === null ? null : Number(config.dias_reserva_urgencia),
     duracionMin: Number(duracion.duracion_min),
     diasConfeccion: await diasConfeccion(db, tipo),
+    diasSimultaneos,
   };
 }
 
@@ -192,13 +248,49 @@ async function leerCierres(db: Db, desde: string, hasta: string): Promise<Readon
   return new Set(filas.map((f) => String(f.fecha)));
 }
 
+// Los horarios bloqueados del rango (bloqueos_agenda, 0067). La tabla guarda fecha + desde/hasta
+// en hora del local; el paso a instante se hace en SQL, con la zona del negocio, y no acá: si la
+// fecha viajara como Date, el huso la corre un día (el mismo bug que cuidan leerCierres y su
+// prueba). Un hasta de fin de día (24:00) da solo la medianoche del día siguiente.
+//
+// La migración la aplica Mateo a mano y puede llegar DESPUÉS del deploy del worker: mientras la
+// tabla no exista, no hay bloqueos que respetar y Lucía tiene que seguir ofreciendo horarios, no
+// quedarse muda. Se pregunta antes si existe (como leerFranjas en horario_laboral.ts) en vez de
+// consultar y atajar el undefined_table: adentro de una transacción ese error la deja abortada,
+// y las pruebas contra la base corren todas adentro de un begin … rollback — todo lo que viniera
+// después fallaría. to_regclass resuelve el nombre igual que el from de abajo.
+export async function leerBloqueos(db: Db, desde: string, hasta: string, tz: string): Promise<BloqueoAgenda[]> {
+  const [existe] = await db.consulta("select to_regclass('bloqueos_agenda') is not null as hay");
+  if (existe?.hay !== true) {
+    console.error(
+      "agenda: la tabla bloqueos_agenda no existe todavía (falta aplicar la migración 0067); " +
+        "los huecos se calculan sin horarios bloqueados (sin la tabla no puede haber ninguno cargado).",
+    );
+    return [];
+  }
+  const filas = await db.consulta(
+    `select (fecha + desde) at time zone $3::text as inicio,
+            (fecha + hasta) at time zone $3::text as fin,
+            probador
+       from bloqueos_agenda
+      where fecha between $1::date and $2::date`,
+    [desde, hasta, tz],
+  );
+  return filas.map((f) => ({
+    inicio: new Date(f.inicio as string),
+    fin: new Date(f.fin as string),
+    probador: f.probador === null || f.probador === undefined ? null : Number(f.probador),
+  }));
+}
+
 export function agendaDesdeBase(db: Db, tz: string): Agenda {
   return {
     async huecos({ desde, hasta, tipo, ahora, fechaEvento }) {
       const reglas = await leerReglas(db, tipo);
       const ocupados = await leerOcupados(db, desde, hasta, tz);
       const cerrados = await leerCierres(db, desde, hasta);
-      return calcularHuecos(reglas, ocupados, { desde, hasta, ahora, fechaEvento, tz, cerrados });
+      const bloqueos = await leerBloqueos(db, desde, hasta, tz);
+      return calcularHuecos(reglas, ocupados, { desde, hasta, ahora, fechaEvento, tz, cerrados, bloqueos });
     },
   };
 }
