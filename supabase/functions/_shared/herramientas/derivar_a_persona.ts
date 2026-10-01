@@ -40,9 +40,15 @@
 // timeout).
 
 import { MOTIVOS_DERIVACION_LLM, MOTIVOS_SIN_MENSAJE, MOTIVOS_SOLO_CODIGO, type MotivoDerivacion } from "../enums.ts";
-import { llamoA } from "../traza.ts";
+import { hastaMasLejanoBuscado, llamoA } from "../traza.ts";
+import { diasEntre, fechaLocal, sumarDias } from "../tiempo.ts";
 import { CLAVE_TEXTO_DERIVACION_DURA_GENERICA, CLAVE_TEXTO_DERIVACION_RECLAMO, registrarDerivacion, textoDeDerivacion } from "./derivacion.ts";
+import { leerFicha } from "./ficha.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
+
+// Mismo techo que buscar_horarios.ts (RANGO_MAXIMO_DIAS): no le podemos pedir que busque más
+// lejos que lo que la herramienta acepta en una sola llamada.
+const RANGO_MAXIMO_DIAS = 13;
 
 type Args = { motivo: MotivoDerivacion; mensaje_al_cliente: string | null };
 
@@ -74,13 +80,35 @@ export const derivarAPersona: Herramienta<Args> = {
           "buscar_horarios con la fecha del evento: el código deriva solo, con el dato guardado y el texto correcto.",
       );
     }
-    if (args.motivo === "turno_urgente_sin_hueco" && !llamoA(ctx.traza, "buscar_horarios")) {
-      return rechazo(
-        "sin_buscar_horarios",
-        "Para derivar por falta de hueco, primero llamá a buscar_horarios en este mismo turno con la fecha del " +
-          "evento: si el evento termina siendo hoy o mañana, el código deriva solo con el dato guardado y el " +
-          "texto correcto; si no, confirmás de verdad que no hay hueco antes de derivar por esto.",
-      );
+    if (args.motivo === "turno_urgente_sin_hueco") {
+      if (!llamoA(ctx.traza, "buscar_horarios")) {
+        return rechazo(
+          "sin_buscar_horarios",
+          "Para derivar por falta de hueco, primero llamá a buscar_horarios en este mismo turno con la fecha del " +
+            "evento: si el evento termina siendo hoy o mañana, el código deriva solo con el dato guardado y el " +
+            "texto correcto; si no, confirmás de verdad que no hay hueco antes de derivar por esto.",
+        );
+      }
+      // No alcanza con haber llamado a buscar_horarios: tiene que haber mirado un rango que de
+      // verdad llegue cerca de la fecha del evento. Hallazgo en vivo, 1/10: el modelo buscó
+      // desde=hasta=hoy (un solo día) con el evento a 9 días y derivó igual — "no hay hueco hoy"
+      // no es "no hay hueco antes del evento".
+      const hoy = fechaLocal(ctx.ahora, ctx.tz);
+      const ficha = await leerFicha(ctx.db, ctx.cliente.id);
+      if (ficha.fecha_evento && ficha.fecha_evento > hoy) {
+        const limite = diasEntre(hoy, ficha.fecha_evento) > RANGO_MAXIMO_DIAS
+          ? sumarDias(hoy, RANGO_MAXIMO_DIAS)
+          : ficha.fecha_evento;
+        const masLejano = hastaMasLejanoBuscado(ctx.traza);
+        if (!masLejano || masLejano < limite) {
+          return rechazo(
+            "busqueda_muy_corta",
+            `Buscaste hasta ${masLejano ?? hoy}, pero el evento es el ${ficha.fecha_evento}: volvé a llamar a ` +
+              `buscar_horarios con hasta "${limite}" (desde hoy) antes de derivar por esto — recién con eso ` +
+              "confirmás que de verdad no hay hueco antes del evento.",
+          );
+        }
+      }
     }
     const mensaje = limpio(args.mensaje_al_cliente);
     if (mensaje && /[?¿]/.test(mensaje)) {

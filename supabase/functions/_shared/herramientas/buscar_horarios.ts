@@ -88,6 +88,8 @@ export const buscarHorarios: Herramienta<Args> = {
       return rechazo("rango_muy_largo", `Pedí como mucho ${RANGO_MAXIMO_DIAS + 1} días por vez.`);
     }
 
+    ctx.traza.rangosBuscados.push({ desde, hasta: args.hasta });
+
     const agenda = await ctx.agenda.huecos({
       desde,
       hasta: args.hasta,
