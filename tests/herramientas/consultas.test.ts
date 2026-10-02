@@ -188,7 +188,7 @@ prueba("buscar_horarios busca desde hoy si le piden un día que pasó, y rechaza
   esOk(r);
   assertEquals(agenda.pedidos[0].desde, LUNES);
   assertMatch(String(r.datos.aviso), /desde hoy/);
-  assertMatch(String(r.datos.nota), /turno_urgente_sin_hueco/);
+  assertMatch(String(r.datos.nota), /dato_no_encontrado/);
   esRechazo(await buscar(ctx, JUEVES, MARTES, "invitado"), "rango_invertido");
   esRechazo(await buscar(ctx, LUNES, "2030-07-03", "invitado"), "rango_muy_largo");
   esRechazo(await buscar(ctx, LUNES, JUEVES, "casamiento" as never), "argumentos_invalidos");

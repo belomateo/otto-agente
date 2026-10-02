@@ -57,16 +57,17 @@ Deno.test({
       const schema = enumDelSchema("buscar_informacion", "seccion");
       const base = await enumDeLaBase(sql, "fragmentos_tema_check");
       const lineas = PROMPT.split("\n");
-      const i = lineas.findIndex((l) => l.includes("TODAS las secciones que hay"));
+      const i = lineas.findIndex((l) => l.includes("MAPA DE LA BASE DE CONOCIMIENTO"));
       const indice: string[] = [];
       for (let j = i + 1; i >= 0 && j < lineas.length && lineas[j].trim() !== ""; j++) {
-        const m = lineas[j].match(/^\s+([a-z-]+) — /);
+        const m = lineas[j].match(/^- ([a-z-]+): /);
         if (m) indice.push(m[1]);
       }
       const doc = [...seccionMd(AGENTE, 8).matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]);
       assertEquals(schema, [...SECCIONES]);
       assertEquals(ordenado(base), ordenado(schema), "fragmentos_tema_check");
-      assertEquals(indice, schema, "índice del prompt");
+      // Desde el prompt reorganizado (0078, 2/10) el mapa agrupa por tema: importa que estén todas, no el orden.
+      assertEquals(ordenado(indice), ordenado(schema), "índice del prompt");
       assertEquals(doc, schema, "AGENTE.md § 8");
     }),
 });
