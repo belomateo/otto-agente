@@ -18,6 +18,7 @@ import { VACIO_BANDEJA } from './vacio-bandeja';
 
 const FILTROS: { label: string; pasa: (c: FilaBandeja) => boolean }[] = [
   { label: 'Todas', pasa: () => true },
+  { label: 'Sin leer', pasa: (c) => c.no_leidos > 0 },
   { label: 'Con Lucía', pasa: (c) => c.estado === 'activa' },
   { label: 'Con persona', pasa: (c) => c.estado === 'derivada' },
   { label: 'Sin respuesta', pasa: (c) => c.sin_respuesta && c.estado !== 'cerrada' },
@@ -90,15 +91,19 @@ export function ConversationList({
             const contenido = (
               <>
                 <div className="flex items-baseline gap-2">
-                  <span className="flex-1 truncate font-serif text-[15px] font-semibold">{c.n}</span>
-                  <span className="text-[14px] tabular-nums text-grafito md:text-xs">{c.h}</span>
+                  <span className="min-w-0 flex-1 truncate font-serif text-[15px] font-semibold">{c.n}</span>
+                  <time dateTime={c.ultimo_mensaje_at} className="shrink-0 whitespace-nowrap text-xs tabular-nums text-grafito">{c.h}</time>
                 </div>
                 <div className="mt-1 flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[14px] text-grafito md:text-[13.5px]">{c.m}</span>
+                  <span className="min-w-0 flex-1 truncate text-[14px] text-grafito md:text-[13.5px]"><strong>{c.ultimo_autor === 'cliente' ? 'Cliente: ' : c.ultimo_autor === 'lucia' ? 'Lucía: ' : c.ultimo_autor === 'mostrador' ? 'Equipo: ' : ''}</strong>{c.m}</span>
                   {c.hasTag && <span className="flex-none rounded-pill border border-borde px-2 py-0.5 text-[14px] font-medium text-grafito md:text-[11px]">{c.tag}</span>}
                   <Chip bg={c.cb} fg={c.cf} className="flex-none px-[9px] py-[2px] text-[14px] md:text-[11.5px]">
                     {c.chip}
                   </Chip>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                  <span className={c.sin_respuesta ? 'font-semibold text-ladrillo' : 'text-grafito'}>{c.sin_respuesta ? 'Último mensaje del cliente' : c.ultimo_autor ? 'Última respuesta nuestra' : 'Sin mensajes'}</span>
+                  {c.no_leidos > 0 && <span aria-label={`${c.no_leidos} mensajes sin leer`} className="rounded-pill bg-cobre px-2 py-0.5 font-semibold text-white">{c.no_leidos} sin leer</span>}
                 </div>
               </>
             );

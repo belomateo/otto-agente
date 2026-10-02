@@ -1233,6 +1233,14 @@ export type Database = {
       }
     }
     Functions: {
+      bandeja_no_leidos: {
+        Args: { p_ids: string[] }
+        Returns: { conversacion_id: string; cantidad: number }[]
+      }
+      bandeja_marcar_leida: {
+        Args: { p_conversacion: string; p_mensajes: string[] }
+        Returns: number
+      }
       adjunto_reintentar: {
         Args: { p_mensaje: string }
         Returns: Json

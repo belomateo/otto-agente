@@ -27,8 +27,9 @@ import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
 import { IconAudio, IconFoto } from '@/components/nav/icons';
 import { useUsuario } from '@/components/nav/UsuarioContext';
-import { SONDEO_LISTAS_MS, useDatos } from '@/components/api/useDatos';
+import { SONDEO_BANDEJA_MS, useDatos } from '@/components/api/useDatos';
 import { useAccionesCharla } from '@/components/api/useAccionesCharla';
+import { enviar } from '@/components/api/cliente';
 import { fechaEnZona } from '@/lib/formato';
 import type { Charla, MensajeCharla } from '@/lib/queries/bandeja';
 
@@ -91,7 +92,7 @@ function resumenDe(charla: Charla) {
 export function ChatThread({ variante, conversacionId }: { variante: 'desktop' | 'mobile'; conversacionId: string | null }) {
   const compacto = variante === 'mobile';
   const esAdmin = useUsuario()?.rol === 'admin';
-  const { datos: charla, cargando, error, recargar } = useDatos<Charla>(conversacionId ? `/api/bandeja/${conversacionId}` : null, { sondeoMs: SONDEO_LISTAS_MS });
+  const { datos: charla, cargando, error, recargar } = useDatos<Charla>(conversacionId ? `/api/bandeja/${conversacionId}` : null, { sondeoMs: SONDEO_BANDEJA_MS });
   const { enviando, error: errorAccion, motivo: motivoAccion, tomar, devolver, cerrar, responder, enviarFoto, reabrir, toggleLucia, agregarEtiqueta, quitarEtiqueta } = useAccionesCharla(conversacionId);
   const [texto, setTexto] = useState('');
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
@@ -99,6 +100,34 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
   const inputFotoRef = useRef<HTMLInputElement>(null);
   const listaRef = useRef<HTMLDivElement>(null);
   const primeraCargaRef = useRef(true);
+  const lecturaEnviada = useRef('');
+
+  useEffect(() => {
+    if (!charla || charla.id !== conversacionId) return;
+    const mensajes = charla.mensajes.filter((m) => m.direccion === 'entrante').map((m) => m.id);
+    if (!mensajes.length) return;
+    const clave = `${charla.id}:${mensajes.join(',')}`;
+    let enviandoLectura = false;
+    const marcar = async () => {
+      const el = listaRef.current;
+      if (!el || el.offsetParent === null || document.visibilityState !== 'visible' ||
+          el.scrollHeight - el.scrollTop - el.clientHeight > 80 ||
+          lecturaEnviada.current === clave || enviandoLectura) return;
+      enviandoLectura = true;
+      try {
+        const r = await enviar<{ marcados: number }>(`/api/bandeja/${charla.id}/leida`, 'POST', { mensajes });
+        lecturaEnviada.current = clave;
+        if (r.marcados > 0) window.dispatchEvent(new Event('bandeja-lectura'));
+      } catch { /* Se reintenta al próximo sondeo: no ocultar pendientes si falló. */ }
+      finally { enviandoLectura = false; }
+    };
+    const el = listaRef.current;
+    const frame = requestAnimationFrame(() => { void marcar(); });
+    el?.addEventListener('scroll', marcar);
+    document.addEventListener('visibilitychange', marcar);
+    window.addEventListener('focus', marcar);
+    return () => { cancelAnimationFrame(frame); el?.removeEventListener('scroll', marcar); document.removeEventListener('visibilitychange', marcar); window.removeEventListener('focus', marcar); };
+  }, [charla, conversacionId]);
 
   useEffect(() => {
     setTexto('');

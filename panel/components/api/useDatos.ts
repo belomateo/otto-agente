@@ -11,6 +11,7 @@ import { ErrorApi, obtener } from './cliente';
 // no se ven hasta refrescar a mano. Mismo intervalo que ya usa el cartel de turno
 // (useTurnosPorAvisar) para Bandeja, Atención humana y una charla abierta.
 export const SONDEO_LISTAS_MS = 20_000;
+export const SONDEO_BANDEJA_MS = 5_000;
 
 export function useDatos<T>(ruta: string | null, opciones: { sondeoMs?: number } = {}) {
   const [datos, setDatos] = useState<T | null>(null);
@@ -42,6 +43,12 @@ export function useDatos<T>(ruta: string | null, opciones: { sondeoMs?: number }
       if (rutaActual.current === r) setCargando(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (ruta !== '/api/bandeja') return;
+    window.addEventListener('bandeja-lectura', recargar);
+    return () => window.removeEventListener('bandeja-lectura', recargar);
+  }, [ruta, recargar]);
 
   useEffect(() => {
     if (!ruta) return;

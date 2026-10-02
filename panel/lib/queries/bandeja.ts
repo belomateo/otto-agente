@@ -5,13 +5,16 @@ import 'server-only';
 import type { Conversacion } from '@/lib/mock-data';
 import type { Json } from '@/lib/tipos-db';
 import { CHIP_CONVERSACION, ESTILO_MOTIVO, ETIQUETA_EVENTO } from '@/lib/etiquetas';
-import { fechaEnZona, hora, momentoCorto } from '@/lib/formato';
+import { fechaEnZona, hora } from '@/lib/formato';
 import { autorDeMensaje, nombreDe, normalizar, proximoTurno, resumenFicha, textoDeMensaje, type ClienteDb } from './comun';
 
 export const FILTROS_BANDEJA = ['todas', 'lucia', 'persona', 'sin-respuesta'] as const;
 export type FiltroBandeja = (typeof FILTROS_BANDEJA)[number];
 
 export type FilaBandeja = Conversacion & {
+  ultimo_autor: 'cliente' | 'lucia' | 'mostrador' | null;
+  ultimo_mensaje_at: string;
+  no_leidos: number;
   id: string;
   cliente_id: string;
   estado: string;
@@ -41,7 +44,11 @@ export async function listarConversaciones(
   const { data, error } = await q;
   if (error) throw error;
 
-  const ahora = new Date();
+  const ids = (data ?? []).map((c) => c.id);
+  const lecturas = ids.length ? await db.rpc('bandeja_no_leidos', { p_ids: ids }) : { data: [], error: null };
+  if (lecturas.error) throw lecturas.error;
+  const noLeidos = new Map((lecturas.data ?? []).map((r) => [r.conversacion_id, Number(r.cantidad)]));
+
   let filas: FilaBandeja[] = (data ?? []).map((c) => {
     const ultimo = c.mensajes[0];
     const urgente = c.derivaciones.some((d) => d.estado === 'pendiente' && ESTILO_MOTIVO[d.motivo]?.urgente);
@@ -53,9 +60,12 @@ export async function listarConversaciones(
       cliente_id: c.cliente_id,
       estado: c.estado,
       sin_respuesta: ultimo?.direccion === 'entrante',
+      ultimo_autor: ultimo ? autorDeMensaje(ultimo) : null,
+      ultimo_mensaje_at: ultimo?.enviado_at ?? c.ultimo_mensaje_at ?? c.iniciado_at,
+      no_leidos: noLeidos.get(c.id) ?? 0,
       n: nombreDe(c.clientes),
       m: textoDeMensaje(ultimo),
-      h: momentoCorto(c.ultimo_mensaje_at ?? c.iniciado_at, ahora),
+      h: `${fechaEnZona(new Date(ultimo?.enviado_at ?? c.ultimo_mensaje_at ?? c.iniciado_at)).split('-').reverse().join('/')} · ${hora(ultimo?.enviado_at ?? c.ultimo_mensaje_at ?? c.iniciado_at)}`,
       chip: chip.chip,
       cb: chip.cb,
       cf: chip.cf,
@@ -67,7 +77,7 @@ export async function listarConversaciones(
   if (o.filtro === 'sin-respuesta') filas = filas.filter((f) => f.sin_respuesta && f.estado !== 'cerrada');
   const b = normalizar(o.busqueda ?? '');
   if (b) filas = filas.filter((f) => normalizar(`${f.n} ${f.m}`).includes(b));
-  return filas;
+  return filas.sort((a, b) => Date.parse(b.ultimo_mensaje_at) - Date.parse(a.ultimo_mensaje_at) || a.id.localeCompare(b.id));
 }
 
 export type MensajeCharla = {
@@ -133,7 +143,7 @@ export async function obtenerCharla(db: ClienteDb, id: string): Promise<Charla |
         'id, direccion, tipo, contenido, enviado_at, no_enviado_motivo, adjunto_mime, adjunto_bytes, adjunto_voz, adjunto_segundos, adjunto_estado, adjunto_detalle, transcripcion'
       )
       .eq('conversacion_id', id)
-      .order('enviado_at', { ascending: true })
+      .order('enviado_at', { ascending: false })
       .limit(LIMITE_HILO),
     db
       .from('eventos_agente')
@@ -161,7 +171,7 @@ export async function obtenerCharla(db: ClienteDb, id: string): Promise<Charla |
       resumen: resumenFicha(c.clientes, turno),
       etiqueta: evento ? (ETIQUETA_EVENTO[evento] ?? '') : '',
     },
-    mensajes: (mensajes.data ?? []).map((m) => ({
+    mensajes: [...(mensajes.data ?? [])].reverse().map((m) => ({
       id: m.id,
       direccion: m.direccion,
       tipo: m.tipo,

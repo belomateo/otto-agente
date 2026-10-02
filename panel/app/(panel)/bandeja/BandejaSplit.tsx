@@ -6,7 +6,7 @@
 // datos acá — los recibe de la página, que los pide una sola vez y se los pasa también a la
 // lista de mobile (misma página, las dos ramas conviven en el DOM).
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FilaBandeja } from '@/lib/queries/bandeja';
 import { ChatThread } from './ChatThread';
 import { ConversationList } from './ConversationList';
@@ -24,8 +24,12 @@ export function BandejaSplit({
   onReintentar: () => void;
   idInicial?: string | null;
 }) {
-  const [seleccionId, setSeleccionId] = useState<string | null>(null);
-  const activoId = seleccionId ?? idInicial ?? conversaciones[0]?.id ?? null;
+  const [seleccionId, setSeleccionId] = useState<string | null>(idInicial);
+  const primeroId = conversaciones[0]?.id ?? null;
+  useEffect(() => {
+    if (seleccionId === null && primeroId) setSeleccionId(primeroId);
+  }, [seleccionId, primeroId]);
+  const activoId = seleccionId;
 
   return (
     <>
