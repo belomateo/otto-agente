@@ -191,7 +191,7 @@ p(
   "- **agradecimiento**: después del evento, con el link de reseña de Google.",
   "- **recontacto_cliente**: a 1 y 3 días, a quien consultó y no reservó.",
   "",
-  "> Estado al generar este documento: el interruptor `CRONS_ENVIOS` está **apagado**, así que ninguna de las tres se está enviando.",
+  "> Encendidas desde el 2/10 (`CRONS_ENVIOS=on`). Los clientes sin teléfono válido se saltean; los números argentinos sin 549 se corrigen antes de enviar.",
   "",
 );
 

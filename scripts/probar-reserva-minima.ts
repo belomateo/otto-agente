@@ -10,13 +10,17 @@ for (const caso of [
   { mensaje: "Quiero reservar para el jueves 6 de junio.", reserva: false, esperado: "hora" },
   { mensaje: "¿Trabajan talles para niños? ¿Qué rango de talles tienen?", reserva: false, esperado: "infantil" },
   { mensaje: "Quiero alquilar un traje de astronauta, ¿tienen?", reserva: false, esperado: "derivacion" },
+  // Casos reales de la semana del 29/9 que terminaron derivados sin motivo.
+  { mensaje: "Hola buen día, con cuánta antelación tengo que sacar turno?", reserva: false, esperado: "sigue" },
+  { mensaje: "Es para una graduación en dic.. a partir de qué precio y con cuánto tiempo de anticipación debo reservar", reserva: false, esperado: "sigue" },
+  { mensaje: "Horario y con que antelación debo alquilarlo", reserva: false, esperado: "sigue" },
 ]) {
   prueba(`Lucía real: ${caso.mensaje}`, async ({ sql, ctx, clienteId, conversacionId }) => {
     await sql.query("set local lock_timeout = '5s'");
     await sql.query("set local otto.sin_disparo = 'on'");
-    for (const archivo of ["0074_reserva_datos_minimos.sql", "0075_resumen_turno_datos_opcionales.sql", "0076_conocimiento_talles_y_derivacion.sql", "0078_prompt_consulta_por_tema.sql", "0079_domingo_cerrado.sql"]) {
-      await sql.query(await Deno.readTextFile(new URL(`../supabase/migrations/${archivo}`, import.meta.url)));
-    }
+    // 0074–0079 ya están en producción (2/10). Se prueba la plantilla del repo tal cual está, sin
+    // cargarla: dentro de esta transacción, que termina en rollback.
+    await sql.query("update prompt_base set texto = $1 where unica", [await Deno.readTextFile(new URL("../plantilla-agente/02-prompt.md", import.meta.url))]);
     await sql.query("update configuracion_agenda set dias_reserva_urgencia = null");
     await sql.query("update clientes set nombre = null, evento = null, fecha_evento = null, rol = null, email = null where id = $1", [clienteId]);
     await sql.query("insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at) values ($1, 'entrante', 'texto', $2, $3::timestamptz)", [conversacionId, caso.mensaje, AHORA.toISOString()]);
@@ -62,6 +66,8 @@ for (const caso of [
       assertEquals(/cerrad|no hay|no tenemos/i.test(r.mensajesAlCliente.join("\n")), false);
     } else if (caso.esperado === "infantil") {
       assertMatch(r.mensajesAlCliente.join("\n"), /4\s*(?:al|a|hasta|–|-)\s*16/);
+    } else if (caso.esperado === "sigue") {
+      assertEquals(/no tenemos|no hay|no trabajamos/i.test(r.mensajesAlCliente.join("\n")), false);
     } else {
       assertEquals(/no tenemos|no hay|no trabajamos/i.test(r.mensajesAlCliente.join("\n")), false);
     }

@@ -12,6 +12,7 @@ import type { Db } from "../_shared/db.ts";
 import { enviarPlantilla } from "../_shared/whatsapp/enviar.ts";
 import { armarPlantilla, esTipoEnvio, primerNombre, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
 import { igualesEnTiempoConstante } from "../_shared/whatsapp/firma.ts";
+import { telefonoParaMeta } from "../_shared/whatsapp/telefono.ts";
 
 const SECRETO = Deno.env.get("WORKER_SECRET") ?? "";
 const ENCENDIDO = Deno.env.get("CRONS_ENVIOS") === "on";
@@ -67,6 +68,13 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
   const r = { tipo, candidatos: candidatos.length, enviados: 0, errores: 0, omitidos: [] as string[], sin_registrar: [] as string[] };
 
   for (const c of candidatos) {
+    // Antes de reservar el envío: sin un número válido, Meta lo rechaza igual (2/10: los turnos
+    // importados de doyTurnos tienen "sin teléfono · Nombre"). Se saltea y queda en omitidos.
+    const telefono = telefonoParaMeta(c.telefono);
+    if (!telefono) {
+      r.omitidos.push(`${c.referencia}: sin teléfono válido`);
+      continue;
+    }
     const plantilla = armarPlantilla(tipo, {
       nombre: c.nombre,
       inicio: c.inicio ? new Date(c.inicio) : null,
@@ -87,7 +95,7 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
     if (!id) continue; // ya salió, lo está mandando otra corrida o se agotaron los intentos
 
     try {
-      const wamid = await enviarPlantilla(WA, c.telefono, plantilla);
+      const wamid = await enviarPlantilla(WA, telefono, plantilla);
       // La plantilla YA salió: el cliente la tiene en el celular. Si acá no se puede registrar,
       // la fila queda en 'reservado' y el rescate de envio_reservar (0021: estado 'reservado' y
       // actualizado_at de hace más de 15 minutos) la vuelve a mandar — el mismo recordatorio dos
@@ -129,11 +137,12 @@ async function confirmarTurno(turnoId: string): Promise<Response> {
   if (!turno) return Response.json({ omitido: true, motivo: "turno_no_existe" });
   if (turno.recordatorio_enviado_at) return Response.json({ omitido: true, motivo: "ya_enviado" });
 
-  const cliente = (turno.clientes as { nombre: string | null; telefono: string } | null);
-  if (!cliente?.telefono) return Response.json({ omitido: true, motivo: "sin_telefono" });
+  const cliente = (turno.clientes as unknown as { nombre: string | null; telefono: string } | null);
+  const telefono = telefonoParaMeta(cliente?.telefono);
+  if (!telefono) return Response.json({ omitido: true, motivo: "sin_telefono" });
 
   const plantilla = armarPlantilla("recordatorio_18h", {
-    nombre: cliente.nombre,
+    nombre: cliente?.nombre ?? null,
     inicio: new Date(turno.inicio as string),
     referencia: turnoId,
     linkResena: null,
@@ -141,7 +150,7 @@ async function confirmarTurno(turnoId: string): Promise<Response> {
   if ("falta" in plantilla) return Response.json({ omitido: true, falta: plantilla.falta });
 
   try {
-    const wamid = await enviarPlantilla(WA, cliente.telefono, plantilla);
+    const wamid = await enviarPlantilla(WA, telefono, plantilla);
     await supabase.from("turnos").update({ recordatorio_enviado_at: new Date().toISOString() }).eq("id", turnoId);
     console.log("confirmacion_turno enviada", turnoId, wamid);
     return Response.json({ enviado: true, wamid });
