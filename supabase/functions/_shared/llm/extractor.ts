@@ -22,7 +22,9 @@ const INSTRUCCION =
   "mensaje posterior lo contradice, seguí completándolo igual (no lo dejes null solo porque el último mensaje " +
   "no lo repite). Ante la duda entre dos categorías posibles para el mismo campo, preferí null a adivinar. " +
   "fecha_evento solo si se puede saber el día exacto (AAAA-MM-DD); \"en noviembre\" o \"el mes que viene\" sin día " +
-  "puntual es null, no un mes suelto.";
+  "puntual es null, no un mes suelto. La fecha y hora para visitar el local o probarse NO son la " +
+  "fecha ni el momento del evento: no las guardes en fecha_evento ni dia_o_noche. Si solo quiere " +
+  "reservar una visita, los campos del evento quedan null.";
 
 function limpioOnull(v: unknown): string | null {
   const s = typeof v === "string" ? v.trim() : "";
@@ -68,7 +70,7 @@ export async function extraer(
     {
       model: Deno.env.get("LLM_EXTRACTOR") ?? "",
       messages: [
-        { role: "system", content: INSTRUCCION },
+        { role: "system", content: INSTRUCCION + (hoy ? ` Fecha actual en Argentina: ${hoy}. Usá ese año para interpretar fechas sin año; nunca inventes un año pasado.` : "") },
         { role: "user", content: turnoCompletoTexto },
       ],
       response_format: { type: "json_schema", json_schema: { name: "ficha", schema: ESQUEMA_FICHA, strict: true } },

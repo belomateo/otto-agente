@@ -80,19 +80,24 @@ export const derivarAPersona: Herramienta<Args> = {
           "buscar_horarios con la fecha del evento: el código deriva solo, con el dato guardado y el texto correcto.",
       );
     }
-    if (args.motivo === "turno_urgente_sin_hueco") {
-      if (!llamoA(ctx.traza, "buscar_horarios")) {
-        return rechazo(
-          "sin_buscar_horarios",
-          "Para derivar por falta de hueco, primero llamá a buscar_horarios en este mismo turno con la fecha del " +
-            "evento: si el evento termina siendo hoy o mañana, el código deriva solo con el dato guardado y el " +
-            "texto correcto; si no, confirmás de verdad que no hay hueco antes de derivar por esto.",
-        );
-      }
-      // No alcanza con haber llamado a buscar_horarios: tiene que haber mirado un rango que de
-      // verdad llegue cerca de la fecha del evento. Hallazgo en vivo, 1/10: el modelo buscó
-      // desde=hasta=hoy (un solo día) con el evento a 9 días y derivó igual — "no hay hueco hoy"
-      // no es "no hay hueco antes del evento".
+    if (args.motivo === "turno_urgente_sin_hueco" && !llamoA(ctx.traza, "buscar_horarios")) {
+      return rechazo(
+        "sin_buscar_horarios",
+        "Para derivar por falta de hueco, primero llamá a buscar_horarios en este mismo turno con la fecha del " +
+          "evento: si el evento termina siendo hoy o mañana, el código deriva solo con el dato guardado y el " +
+          "texto correcto; si no, confirmás de verdad que no hay hueco antes de derivar por esto.",
+      );
+    }
+    // No alcanza con haber llamado a buscar_horarios: tiene que haber mirado un rango que de
+    // verdad llegue cerca de la fecha del evento. Hallazgo en vivo, 1/10: el modelo buscó
+    // desde=hasta=hoy (un solo día) con el evento a 9 días, no encontró nada ESE día y derivó
+    // igual — en un caso con motivo turno_urgente_sin_hueco (Cristianlaky) y en otro idéntico
+    // con motivo dato_no_encontrado (Fabricio, mismo día): el motivo que el modelo elige no
+    // cambia el problema de fondo, así que el chequeo corre para cualquier motivo, no solo
+    // turno_urgente_sin_hueco — si llamó a buscar_horarios, no encontró ningún hueco en TODO el
+    // turno y el rango que miró no llega ni cerca del evento, no hay forma de que "no hay hueco"
+    // sea cierto todavía.
+    if (llamoA(ctx.traza, "buscar_horarios") && ctx.traza.huecosOfrecidos.length === 0) {
       const hoy = fechaLocal(ctx.ahora, ctx.tz);
       const ficha = await leerFicha(ctx.db, ctx.cliente.id);
       if (ficha.fecha_evento && ficha.fecha_evento > hoy) {

@@ -74,6 +74,7 @@ export type ContextoHerramienta = {
 // Lo que hace el código después de la respuesta de Lucía, no el modelo: el turno (H1.7) lo
 // ejecuta. Mensajes armados en código (confirmación, link), fotos, cortar el turno.
 export type Efectos = {
+  resumenTurnoId?: string;
   mensajesAlCliente?: string[];
   imagenes?: string[];
   cortaTurno?: boolean;

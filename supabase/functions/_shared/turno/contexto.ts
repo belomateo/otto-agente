@@ -8,7 +8,7 @@ import type { Db } from "../db.ts";
 import { ESTADOS_QUE_LIBERAN } from "../enums.ts";
 import { leerFicha } from "../herramientas/ficha.ts";
 import { describirHorarios, leerFranjas, leerHorarioDelLocal } from "../herramientas/horario_laboral.ts";
-import { fechaLarga, horaLocal, partesLocales } from "../tiempo.ts";
+import { fechaLarga, fechaLocal, horaLocal, partesLocales } from "../tiempo.ts";
 
 // Pedido de Mateo, 21/9: Lucía se presenta la primera vez de la charla, y de nuevo si pasaron
 // más de 7 días desde el último mensaje — un hueco así de largo se trata como si arrancara una
@@ -62,6 +62,7 @@ async function horarioDeHoyTexto(db: Db, ahora: Date, tz: string): Promise<{ tex
   const { local: textoLocal, turnos: textoTurnos, horas } = describirHorarios(
     local.filter((h) => h.diaSemana === dia),
     franjas.filter((f) => f.diaSemana === dia),
+    [dia],
   );
   return { texto: `Local hoy: ${textoLocal} Turnos hoy: ${textoTurnos}`, horas };
 }
@@ -84,7 +85,7 @@ export async function armarContextoDelTurno(
     "SUS TURNOS",
     turnos.texto,
     "",
-    `HORA ACTUAL: ${fechaLarga(p.ahora, p.tz)}, ${horaLocal(p.ahora, p.tz)} (hora de Argentina).`,
+    `FECHA ACTUAL: ${fechaLocal(p.ahora, p.tz)} (año, mes, día). HORA ACTUAL: ${fechaLarga(p.ahora, p.tz)}, ${horaLocal(p.ahora, p.tz)} (hora de Argentina).`,
     horarioHoy.texto,
   ];
   if (p.diasDesdeUltimoMensaje !== null && p.diasDesdeUltimoMensaje >= UMBRAL_DIAS_REPRESENTACION) {

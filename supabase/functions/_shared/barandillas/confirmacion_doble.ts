@@ -88,14 +88,23 @@ export const confirmacionDoble: Barandilla = {
   accion: "cortar",
   evaluar({ texto, traza }) {
     if (!texto) return NO_SALTA;
-    const cual = HERRAMIENTAS_CON_CONFIRMACION_PROPIA.find((h) => llamoA(traza, h));
+    const cual = HERRAMIENTAS_CON_CONFIRMACION_PROPIA.find((h) => llamoA(traza, h)) ??
+      (traza.resumenTurnoEmitido ? "guardar_datos_cliente" : undefined);
     if (!cual) return NO_SALTA;
 
-    const os = oraciones(texto);
+    let sinLista = texto;
+    if (traza.resumenTurnoEmitido) {
+      const filaResumen = /^[ \t]*(?:[-•]\s*)?\*{0,2}(?:Nombre|Número|Día y hora|Gmail|Correo(?: electrónico)?):\*{0,2}[^\n]*(?:\n|$)/gim;
+      if ([...texto.matchAll(filaResumen)].length >= 3) sinLista = texto.replace(filaResumen, "");
+      // La pregunta ya está al pie de la lista construida con los datos guardados.
+      sinLista = sinLista.replace(/(?:Para completar tus datos,?\s*)?¿[^¿?]*(?:dec[ií]s|pas[aá]s|indic[aá]s|compart[ií]s|cu[aá]l es|podr[ií]as decirme)[^¿?]*(?:nombre|correo|mail)[^¿?]*\?/gi, "");
+    }
+    const os = oraciones(sinLista);
     const clausulas = partirEnClausulas(os);
-    const esConfirmacion = clausulas.map((c) => esConfirmacionDeReserva(c.texto));
+    const esConfirmacion = clausulas.map((c) => esConfirmacionDeReserva(c.texto) ||
+      (traza.resumenTurnoEmitido && /\b(actualic|actualiz|resumen)/.test(normalizar(c.texto))));
     const mantener = clausulas.map((c, i) => !esConfirmacion[i] && !(esSaludoDeApertura(c.texto) && esConfirmacion[i + 1] === true));
-    if (mantener.every(Boolean)) return NO_SALTA;
+    if (mantener.every(Boolean) && sinLista === texto) return NO_SALTA;
 
     const cortadas = clausulas.filter((_, i) => !mantener[i]).map((c) => c.texto).join(" ");
 

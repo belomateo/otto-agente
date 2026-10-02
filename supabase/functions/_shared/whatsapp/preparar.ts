@@ -52,7 +52,7 @@ export function sinSignosDeApertura(texto: string): string {
 // Cuenta como línea de lista la que arranca con un número entre cajita (1️⃣), con «1.» o «1)», o
 // con un emoji. Hacen falta DOS seguidas: una sola línea con un emoji adelante es una oración
 // cualquiera, no una lista.
-const LINEA_DE_LISTA = /^[ \t]*(?:[0-9]️?⃣|\d+[.)]|\p{Extended_Pictographic}️?)[ \t]+\S/u;
+const LINEA_DE_LISTA = /^[ \t]*(?:[-•]|[0-9]️?⃣|\d+[.)]|\p{Extended_Pictographic}️?)[ \t]+\S/u;
 
 type Bloque = { desde: number; hasta: number };
 

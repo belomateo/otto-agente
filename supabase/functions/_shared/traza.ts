@@ -32,6 +32,7 @@ export type HuecoOfrecido = { inicio: string; fin: string; probador: number; tip
 export type RangoBuscado = { desde: string; hasta: string };
 
 export type Traza = {
+  resumenTurnoEmitido?: boolean;
   llamadas: LlamadaHerramienta[];
   huecosOfrecidos: HuecoOfrecido[];
   preciosDevueltos: number[];

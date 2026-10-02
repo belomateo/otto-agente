@@ -4,7 +4,7 @@
 //  1. la fecha_hora es futura;
 //  2. la fecha del evento no pasó, y si es hoy o mañana no se agenda: se deriva en código con
 //     motivo evento_inminente (decisión #8), aunque buscar_horarios haya dado huecos antes;
-//  3. hay nombre y fecha del evento (en los argumentos o ya en la ficha);
+//  3. hay teléfono; nombre, correo y fecha del evento son opcionales;
 //  4. el turno no cae después del evento;
 //  5. el hueco salió de buscar_horarios EN ESTE TURNO, para el mismo tipo (traza);
 //  6. entra en una franja de turnos vigente, en un probador que toma turnos en esa franja;
@@ -36,7 +36,7 @@ import {
 
 type Args = {
   fecha_hora: string;
-  tipo: TipoTurno;
+  tipo: TipoTurno | null;
   nombre: string | null;
   evento: Evento | null;
   fecha_evento: string | null;
@@ -46,22 +46,24 @@ export const agendarTurno: Herramienta<Args> = {
   nombre: "agendar_turno",
   tipo: "accion",
   descripcion: "Agenda un turno en el local para este cliente. Antes, en este mismo turno, llamá a " +
-    "buscar_horarios con el mismo tipo y usá una fecha_hora tal cual la devolvió. Necesita el nombre, la fecha " +
-    "del evento y el tipo de turno; si ya están en su libreta, podés mandarlos igual. El turno es siempre de la " +
-    "persona con la que hablás. La confirmación con día, hora, dirección, mapa y condiciones la manda el sistema " +
-    "en un mensaje aparte: no la repitas.",
+    "buscar_horarios con el mismo tipo y fecha_hora elegida por el cliente. Reservá con teléfono de la charla " +
+    "y fecha y hora elegidas, aunque falten nombre o correo, sin pedir otra confirmación. " +
+    "tipo puede ser null: usa la duración de invitado sin atribuirle ese rol al cliente. El turno es siempre de la " +
+    "persona con la que hablás. El sistema manda una lista con nombre, número, día y hora y Gmail, y pide los " +
+    "datos opcionales que falten después de reservar. No repitas la lista ni la pregunta.",
   parametros: objeto({
     fecha_hora: {
       type: "string",
       format: "date-time",
       description: "Una fecha_hora de las que devolvió buscar_horarios en este turno, sin cambiarla.",
     },
-    tipo: { type: "string", enum: [...TIPOS_TURNO], description: "El mismo tipo que usaste en buscar_horarios." },
+    tipo: { type: ["string", "null"], enum: [...TIPOS_TURNO, null], description: "El mismo tipo que usaste en buscar_horarios; null si no se conoce." },
     nombre: { type: ["string", "null"], maxLength: 80, description: "Nombre del cliente." },
     evento: { type: ["string", "null"], enum: [...EVENTOS, null], description: "Para qué evento es." },
     fecha_evento: { type: ["string", "null"], format: "date", description: "Fecha del evento, AAAA-MM-DD." },
   }),
   async ejecutar(args, ctx) {
+    const tipo = args.tipo ?? "invitado";
     const inicio = new Date(args.fecha_hora);
     if (!(inicio > ctx.ahora)) {
       return rechazo("hueco_en_el_pasado", "Esa fecha y hora ya pasó. Llamá a buscar_horarios y ofrecé un hueco que venga.");
@@ -84,21 +86,18 @@ export const agendarTurno: Herramienta<Args> = {
     const activo = await turnoActivoDelCliente(ctx.db, ctx.cliente.id, ctx.ahora);
 
     const nombre = limpio(args.nombre) ?? limpio(ficha.nombre);
-    if (!nombre) {
-      return rechazo("falta_nombre", "Falta el nombre del cliente. Pedíselo antes de agendar, en una sola pregunta, y guardalo.");
+    if (!limpio(ctx.cliente.telefono)) {
+      return rechazo("falta_telefono", "Falta el teléfono del cliente de esta conversación. No se pudo guardar el turno.");
     }
-    if (!fechaEvento) {
-      return rechazo("falta_fecha_evento", "Falta la fecha del evento. Preguntásela antes de agendar y guardala.");
-    }
-    if (fechaLocal(inicio, ctx.tz) > fechaEvento) {
+    if (fechaEvento && fechaLocal(inicio, ctx.tz) > fechaEvento) {
       return rechazo("turno_despues_del_evento", "Ese turno cae después del evento. Buscá un hueco antes de la fecha del evento.");
     }
 
-    const candidatos = huecosDeLaTraza(ctx.traza, args.tipo, inicio);
+    const candidatos = huecosDeLaTraza(ctx.traza, tipo, inicio);
     if (candidatos.length === 0) {
       return rechazo(
         "hueco_no_ofrecido",
-        `Esa fecha_hora no salió de buscar_horarios en este turno para el tipo ${args.tipo}. ` +
+        `Esa fecha_hora no salió de buscar_horarios en este turno para el tipo ${tipo}. ` +
           "Llamá a buscar_horarios ahora, con ese tipo, y usá una de las que devuelva, tal cual.",
       );
     }
@@ -114,12 +113,12 @@ export const agendarTurno: Herramienta<Args> = {
         `A esa hora toman turnos ${enFranja.franja.probadores} probadores y ninguno de los ofrecidos es de ellos. Ofrecé otro de buscar_horarios.`,
       );
     }
-    const duracion = await duracionDelTipo(ctx.db, args.tipo);
+    const duracion = await duracionDelTipo(ctx.db, tipo);
     if (duracion !== null && duracion !== minutosEntre(inicio, fin)) {
       return rechazo("duracion_inconsistente", "La duración del hueco no coincide con la del tipo de turno. Volvé a llamar a buscar_horarios.");
     }
 
-    const creado = await insertarEnProbadorLibre(ctx.db, { clienteId: ctx.cliente.id, tipo: args.tipo, inicio, fin, probadores });
+    const creado = await insertarEnProbadorLibre(ctx.db, { clienteId: ctx.cliente.id, tipo, inicio, fin, probadores });
     if (!creado) {
       return rechazo("hueco_ocupado", "Ese horario se acaba de ocupar. Llamá otra vez a buscar_horarios y ofrecé otro.");
     }
@@ -133,21 +132,23 @@ export const agendarTurno: Herramienta<Args> = {
       turnoId: creado.id,
       inicio,
       fin,
-      tipo: args.tipo,
+      tipo,
       probador: creado.probador,
-      nombre,
+      nombre: nombre ?? "",
       telefono: ctx.cliente.telefono,
       googleEventId: null,
     });
-    const confirmacion = await armarConfirmacion(ctx.db, { nombre, inicio, tz: ctx.tz });
+    const guardada = await leerFicha(ctx.db, ctx.cliente.id);
+    const confirmacion = await armarConfirmacion(ctx.db, { nombre: guardada.nombre, telefono: ctx.cliente.telefono, email: guardada.email, inicio, tz: ctx.tz });
+    ctx.traza.resumenTurnoEmitido = true;
     ctx.traza.horasDevueltas.push(horaLocal(inicio, ctx.tz));
 
     const datos: Record<string, unknown> = {
       turno_id: creado.id,
       dia: fechaLarga(inicio, ctx.tz),
       hora: horaLocal(inicio, ctx.tz),
-      tipo: args.tipo,
-      nota: "Turno agendado. La confirmación con dirección, mapa y condiciones sale sola en un mensaje aparte: no la repitas.",
+      tipo,
+      nota: "Turno agendado. El resumen y la pregunta por nombre/correo faltantes salen solos; no los repitas. Si después los da, usá guardar_datos_cliente, nunca crees otro turno.",
     };
     if (confirmacion.faltan.length) datos.faltan_en_la_confirmacion = confirmacion.faltan;
     if (activo) {
@@ -155,6 +156,6 @@ export const agendarTurno: Herramienta<Args> = {
         `${horaLocal(activo.inicio, ctx.tz)} (turno_id ${activo.id}); quedan los dos. No se lo menciones si no ` +
         "preguntó por el otro.";
     }
-    return { ok: true, datos, efectos: { mensajesAlCliente: [confirmacion.texto] } };
+    return { ok: true, datos, efectos: { mensajesAlCliente: [confirmacion.texto], resumenTurnoId: creado.id } };
   },
 };

@@ -76,7 +76,7 @@ prueba("consultar_catalogo filtra por color y talle, suma qué incluye y deja lo
   const nada = await ejecutarHerramienta("consultar_catalogo", { color: "bordó", talle: null }, ctx);
   esOk(nada);
   assertEquals(nada.datos.modelos, []);
-  assertMatch(String(nada.datos.nota), /a secas/);
+  assertMatch(String(nada.datos.nota), /Derivá con motivo dato_no_encontrado/);
 
   assertEquals([...new Set(ctx.traza.preciosDevueltos)].sort((a, b) => a - b), [111, 222]);
 });
@@ -119,7 +119,7 @@ prueba("consultar_catalogo filtra a un modelo puntual cuando el cliente pregunta
   const sinCoincidencia = await ejecutarHerramienta("consultar_catalogo", { modelo: "esmoquin", color: null, talle: null }, ctx);
   esOk(sinCoincidencia);
   assertEquals(sinCoincidencia.datos.modelos, []);
-  assertMatch(String(sinCoincidencia.datos.nota), /modelo, color o talle/);
+  assertMatch(String(sinCoincidencia.datos.nota), /sin negar disponibilidad/);
 });
 
 prueba("consultar_catalogo y buscar_informacion anotan en la traza los accesorios que nombran sus textos (25/9)", async ({ ctx, sql }) => {
@@ -194,11 +194,11 @@ prueba("buscar_horarios busca desde hoy si le piden un día que pasó, y rechaza
   esRechazo(await buscar(ctx, LUNES, JUEVES, "casamiento" as never), "argumentos_invalidos");
 });
 
-prueba("buscar_horarios pide el mail si hay huecos para ofrecer y la ficha no lo tiene (hito 2.3)", async ({ ctx, agenda }) => {
+prueba("buscar_horarios no pide mail antes de reservar aunque falte en la ficha", async ({ ctx, agenda }) => {
   agenda.lista = [hueco(JUEVES, "11:00", 45)];
   const r = await buscar(ctx, JUEVES, JUEVES, "invitado");
   esOk(r);
-  assertEquals(r.datos.pedir_mail, true);
+  assertEquals(r.datos.pedir_mail, undefined);
 });
 
 prueba("buscar_horarios no pide el mail si ya lo tenemos, ni si no hay huecos", async ({ ctx, sql, clienteId, agenda }) => {
@@ -223,7 +223,7 @@ prueba("buscar_horarios no vuelve a pedir el mail en esta charla, ni en el mismo
   agenda.lista = [hueco(JUEVES, "11:00", 45)];
   const primera = await buscar(ctx, JUEVES, JUEVES, "invitado");
   esOk(primera);
-  assertEquals(primera.datos.pedir_mail, true);
+  assertEquals(primera.datos.pedir_mail, undefined);
 
   // Segunda llamada en el MISMO turno (como hace el prompt, justo antes de agendar_turno):
   // ya no lo vuelve a pedir, aunque el mail siga sin estar en la ficha.
@@ -236,7 +236,7 @@ prueba("buscar_horarios no vuelve a pedir el mail en esta charla, ni en el mismo
     "select detalle->>'etapa' as etapa from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = 'pedir_mail'",
     [conversacionId],
   );
-  assert(eventos, "queda una marca en la bitácora, no solo en la memoria del turno");
+  assertEquals(eventos, undefined, "no se marca un pedido de correo antes de reservar");
 });
 
 prueba("ver_turnos_cliente devuelve los que vienen y no los cancelados ni los que pasaron", async ({ ctx, sql, clienteId }) => {

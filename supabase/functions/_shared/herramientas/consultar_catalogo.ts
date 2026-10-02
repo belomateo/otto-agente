@@ -105,7 +105,7 @@ export const consultarCatalogo: Herramienta<Args> = {
     if (modelos.length === 0) {
       datos.nota = total === 0
         ? "No hay ningún modelo cargado todavía. No des precios ni describas modelos: si el cliente los pide, derivá con motivo dato_no_encontrado."
-        : "Con ese modelo, color o talle no hay nada cargado. Decilo sin un «no» a secas y ofrecé lo que sí hay (consultá sin filtros).";
+        : "No hay coincidencias cargadas para ese filtro; no significa que el producto no exista. Derivá con motivo dato_no_encontrado sin negar disponibilidad ni sustituirlo por otro producto.";
     }
     return { ok: true, datos };
   },

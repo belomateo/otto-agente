@@ -58,9 +58,11 @@ prueba("agendar_turno escribe el turno en el primer probador libre, la ficha y a
   assertEquals([c.nombre, c.evento, c.fecha_evento, c.editado_por], ["Juan Pérez", "casamiento", FECHA_EVENTO, "lucia"]);
 
   const confirmacion = r.efectos?.mensajesAlCliente?.[0] ?? "";
-  assertMatch(confirmacion, /^¡Listo, Juan! Tu turno quedó agendado para el jueves 6 de junio a las 11:00\./);
-  assert(confirmacion.includes(CONDICIONES));
-  assert(confirmacion.includes("📍 mapa.ejemplo.invalid/otto"));
+  assertMatch(confirmacion, /- Nombre: Juan Pérez/);
+  assert(confirmacion.includes(`- Número: ${ctx.cliente.telefono}`));
+  assertMatch(confirmacion, /- Día y hora: jueves 6 de junio a las 11:00 hs/);
+  assertMatch(confirmacion, /- Gmail: No especificado/);
+  assertEquals(confirmacion.includes(CONDICIONES), false);
   assertEquals(r.datos.faltan_en_la_confirmacion, undefined);
 });
 
@@ -76,7 +78,7 @@ prueba("agendar_turno: si Calendar falla, el turno queda igual en la base, con a
   assertMatch(t.aviso, /^Google Calendar: no se pudo crear el evento/);
 });
 
-prueba("agendar_turno: sin fragmento de condiciones ni mapa, la confirmación sale igual y avisa qué falta", async ({ ctx, sql, clienteId, agenda }) => {
+prueba("agendar_turno: la lista no depende de condiciones ni mapa", async ({ ctx, sql, clienteId, agenda }) => {
   await soloEstosFragmentos(sql, []);
   await soloEstosEnlaces(sql, []);
   await sql.query("update clientes set nombre = 'Ana', fecha_evento = $2 where id = $1", [clienteId, FECHA_EVENTO]);
@@ -84,8 +86,9 @@ prueba("agendar_turno: sin fragmento de condiciones ni mapa, la confirmación sa
   esOk(await buscar(ctx, SABADO, SABADO, "invitado"));
   const r = await agendar(ctx, SABADO, "09:30", "invitado");
   esOk(r);
-  assertEquals(r.efectos?.mensajesAlCliente, ["¡Listo, Ana! Tu turno quedó agendado para el sábado 8 de junio a las 09:30."]);
-  assertEquals((r.datos.faltan_en_la_confirmacion as string[]).length, 2);
+  assertMatch(r.efectos?.mensajesAlCliente?.[0] ?? "", /Nombre: Ana/);
+  assertMatch(r.efectos?.mensajesAlCliente?.[0] ?? "", /sábado 8 de junio a las 09:30 hs/);
+  assertEquals(r.datos.faltan_en_la_confirmacion, undefined);
 });
 
 prueba("reprogramar_turno mueve la misma fila, vuelve a sin confirmar y mueve el evento", async ({ ctx, sql, clienteId, agenda, calendario }) => {

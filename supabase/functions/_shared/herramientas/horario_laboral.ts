@@ -129,9 +129,9 @@ function nombreDeDias(dias: number[]): string {
 }
 
 // Una frase por grupo de días seguidos que tienen el mismo detalle.
-function frases(detalle: (dia: number) => string | null, vacio: string): string {
+function frases(detalle: (dia: number) => string | null, vacio: string, dias: readonly number[] = ORDEN_SEMANA): string {
   const grupos: { dias: number[]; texto: string | null }[] = [];
-  for (const d of ORDEN_SEMANA) {
+  for (const d of dias) {
     const t = detalle(d);
     const ultimo = grupos[grupos.length - 1];
     if (ultimo && ultimo.texto === t) ultimo.dias.push(d);
@@ -142,7 +142,7 @@ function frases(detalle: (dia: number) => string | null, vacio: string): string 
 
 // El horario del local y el de los turnos en palabras, y todas las horas que aparecen (para la
 // barandilla de horarios: si Lucía las dice, salieron de una herramienta).
-export function describirHorarios(local: HorarioLocal[], franjas: Franja[]): { local: string; turnos: string; horas: string[] } {
+export function describirHorarios(local: HorarioLocal[], franjas: Franja[], dias: readonly number[] = ORDEN_SEMANA): { local: string; turnos: string; horas: string[] } {
   const horas = new Set<string>();
   for (const h of local) {
     horas.add(normalizada(h.apertura));
@@ -155,10 +155,10 @@ export function describirHorarios(local: HorarioLocal[], franjas: Franja[]): { l
   const textoLocal = frases((d) => {
     const h = local.find((x) => x.diaSemana === d);
     return h ? `de ${paraLeer(h.apertura)} a ${paraLeer(h.cierre)}` : null;
-  }, "cerrado");
+  }, "cerrado", dias);
   const textoTurnos = frases((d) => {
     const fs = franjas.filter((f) => f.diaSemana === d).sort((a, b) => a.desde - b.desde);
     return fs.length ? unirFranjas(fs) : null;
-  }, "sin turnos");
+  }, "sin turnos", dias);
   return { local: textoLocal, turnos: textoTurnos, horas: [...horas] };
 }

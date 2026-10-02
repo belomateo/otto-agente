@@ -106,13 +106,14 @@ prueba("agendar_turno agenda si el turno anterior está cancelado (caso parecido
   assertEquals(await contar(sql, `${turnosDe} and estado = 'sin-confirmar'`, [clienteId]), 1);
 });
 
-prueba("agendar_turno rechaza si falta el nombre", async ({ ctx, sql, clienteId, agenda }) => {
+prueba("agendar_turno reserva si falta el nombre y lo pide después", async ({ ctx, sql, clienteId, agenda }) => {
   await fichaCompleta(sql, clienteId, { nombre: null });
   agenda.lista = [hueco(JUEVES, "11:00", 45)];
   esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
   const r = await agendar(ctx, JUEVES, "11:00", "invitado", { nombre: "   " });
-  esRechazo(r, "falta_nombre");
-  assertEquals(await contar(sql, turnosDe, [clienteId]), 0);
+  esOk(r);
+  assertMatch(r.efectos?.mensajesAlCliente?.[0] ?? "", /Nombre: No especificado/);
+  assertEquals(await contar(sql, turnosDe, [clienteId]), 1);
 });
 
 prueba("agendar_turno usa el nombre de la ficha si el modelo no lo manda (caso parecido)", async ({ ctx, sql, clienteId, agenda }) => {
@@ -121,15 +122,15 @@ prueba("agendar_turno usa el nombre de la ficha si el modelo no lo manda (caso p
   esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
   const r = await agendar(ctx, JUEVES, "11:00", "invitado");
   esOk(r);
-  assertMatch(r.efectos?.mensajesAlCliente?.[0] ?? "", /¡Listo, Lautaro!/);
+  assertMatch(r.efectos?.mensajesAlCliente?.[0] ?? "", /Nombre: Lautaro/);
 });
 
-prueba("agendar_turno rechaza si falta la fecha del evento", async ({ ctx, sql, clienteId, agenda }) => {
+prueba("agendar_turno agenda sin fecha del evento", async ({ ctx, sql, clienteId, agenda }) => {
   await fichaCompleta(sql, clienteId, { fecha_evento: null });
   agenda.lista = [hueco(JUEVES, "11:00", 45)];
   esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
-  esRechazo(await agendar(ctx, JUEVES, "11:00", "invitado"), "falta_fecha_evento");
-  assertEquals(await contar(sql, turnosDe, [clienteId]), 0);
+  esOk(await agendar(ctx, JUEVES, "11:00", "invitado"));
+  assertEquals(await contar(sql, turnosDe, [clienteId]), 1);
 });
 
 prueba("agendar_turno rechaza un turno que cae después del evento", async ({ ctx, sql, clienteId, agenda }) => {

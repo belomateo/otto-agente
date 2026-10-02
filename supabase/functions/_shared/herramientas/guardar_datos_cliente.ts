@@ -3,9 +3,10 @@
 // confirmado) no están en el schema. Las notas libres van por anotar. Los enums se validan
 // contra el schema, que es el mismo de los checks de clientes (logica 0023).
 
-import { DIA_O_NOCHE, EVENTOS, ROLES_CLIENTE } from "../enums.ts";
-import { fechaLocal } from "../tiempo.ts";
-import { actualizarFicha, CAMPOS_FICHA, formatoDeEmailValido, type Ficha } from "./ficha.ts";
+import { DIA_O_NOCHE, ESTADOS_TURNO_ACTIVO, EVENTOS, ROLES_CLIENTE } from "../enums.ts";
+import { fechaLocal, horaLocal } from "../tiempo.ts";
+import { resumenTurno } from "./confirmacion.ts";
+import { actualizarFicha, CAMPOS_FICHA, formatoDeEmailValido, leerFicha, type Ficha } from "./ficha.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
 export const guardarDatosCliente: Herramienta<Ficha> = {
@@ -14,7 +15,9 @@ export const guardarDatosCliente: Herramienta<Ficha> = {
   descripcion: "Guarda en la ficha del cliente lo que te dijo, en el mismo turno en que te lo dice: nombre, " +
     "evento, fecha del evento, si es novio, invitado, graduado o padre, si es de día o de noche, talle " +
     "aproximado, ciudad, color preferido, lo que dijo del presupuesto y su mail. Mandá solo lo que dijo; lo " +
-    "demás, null. Nunca lo que suponés.",
+    "demás, null. Nunca lo que suponés. Si ya reservó y ahora da nombre o correo, usá esta herramienta: " +
+    "actualiza el cliente vinculado a la misma reserva y manda su resumen actualizado. No crees otro turno " +
+    "ni repitas la lista o la pregunta que manda el sistema.",
   parametros: objeto({
     nombre: { type: ["string", "null"], maxLength: 80, description: "Nombre, como lo dijo." },
     evento: { type: ["string", "null"], enum: [...EVENTOS, null], description: "Para qué evento es." },
@@ -38,6 +41,25 @@ export const guardarDatosCliente: Herramienta<Ficha> = {
       return rechazo("email_invalido", `"${args.email}" no tiene forma de mail. Confirmalo con el cliente antes de guardarlo.`);
     }
     const escritos = await actualizarFicha(ctx.db, ctx.cliente.id, args);
+    if (escritos.includes("nombre") || escritos.includes("email")) {
+      const [turno] = await ctx.db.consulta<{ id: string; inicio: string }>(
+        `select id::text as id, inicio from turnos
+         where cliente_id = $1 and estado = any($2::text[]) and fin > $3::timestamptz
+         order by creado_at desc, inicio desc, id limit 1`,
+        [ctx.cliente.id, [...ESTADOS_TURNO_ACTIVO], ctx.ahora.toISOString()],
+      );
+      if (turno) {
+        const ficha = await leerFicha(ctx.db, ctx.cliente.id);
+        const inicio = new Date(turno.inicio);
+        ctx.traza.horasDevueltas.push(horaLocal(inicio, ctx.tz));
+        ctx.traza.resumenTurnoEmitido = true;
+        return {
+          ok: true,
+          datos: { guardado: escritos, turno_id: turno.id, nota: "Datos actualizados en la misma reserva. El resumen y la pregunta por datos faltantes salen solos; no los repitas ni agendes otro turno." },
+          efectos: { resumenTurnoId: turno.id, mensajesAlCliente: [resumenTurno({ nombre: ficha.nombre, email: ficha.email, telefono: ctx.cliente.telefono, inicio, tz: ctx.tz, actualizado: true })] },
+        };
+      }
+    }
     return { ok: true, datos: { guardado: escritos, nota: escritos.length ? "Guardado." : "Ya estaba así en la ficha." } };
   },
 };

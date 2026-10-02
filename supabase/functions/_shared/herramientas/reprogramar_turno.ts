@@ -92,7 +92,8 @@ export const reprogramarTurno: Herramienta<Args> = {
       telefono: ctx.cliente.telefono,
       googleEventId: t.googleEventId,
     });
-    const confirmacion = await armarConfirmacion(ctx.db, { nombre: ficha.nombre, inicio, tz: ctx.tz });
+    const confirmacion = await armarConfirmacion(ctx.db, { nombre: ficha.nombre, telefono: ctx.cliente.telefono, email: ficha.email, inicio, tz: ctx.tz });
+    ctx.traza.resumenTurnoEmitido = true;
     ctx.traza.horasDevueltas.push(horaLocal(inicio, ctx.tz));
 
     const datos: Record<string, unknown> = {
@@ -102,6 +103,6 @@ export const reprogramarTurno: Herramienta<Args> = {
       nota: "Turno movido. La confirmación nueva sale sola en un mensaje aparte: no la repitas.",
     };
     if (confirmacion.faltan.length) datos.faltan_en_la_confirmacion = confirmacion.faltan;
-    return { ok: true, datos, efectos: { mensajesAlCliente: [confirmacion.texto] } };
+    return { ok: true, datos, efectos: { mensajesAlCliente: [confirmacion.texto], resumenTurnoId: t.id } };
   },
 };

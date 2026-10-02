@@ -31,8 +31,9 @@ const aNumero = (s: string) => Number(s.replace(/[.\s]/g, ""));
 // números sueltos (así "talle 48" no dispara con el 48, pero "sale 48" sí).
 const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   /\d+(?:[.,]\d+)?\s*(?:mil|lucas|k)\b/g, // "150 mil": ya lo cuenta la regla del millar, es OTRO monto
-  /\btalle\s+\d{2,3}\b/g, // "talle 48"
-  /\bdel?\s+\d{2,3}\s+al?\s+\d{2,3}\b/g, // rango de talles: "del 44 al 68"
+  /\btalles?\s+\d{1,3}\s*(?:al?|hasta|[-–])\s*\d{1,3}\b/g, // "talles 4–16"
+  /\btalle\s+\d{1,3}\b/g, // "talle 4" o "talle 48"
+  /\bdel?\s+\d{1,3}\s+al?\s+\d{1,3}\b/g, // "del 4 al 16" y "del 44 al 68"
   /\b(?:mide|mido|medis|medimos|altura)\s+\d{2,3}\b/g, // "mide/medís 170", "altura 170"
   /\b\d{2,3}\s+de\s+altura\b/g, // "170 de altura"
   /\b\d{2,3}\s*cm\b/g, // "170cm" / "170 cm"
@@ -57,6 +58,15 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   // proporción, no un monto en pesos.
   /\b\d{1,3}\s*%/g,
   /\b\d{1,3}\s+por\s*ciento\b/g,
+  // Días de anticipación (hallazgo en vivo, 1/10: 7 de 9 derivaciones por barandilla_doble en una
+  // semana eran ESTO, no el modelo inventando precios). El fragmento "anticipacion" dice "lo
+  // ideal es entre 60 y 7 días antes del evento" — Lucía lo cita bien (sale de
+  // buscar_informacion, no inventado) y la barandilla igual lo lee como un precio de $60, pide
+  // rehacer, Lucía repite el mismo dato porque es el correcto, y se cae a derivación. "entre A y B
+  // días" va primero porque "60" ahí no está pegado a "días" (lo está "7"), así que el patrón
+  // general de abajo no lo agarra solo.
+  /\bentre\s+\d{1,3}\s+y\s+\d{1,3}\s+dias?\b/g,
+  /\b\d{1,3}\s+dias?\b/g,
 ];
 
 function enmascararContexto(normalizado: string): string {

@@ -3,6 +3,7 @@
 // tabla enlaces (ver enlaces.ts) y lo manda el turno. Nunca links de pago (regla 4).
 
 import { TIPOS_LINK, type TipoLink } from "../enums.ts";
+import { normalizar } from "../barandillas/texto.ts";
 import { enlaceDeTipo } from "./enlaces.ts";
 import { type Herramienta, objeto, rechazo } from "./tipos.ts";
 
@@ -24,6 +25,21 @@ export const enviarLink: Herramienta<Args> = {
         "link_no_cargado",
         `El link de ${args.tipo} no está cargado. Seguí sin él; si el cliente lo necesita, derivá con motivo dato_no_encontrado.`,
       );
+    }
+    const enEsteIntercambio = ctx.traza.llamadas.some((l) => l.ok && l.herramienta === "enviar_link" &&
+      (l.argumentos as { tipo?: string } | null)?.tipo === args.tipo);
+    const anteriores = await ctx.db.consulta<{ enviado: boolean; pedido: string | null }>(
+      `select exists(select 1 from mensajes where conversacion_id=$1 and direccion='saliente'
+        and no_enviado_motivo is null and position($2 in contenido)>0) as enviado,
+        (select contenido from mensajes where conversacion_id=$1 and direccion='entrante'
+         order by enviado_at desc, id desc limit 1) as pedido`, [ctx.conversacionId, enlace.url],
+    );
+    const pedido = normalizar(anteriores[0]?.pedido ?? "");
+    const pideReenvio = /\b(?:reenvi\w*|repet\w*|otra vez|de nuevo)\b/.test(pedido) ||
+      /\b(?:pas\w*|mand\w*|envi\w*)\b.*\b(?:link|enlace|web|mapa)\b/.test(pedido);
+    if (enEsteIntercambio || (anteriores[0]?.enviado && !pideReenvio)) {
+      return { ok: true, datos: { tipo: args.tipo, ya_enviado: true,
+        nota: "El cliente ya recibió este enlace. No se vuelve a enviar ni a repetir la explicación; respondé solo la consulta nueva." } };
     }
     return {
       ok: true,

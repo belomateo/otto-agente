@@ -302,6 +302,21 @@ Deno.test("precio_sin_herramienta no confunde un número con contexto que lo exp
   await noSalta(precioSinHerramienta, entrada("Somos 44 invitados en el casamiento."));
 });
 
+// Hallazgo en vivo, 1/10: 7 de 9 derivaciones por barandilla_doble en una semana eran esto, no el
+// modelo inventando precios. El fragmento "anticipacion" dice "lo ideal es entre 60 y 7 días
+// antes del evento" — Lucía lo citaba bien (viene de buscar_informacion) y la barandilla leía el
+// 60 como un precio de $60, pedía rehacer, Lucía repetía el mismo dato correcto y se caía a
+// derivación.
+Deno.test("precio_sin_herramienta no confunde días de anticipación con un precio (hallazgo en vivo, 1/10)", async () => {
+  assertEquals(montos("entre 60 y 7 días antes del evento"), []);
+  assertEquals(montos("lo ideal es reservar con 15 días de anticipación"), []);
+  assertEquals(montos("con 60 días alcanza de sobra"), []);
+  await noSalta(
+    precioSinHerramienta,
+    entrada("Lo ideal es reservar entre 60 y 7 días antes del evento, así la sastrería tiene tiempo."),
+  );
+});
+
 // URGENTE, hallazgo de Mateo/logica en vivo contra el worker desplegado, 16/9: "te agendo el
 // martes 23 a las 13" leía el día del mes (23) como precio. Rompía agendar_turno de punta a
 // punta — la barandilla no dejaba salir ninguna confirmación, y el cliente se quedaba sin

@@ -1,41 +1,37 @@
-// El mensaje de confirmación de un turno. Lo arma el código y lo manda aparte, después de lo
-// que escriba Lucía (AGENTE.md § 4 y § 9 paso 9; el prompt le dice que no lo repita).
-//
-// Nada del texto del negocio está escrito acá: la fecha y la hora salen del turno; la
-// dirección, el acompañante, la tolerancia y cómo se reserva salen del fragmento de
-// «como-funciona» que mejor habla del turno en el local (lo edita el dueño en Conocimiento);
-// el mapa sale de enlaces. Si falta una pieza, el mensaje sale igual con lo que hay y la
-// herramienta lo informa para la bitácora.
+// Lista del turno pedida por Mateo: datos guardados y una pregunta por nombre/correo
+// faltantes. No exige completar la ficha para reservar ni depende de mapa/condiciones.
 
-import { buscarFragmentos } from "../conocimiento/busqueda.ts";
 import type { Db } from "../db.ts";
 import { fechaLarga, horaLocal } from "../tiempo.ts";
-import { enlaceDeTipo } from "./enlaces.ts";
 
-const CONSULTA_CONDICIONES = "turno local acompañante tolerancia";
+export type DatosResumenTurno = {
+  nombre: string | null;
+  telefono: string;
+  email: string | null;
+  inicio: Date;
+  tz: string;
+  actualizado?: boolean;
+};
+
+export function resumenTurno(p: DatosResumenTurno): string {
+  const linea = (v: string | null) => v?.replace(/\s+/g, " ").trim() || "No especificado";
+  const faltantes = [!p.nombre?.trim() ? "nombre" : null, !p.email?.trim() ? "correo electrónico" : null].filter(Boolean);
+  const cabeza = p.actualizado ? "¡Listo! Ya actualicé los datos de tu reserva:" : "¡Listo! Tu turno ya quedó agendado. Este es el resumen:";
+  const lista = [
+    `- Nombre: ${linea(p.nombre)}`,
+    `- Número: ${linea(p.telefono)}`,
+    `- Día y hora: ${fechaLarga(p.inicio, p.tz)} a las ${horaLocal(p.inicio, p.tz)} hs`,
+    `- Gmail: ${linea(p.email)}`,
+  ].join("\n");
+  const cierre = faltantes.length
+    ? `Para completar tus datos, ¿me decís tu ${faltantes.join(" y ")}?`
+    : "¡Te esperamos!";
+  return [cabeza, lista, cierre].join("\n\n");
+}
 
 export async function armarConfirmacion(
-  db: Db,
-  p: { nombre: string | null; inicio: Date; tz: string },
+  _db: Db,
+  p: DatosResumenTurno,
 ): Promise<{ texto: string; faltan: string[] }> {
-  const primerNombre = (p.nombre ?? "").trim().split(/\s+/)[0] ?? "";
-  const cabeza = `¡Listo${primerNombre ? `, ${primerNombre}` : ""}! Tu turno quedó agendado para el ` +
-    `${fechaLarga(p.inicio, p.tz)} a las ${horaLocal(p.inicio, p.tz)}.`;
-  const faltan: string[] = [];
-
-  const { encontrados } = await buscarFragmentos(db, {
-    seccion: "como-funciona",
-    consulta: CONSULTA_CONDICIONES,
-    limite: 1,
-  });
-  const condiciones = encontrados[0]?.texto?.trim() || null;
-  if (!condiciones) faltan.push("las condiciones del turno (un fragmento de como-funciona)");
-
-  const mapa = await enlaceDeTipo(db, "mapa");
-  if (!mapa) faltan.push("el link del mapa (enlaces)");
-
-  const partes = [cabeza];
-  if (condiciones) partes.push(condiciones);
-  if (mapa) partes.push(`📍 ${mapa.url}`);
-  return { texto: partes.join("\n\n"), faltan };
+  return { texto: resumenTurno(p), faltan: [] };
 }

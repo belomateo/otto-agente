@@ -56,7 +56,7 @@ insert into fragmentos (id, tema, titulo, texto, editado_por) values
    'respuestas de Sofía 17/9'),
 
   ('a9f10000-0000-4000-8000-000000000501', 'talles', 'Talles',
-   'Tenemos trajes de alquiler de hombre adulto, en talles del XS al 4XL. Los talles van por letra, no por número de saco. El 4XL es el talle más grande que manejamos y el XS el más pequeño. No trabajamos talles de niño: para un nene no tenemos nada. Tampoco alquilamos para mujeres: es ropa de hombre. El talle justo se ve en el local, probándolo, y la sastrería lo ajusta. Si sos grandote y el 4XL no te entra, o tu talle queda fuera de ese rango, dejá que el equipo del local te confirme cómo seguir.',
+   'Tenemos trajes de alquiler para adultos, en talles del XS al 4XL, y también talles infantiles. Los talles de adultos van por letra. El talle justo se confirma en el local con la prueba y los ajustes de sastrería. Para niños consultá la ficha Talles infantiles. Si necesitás otra medida, un modelo o un caso especial sin confirmación, el equipo del local lo verifica; Lucía deriva sin negar disponibilidad.',
    'Mateo, 21/9: el piso confirmado es XS y no existen los talles de nene (antes decía "desde el talle 4", mal); el techo 4XL en ese momento era interpretación de logica, marcado como supuesto. Ampliado por logica, 23/9 (barrido de 486 agentes, vocabulario de búsqueda): sumadas las palabras con las que pregunta un cliente real ("hasta qué número", "grandote"). Confirmado por Mateo, 23/9 (dejó de ser supuesto): los talles van por LETRA, no por número de saco (así que no repetir el 68 que tenía el seed original), el techo 4XL queda CONFIRMADO explícito, y no alquilan para mujeres. Aplicado en la base, sincronizado acá'),
 
   ('a9f10000-0000-4000-8000-000000000601', 'a-medida', 'Hecho a tu medida',
@@ -124,3 +124,14 @@ on conflict (id) do update
      or fragmentos.titulo is distinct from excluded.titulo
      or fragmentos.texto is distinct from excluded.texto
      or fragmentos.activo is distinct from true;
+
+-- Conocimiento adicional revisado 2026-10-01
+INSERT INTO fragmentos (id, tema, titulo, texto, activo, editado_por) VALUES
+('a9f10000-0000-4000-8000-000000000502', 'talles', 'Talles infantiles: niños, nenes y chicos',
+ 'Sí tenemos talles de niños del 4 al 16. Para un nene, niño o chico se puede consultar por ese rango infantil. No confundir el talle con la edad: el calce se confirma al probar. Este rango no confirma modelos, colores, precios ni stock para una fecha. Si se consulta un modelo o talle fuera de lo confirmado, derivar al equipo sin decir que no hay.', true, 'Mateo: talles infantiles 4 al 16'),
+('a9f10000-0000-4000-8000-000000000102', 'que-incluye', 'Valor del alquiler a medida',
+ 'Mr Otto ofrece alquiler a medida, prendas de calidad, diseños nuevos y una solución completa. El traje se ajusta y, si hace falta, se confecciona para que quede bien el día del evento. La sastrería y la tintorería están incluidas. Explicá este valor cuando ayude a responder, sin repetirlo ni usarlo para demorar una reserva.', true, 'Organización del conocimiento'),
+('a9f10000-0000-4000-8000-000000001203', 'que-no-hacemos', 'Pedidos corporativos y uniformes: datos para el equipo',
+ 'Los pedidos corporativos y uniformes los sigue el equipo especializado. El sistema avisa al equipo; si corresponde seguir recabando información, guardar cantidad de personas, rubro, prendas que usan actualmente, si llevan logo y proveedor actual. Una pregunta por vez, usando los datos ya dados. Los precios, plazos y condiciones los confirma el equipo; Lucía no los promete.', true, 'Organización del conocimiento')
+ON CONFLICT (id) DO UPDATE SET tema = excluded.tema, titulo = excluded.titulo,
+ texto = excluded.texto, activo = true, editado_por = excluded.editado_por;

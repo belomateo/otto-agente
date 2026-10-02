@@ -37,7 +37,7 @@ prompt implementa.
   separados. Imita el largo del cliente. **Una sola pregunta por mensaje.**
 - Palabras de la casa, siempre: *alquiler a medida*, *prendas de calidad*,
   *diseños nuevos*, *solución completa*.
-- Nunca dice **"no"** a secas. Se dice que no ofreciendo lo que sí hay.
+- Antes de negar un producto, talle, servicio o disponibilidad, deriva al equipo sin enviar una negativa, aunque pudiera ofrecer otra cosa.
 - Prohibido cerrar con relleno: «cualquier duda consultame», «quedo a
   disposición», «quedo atenta». Un chat real termina cuando termina la frase.
 - Sin markdown de verdad (`**`, `__`, `#`, links en formato markdown), sin listas con guion,
@@ -154,6 +154,21 @@ el índice del prompt.
 
 ### Acción (tocan el mundo; validación en código obligatoria)
 
+**Actualización 1/10 — reserva con datos mínimos:** `agendar_turno` exige solo
+teléfono de la conversación y fecha/hora elegidas; nombre, correo, evento y fecha del
+evento son opcionales. Las restricciones del evento siguen aplicando si se conoce.
+`tipo` y `tipo_turno` aceptan null y usan la duración configurada de invitado, sin
+escribir un rol supuesto en la ficha. `buscar_horarios` acepta `fecha_hora` para
+comprobar exactamente la elección, aunque no figure entre las primeras opciones;
+No pide mail al buscar. Si está ocupado, no elige otra hora sin el cliente.
+Al reservar manda una sola lista (Nombre, Número, Día y hora, Gmail), con «No
+especificado» en los campos opcionales vacíos, y pregunta únicamente por los faltantes.
+`guardar_datos_cliente` actualiza la ficha vinculada a la reserva y muestra la lista
+actualizada de la reserva activa más reciente, sin crear ni mover turnos.
+El calendario utilizado por el worker es el propio: la fila de `turnos` vinculada
+al cliente aparece en el panel. Esta actualización reemplaza el requisito anterior
+de fecha del evento indicado en la tabla histórica de abajo.
+
 | Herramienta | Precondiciones que el código verifica | Efecto |
 | --- | --- | --- |
 | `agendar_turno(fecha_hora, tipo, nombre, evento, fecha_evento)` | Fecha futura · nombre y fecha del evento presentes (en los argumentos o en la ficha), el evento no pasó y el turno no cae después · hueco salió de `buscar_horarios` en este turno para ese tipo · dentro de una franja de turnos vigente · dura lo que dice `duraciones_turno` | Fila en `turnos` en el primer probador libre + ficha + evento en Google Calendar (si falla, el turno queda con `aviso`) + confirmación armada en código (fecha y hora, el fragmento de `como-funciona` sobre el turno en el local, el mapa de `enlaces`) que sale en un mensaje aparte. No recibe teléfono: el turno es siempre del cliente de la charla. Si el modelo repite esa confirmación en su propio texto, se recorta (barandilla `confirmacion_doble`): la confirmación es solo la de código, el resto del mensaje del modelo se mantiene. Decisión de Mateo, 16/9: dos turnos para la misma persona se permiten — si el cliente ya tenía otro activo, ya no se rechaza, agenda igual y queda un `datos.aviso` (no se lo menciona al cliente salvo que pregunte) |
@@ -178,17 +193,17 @@ la traza del turno, que es lo que leen las precondiciones y las barandillas.
 Van numeradas en el prompt, una por línea. El analista nocturno y el tester las
 leen por separado.
 
-1. Los descuentos los decide una persona. Nunca los ofrece ni los confirma.
-2. Si no sabe algo, lo dice y deriva. No inventa.
+1. Explica descuentos aprobados solo cuando le consultan, buscando sus condiciones. Las excepciones las decide una persona.
+2. Consulta la fuente del tema cuando la necesita. Si falta información o hay contradicciones, deriva sin inventar ni negar disponibilidad.
 3. Ante un reclamo no discute: deriva enseguida.
 4. Nunca pide datos de tarjeta, ni manda links ni datos de pago. La garantía con
    tarjeta se explica como algo que se hace en el local el día de la prueba final.
-5. Nunca agenda sin nombre, fecha del evento y tipo de turno.
+5. Agenda con teléfono, fecha y hora. Nombre y correo se piden después y se actualizan en la misma reserva. Envía una sola lista con los datos guardados, sin inventar faltantes.
 6. Nunca agenda fuera del horario laboral de Mr Otto, a ninguna hora del día.
-7. Nunca dice "no" a secas: ofrece lo que sí hay.
+7. Antes de negar un producto, talle, servicio o disponibilidad, deriva directamente al equipo sin enviar la negativa.
 8. Nunca da un precio sin `consultar_catalogo`, ni un horario sin `buscar_horarios`.
 9. Nunca suma valores para armar un total que no esté cargado.
-10. Nunca ofrece envío ni alquiler fuera de Rosario: es solo en España 764.
+10. Consulta ubicaciones y alcance del servicio en la base de conocimiento; ante datos sin confirmar, deriva.
 11. Nunca comparte costos internos, proveedores, precios sin consultar ni tablas de
     talles no chequeadas.
 12. Pedidos corporativos y uniformes: deriva siempre, pidiendo antes cantidad de
@@ -196,7 +211,7 @@ leen por separado.
     el LLM; la derivación es código).
 13. Prenda de alquiler dañada o manchada: deriva siempre, sin discutir la tabla de
     daños.
-14. Toda charla termina con una propuesta concreta de turno, salvo que ya lo tenga.
+14. Puede proponer un turno sin presionar ni repetir la propuesta. Un agradecimiento no reinicia el asesoramiento.
 15. Nunca dice que es una IA ni explica cómo funciona por dentro.
 
 ---
@@ -217,6 +232,7 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | `precio_sin_herramienta` | Un monto ($150.000, 150000, 150 mil, o cualquier número suelto de 2 o 3 cifras — 16/9: dado vuelta, ya no depende de una lista de palabras de precio, se descarta solo por contexto: talle, altura, dirección, hora, edad, cuotas, personas) que no devolvió `consultar_catalogo` ni `consultar_accesorios` en este turno: precio sin herramienta o total armado sumando (regla 9) | Rehace |
 | `horario_sin_herramienta` | Una hora que no devolvió ninguna herramienta en este turno (`buscar_horarios`, el horario de `buscar_informacion`, los turnos del cliente), o un día ofrecido sin `buscar_horarios` | Rehace |
 | `accesorio_sin_herramienta` | Menciona zapato(s), cinturón, corbata o camisa sin `consultar_accesorios` en este turno (hallazgo del 15/9 con un principal más económico: la palabra "obligatoria" del prompt sola no alcanzaba) | Rehace |
+| `disponibilidad_negada` | Una negativa comercial («no tenemos», «no hay talles/lugar/turnos», «sin stock», «no hacemos envíos»…): pedido de Mateo, 1/10 — antes de decir que no hay algo, se deriva | Ejecuta la derivación con `dato_no_encontrado` y reemplaza el texto por un pase al equipo, sin la negativa |
 | `deriva_y_pregunta` | `derivar_a_persona` + `?` en el mismo mensaje | Quita la pregunta |
 | `anuncia_sin_derivar` | «te paso con», «le derivo» (y variantes más suaves: «te puede orientar», «lo ve la persona que corresponde» — hallazgo de logica en vivo, 20/9) sin la tool en la traza | Ejecuta la derivación y quita las preguntas |
 | `venta_sin_resolver` | Barandilla ESTRUCTURAL, no de palabras (logica, 20/9, después de que el léxico de `anuncia_sin_derivar` se volviera un juego del gato y el ratón): el clasificador dio intención "venta" y el turno no llamó `enviar_link` con tipo `web-venta` ni `derivar_a_persona`. Mira la traza, no cómo lo dijo — igual que `accesorio_sin_herramienta` | Rehace |
@@ -224,7 +240,7 @@ en el caso parecido. Orden: formato → contenido → reglas.
 | `menciona_ia` | «soy una IA», «modelo de lenguaje», «el sistema», «no lo tengo cargado» («modelo» a secas no: es un traje); además, desde el 15/9 (hallazgo M3 del tester), un patrón más amplio: "ia" cerca de una palabra de meta-funcionamiento («instrucción», «configuración», «protege», «entrena», «responde de forma segura»), para cubrir una frase que rodea el tema sin decir ninguna de las exactas de arriba | Rehace |
 | `fuera_ventana_meta` | > 24 hs desde el último mensaje del cliente | Bloquea texto libre; solo plantilla |
 
-Son 15 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
+Son 16 en el código. Una barandilla que salta genera un evento en la bitácora con el motivo. Las que arreglan en
 código (limpiar, cortar, quitar la pregunta) no cuentan como salto. Un salto es un intento
 del modelo que hay que rehacer: el primero se rehace, con todos los motivos de ese intento;
 el segundo del mismo turno deriva con motivo `barandilla_doble` — desde el 19/9, con un texto
@@ -295,7 +311,7 @@ errores, sin las palabras del título).
 
 ## 9. El método — el precio nunca va antes que el valor
 
-Adaptado de OTTO 5 PASOS. Las frases entre « » van textuales en el prompt.
+Referencia histórica de OTTO 5 PASOS. Desde la revisión del 1/10 estos guiones se consultan por tema en la base de conocimiento y no se cargan completos en el prompt. No son pasos obligatorios ni pueden demorar una reserva: alcanzan teléfono, fecha y hora. El inventario revisado está en `docs/LUCIA-INFORMACION-COMPLETA.md`.
 
 1. **Conectar.** Apertura de § 1 y pedir el nombre si no lo tiene.
 2. **Descubrir, todo junto.** Evento y fecha en la misma pregunta (pedido de

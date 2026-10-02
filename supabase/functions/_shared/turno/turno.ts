@@ -15,6 +15,8 @@ import { aplicarBarandillas } from "../barandillas/index.ts";
 import type { Db } from "../db.ts";
 import type { MotivoDerivacion } from "../enums.ts";
 import { actualizarFicha, leerFicha } from "../herramientas/ficha.ts";
+import { mensajesDeEfectos } from "../herramientas/efectos.ts";
+import { esCierreCortes } from "./cierre_cortes.ts";
 import {
   type ClaveDerivacion,
   CLAVE_TEXTO_DERIVACION_CORPORATIVO,
@@ -281,6 +283,12 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
     // Paso 4b — el clasificador, red para la intención de derivar cuando no hay palabra clave.
     historial = await leerHistorial(db, p.conversacionId, rafaga.desde);
+    const ultimoNuestro = [...historial].reverse().find((m) => m.role === "assistant");
+    if (!hayImagenes && ultimoNuestro && esCierreCortes(mensaje, ultimoNuestro.content)) {
+      eventos.push({ tipo: "pensamiento", detalle: { etapa: "cierre-cortes", nota: "Agradecimiento sin nueva consulta: no repetir información ni enlaces." } });
+      resultado = { mensajesAlCliente: [], imagenes: [], derivo: false, bloqueadoPorVentana: false };
+      return resultado;
+    }
     const ultimoMensajeAnterior = await ultimoMensajeAntesDe(db, p.conversacionId, rafaga.desde);
     const diasDesdeUltimoMensaje = ultimoMensajeAnterior ? diasEntre(fechaLocal(ultimoMensajeAnterior, p.tz), fechaLocal(p.ahora, p.tz)) : null;
     // Sin nada antes de esta ráfaga, es la primera vez que Lucía le contesta algo en esta charla
@@ -383,7 +391,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       // pieza no sale limpia como "enviar", se descarta esa pieza (nunca se manda lo que saltó) y,
       // si se descartó algo, se completa con el texto fijo genérico en vez de dejar la despedida
       // vacía.
-      const piezas = [...(r.textoFinal ? [r.textoFinal] : []), ...r.efectos.flatMap((e) => e.mensajesAlCliente ?? [])];
+      const piezas = [...(r.textoFinal ? [r.textoFinal] : []), ...mensajesDeEfectos(r.efectos)];
       const textosRevisados: string[] = [];
       let seDescartoAlgo = false;
       for (const pieza of piezas) {
@@ -421,6 +429,9 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
         return res;
       });
     };
+    // La lista guardada ya es una respuesta completa. El modelo puede obedecer
+    // «no la repitas» dejando su texto vacío; no perder la reserva ni derivar por eso.
+    if (r.textoFinal === null && r.efectos.some((e) => e.resumenTurnoId)) r.textoFinal = "";
     if (r.textoFinal === null) {
       resultado = await sinRespuesta(r.seCortoPorTiempo ? "timeout" : "sin_respuesta");
       return resultado;
@@ -440,6 +451,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       llamadasLlm.push(...r2.llamadasLlm);
       r = { ...r2, efectos: [...r.efectos, ...r2.efectos] } as ResultadoPrincipal;
 
+      if (r.textoFinal === null && r.efectos.some((e) => e.resumenTurnoId)) r.textoFinal = "";
       if (r.textoFinal === null) {
         resultado = await sinRespuesta(r.seCortoPorTiempo ? "timeout" : "sin_respuesta");
         return resultado;
@@ -449,7 +461,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     eventos.push(...eventosDeLaTraza(ctxHerramientas.traza));
     for (const s of b.saltos) eventos.push({ tipo: "error", detalle: { etapa: "barandilla", barandilla: s.barandilla, accion: s.accion, motivo: s.motivo } });
 
-    const efectosMensajes = r.efectos.flatMap((e) => e.mensajesAlCliente ?? []);
+    const efectosMensajes = mensajesDeEfectos(r.efectos);
     const imagenes = r.efectos.flatMap((e) => e.imagenes ?? []);
 
     if (b.decision === "bloquear") {
@@ -457,7 +469,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       return resultado;
     }
     if (b.decision === "derivar") {
-      const motivo: MotivoDerivacion = b.ejecutarDerivacion ? "pide_persona" : "barandilla_doble";
+      const motivo: MotivoDerivacion = b.motivoDerivacion ?? (b.ejecutarDerivacion ? "pide_persona" : "barandilla_doble");
       // extra: efectosMensajes (auditoría, 22/9) — si agendar_turno/confirmar_turno ya armó su
       // propia confirmación en este turno y de todas formas se llega a barandilla_doble, esa
       // confirmación real no se pierde (derivar() la antepone al texto fijo de fallo).

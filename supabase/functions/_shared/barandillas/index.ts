@@ -17,6 +17,7 @@ import { accesorioSinHerramienta } from "./accesorio_sin_herramienta.ts";
 import { anunciaSinDerivar } from "./anuncia_sin_derivar.ts";
 import { confirmacionDoble } from "./confirmacion_doble.ts";
 import { derivaYPregunta } from "./deriva_y_pregunta.ts";
+import { disponibilidadNegada } from "./disponibilidad_negada.ts";
 import { fueraVentanaMeta } from "./fuera_ventana_meta.ts";
 import { horarioSinHerramienta } from "./horario_sin_herramienta.ts";
 import { largo } from "./largo.ts";
@@ -40,6 +41,7 @@ export const BARANDILLAS: readonly Barandilla[] = [
   precioSinHerramienta,
   horarioSinHerramienta,
   accesorioSinHerramienta,
+  disponibilidadNegada,
   derivaYPregunta,
   anunciaSinDerivar,
   ventaSinResolver,
@@ -55,7 +57,7 @@ export type ResultadoBarandillas = {
   decision: "enviar" | "rehacer" | "derivar" | "bloquear";
   saltos: Salto[];
   instruccion?: string; // si hay que rehacer: qué corregir (lo lee el modelo)
-  motivoDerivacion?: "barandilla_doble"; // si deriva por el segundo salto
+  motivoDerivacion?: "barandilla_doble" | "dato_no_encontrado";
   ejecutarDerivacion?: boolean; // si deriva porque Lucía anunció un pase
 };
 
@@ -91,7 +93,8 @@ export async function aplicarBarandillas(
   const quedoVacio = texto.trim() === "" && saltos.length > 0 && !cortoSoloConfirmacionDoble;
 
   if (hay("bloquear")) return { texto, decision: "bloquear", saltos };
-  if (hay("ejecutar_derivacion")) return { texto, decision: "derivar", saltos, ejecutarDerivacion: true };
+  if (hay("ejecutar_derivacion")) return { texto, decision: "derivar", saltos, ejecutarDerivacion: true,
+    ...(saltos.some((s) => s.barandilla === "disponibilidad_negada") ? { motivoDerivacion: "dato_no_encontrado" as const } : {}) };
   if ((paraRehacer.length || quedoVacio) && (opciones.saltosPrevios ?? 0) >= 1) {
     return { texto, decision: "derivar", saltos, motivoDerivacion: "barandilla_doble" };
   }

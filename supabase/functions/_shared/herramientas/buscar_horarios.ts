@@ -10,7 +10,6 @@
 // Lo que se le muestra al modelo queda en la traza: es lo único que agendar_turno y
 // reprogramar_turno aceptan en este turno.
 
-import type { Db } from "../db.ts";
 import { TIPOS_TURNO, type TipoTurno } from "../enums.ts";
 import { diasEntre, fechaLarga, fechaLocal, horaLocal, isoLocal, MINUTOS_POR_HORA, minutosDelDia } from "../tiempo.ts";
 import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
@@ -18,30 +17,12 @@ import { actualizarFicha, leerFicha } from "./ficha.ts";
 import { dentroDeFranja, leerFranjas } from "./horario_laboral.ts";
 import { type Herramienta, objeto, rechazo } from "./tipos.ts";
 
-type Args = { desde: string; hasta: string; tipo_turno: TipoTurno; fecha_evento: string | null };
+type Args = { desde: string; hasta: string; tipo_turno: TipoTurno | null; fecha_evento: string | null; fecha_hora?: string | null };
 
 const RANGO_MAXIMO_DIAS = 13; // dos semanas por consulta
 const MEDIODIA = 13 * MINUTOS_POR_HORA; // antes de la una se dice "a la mañana"
 const POR_FRANJA = 2; // por día: dos opciones a la mañana y dos a la tarde
 const MAXIMO_OPCIONES = 16;
-
-// Hallazgo de logica probando en vivo, 16/9: "una sola vez por charla" (supuesto #35) dependía
-// solo de que el prompt no lo pidiera de nuevo leyendo el historial — y en vivo no alcanzó:
-// Lucía volvió a pedir el mail en el turno en que el cliente ya estaba confirmando, y como
-// nunca llegó a agendar_turno, el cliente se quedó sin turno. Se marca en código, no solo en el
-// prompt: la primera vez que se pide, queda un evento en la bitácora (no hay una columna para
-// esto — no se agrega una sin coordinar con logica); las siguientes llamadas a buscar_horarios
-// de esta charla —en este turno o en cualquier otro— ya no vuelven a pedirlo, aunque el mail
-// siga sin estar en la ficha.
-const ETAPA_EVENTO_PEDIR_MAIL = "pedir_mail";
-
-async function yaSePidioElMail(db: Db, conversacionId: string): Promise<boolean> {
-  const filas = await db.consulta(
-    "select 1 from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = $2 limit 1",
-    [conversacionId, ETAPA_EVENTO_PEDIR_MAIL],
-  );
-  return filas.length > 0;
-}
 
 export const buscarHorarios: Herramienta<Args> = {
   nombre: "buscar_horarios",
@@ -52,11 +33,14 @@ export const buscarHorarios: Herramienta<Args> = {
     "ofrecé dos, nunca más de tres. tipo_turno: graduado, novio o invitado según quién se viste; doble o triple si " +
     "vienen dos o tres personas juntas; prueba_final solo para la prueba del día anterior al evento. Mandá la fecha " +
     "del evento si la sabés. Si el evento es hoy o mañana, no devuelve huecos: la charla pasa sola a un asesor del " +
-    "local y vos no escribís nada más. Pedí como mucho dos semanas por vez.",
+    "local y vos no escribís nada más. Pedí como mucho dos semanas por vez. Si el cliente eligió día y hora, " +
+    "mandalos en fecha_hora: se comprueba ese horario exacto y no se pide mail. Si está libre, ejecutá " +
+    "agendar_turno inmediatamente. Si no conocés el tipo, mandá null: usa la duración de invitado.",
   parametros: objeto({
     desde: { type: "string", format: "date", description: "Primer día a mirar, AAAA-MM-DD." },
     hasta: { type: "string", format: "date", description: "Último día a mirar, AAAA-MM-DD." },
-    tipo_turno: { type: "string", enum: [...TIPOS_TURNO], description: "Tipo de turno." },
+    tipo_turno: { type: ["string", "null"], enum: [...TIPOS_TURNO, null], description: "Tipo de turno, o null si no se conoce." },
+    fecha_hora: { type: ["string", "null"], format: "date-time", description: "Fecha y hora exactas elegidas por el cliente, con zona. null si solo busca opciones." },
     fecha_evento: {
       type: ["string", "null"],
       format: "date",
@@ -64,6 +48,8 @@ export const buscarHorarios: Herramienta<Args> = {
     },
   }),
   async ejecutar(args, ctx) {
+    const tipo = args.tipo_turno ?? "invitado";
+    const elegido = args.fecha_hora ? new Date(args.fecha_hora) : null;
     const hoy = fechaLocal(ctx.ahora, ctx.tz);
     const ficha = await leerFicha(ctx.db, ctx.cliente.id);
     const fechaEvento = args.fecha_evento ?? ficha.fecha_evento;
@@ -87,13 +73,16 @@ export const buscarHorarios: Herramienta<Args> = {
     if (diasEntre(desde, args.hasta) > RANGO_MAXIMO_DIAS) {
       return rechazo("rango_muy_largo", `Pedí como mucho ${RANGO_MAXIMO_DIAS + 1} días por vez.`);
     }
+    if (elegido && (!(elegido > ctx.ahora) || fechaLocal(elegido, ctx.tz) < desde || fechaLocal(elegido, ctx.tz) > args.hasta)) {
+      return rechazo("fecha_hora_fuera_de_rango", "La fecha y hora elegidas deben ser futuras y estar dentro del rango consultado.");
+    }
 
     ctx.traza.rangosBuscados.push({ desde, hasta: args.hasta });
 
     const agenda = await ctx.agenda.huecos({
       desde,
       hasta: args.hasta,
-      tipo: args.tipo_turno,
+      tipo,
       ahora: ctx.ahora,
       fechaEvento,
     });
@@ -117,8 +106,11 @@ export const buscarHorarios: Herramienta<Args> = {
     }
 
     const elegidos: number[] = [];
+    // La elección del cliente no puede desaparecer al resumir las primeras opciones del día.
+    if (elegido && porInicio.has(elegido.getTime())) elegidos.push(elegido.getTime());
     const porFranja = new Map<string, number>();
     for (const k of [...porInicio.keys()].sort((a, b) => a - b)) {
+      if (elegido && elegidos[0] === elegido.getTime()) break;
       const d = new Date(k);
       const clave = `${fechaLocal(d, ctx.tz)}|${minutosDelDia(d, ctx.tz) < MEDIODIA ? "mañana" : "tarde"}`;
       if ((porFranja.get(clave) ?? 0) >= POR_FRANJA) continue;
@@ -133,7 +125,7 @@ export const buscarHorarios: Herramienta<Args> = {
           inicio: h.inicio.toISOString(),
           fin: h.fin.toISOString(),
           probador: h.probador,
-          tipo: args.tipo_turno,
+          tipo,
         });
       }
     }
@@ -148,24 +140,19 @@ export const buscarHorarios: Herramienta<Args> = {
     });
     ctx.traza.horasDevueltas.push(...huecos.map((h) => h.hora));
 
-    const datos: Record<string, unknown> = { tipo_turno: args.tipo_turno, huecos };
+    const datos: Record<string, unknown> = { tipo_turno: tipo, huecos };
+    if (elegido) {
+      datos.horario_elegido_disponible = porInicio.has(elegido.getTime());
+      datos.nota = datos.horario_elegido_disponible
+        ? "El horario elegido está libre. Agendá ahora con el teléfono de la charla, aunque falten nombre o correo; no pidas datos adicionales ni otra confirmación."
+        : "No se pudo confirmar el horario elegido. Derivá con dato_no_encontrado antes de negar disponibilidad; no reserves otra hora por tu cuenta.";
+    }
     if (huecos.length === 0) {
-      datos.nota = "No hay huecos en esas fechas. Buscá más adelante; si el evento es antes y no hay nada, derivá con motivo turno_urgente_sin_hueco.";
+      datos.nota = "La búsqueda no devolvió huecos para esas fechas. Derivá con dato_no_encontrado sin enviar una negativa de disponibilidad ni cambiar la elección del cliente.";
     }
     if (avisos.length) datos.aviso = avisos.join(" ");
     if (descartados) datos.descartados_fuera_de_horario = descartados;
-    // Supuesto #35 (decisión #17, hito 2.3): sin mail en la ficha, pedilo una sola vez, en el
-    // mismo mensaje en que ofrecés estos horarios (antes de agendar: después la confirmación de
-    // código le pisa el texto). Si huecos viene vacío no tiene sentido pedirlo todavía — no hay
-    // nada que ofrecer en el mismo mensaje. Ya pedido en esta charla (código, no el prompt): no
-    // se vuelve a ofrecer, aunque el mail siga sin estar en la ficha.
-    if (huecos.length > 0 && !ficha.email && !(await yaSePidioElMail(ctx.db, ctx.conversacionId))) {
-      datos.pedir_mail = true;
-      await ctx.db.consulta(
-        "insert into eventos_agente (conversacion_id, tipo, detalle) values ($1, 'pensamiento', $2::jsonb)",
-        [ctx.conversacionId, JSON.stringify({ etapa: ETAPA_EVENTO_PEDIR_MAIL, herramienta: "buscar_horarios" })],
-      );
-    }
+    // Nombre/correo se piden en el resumen posterior a reservar, nunca al buscar.
     return { ok: true, datos };
   },
 };

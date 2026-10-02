@@ -1,5 +1,5 @@
-// no_a_secas (reglas) — nunca "no" a secas: si algo no se puede, se dice ofreciendo lo que sí
-// hay (regla 7, regla de la casa). Todo en código:
+// Respaldo de tono para negativas cortas. Las negativas comerciales las intercepta
+// antes disponibilidad_negada: se deriva sin negar, aunque haya una alternativa.
 //  · si el mensaje no arranca con una negativa, no salta (expresiones como «no te preocupes»
 //    no cuentan);
 //  · si arranca con una negativa, es corto y no ofrece nada, salta.
@@ -39,7 +39,7 @@ export const noASecas: Barandilla = {
     // Lo negado no ofrece nada: en «no tenemos ese color», «tenemos» no es una alternativa.
     const sinLoNegado = n.replace(/\bno\s+\S+/g, " ");
     if (palabras <= PALABRAS_DE_UN_MENSAJE_CORTO && !OFRECE_ALGO.test(sinLoNegado)) {
-      return { salta: true, accion: "rehacer", motivo: "una negativa a secas: decí que no ofreciendo lo que sí hay" };
+      return { salta: true, accion: "rehacer", motivo: "No envíes una negativa a secas. Si es sobre producto, talle, servicio o disponibilidad, llamá derivar_a_persona con dato_no_encontrado antes de negar. Si es una consulta ajena al negocio, explicá brevemente tu alcance." };
     }
     return NO_SALTA;
   },
