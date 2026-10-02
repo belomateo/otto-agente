@@ -1,0 +1,69 @@
+// Ensayo del modelo real y agenda real, sin WhatsApp; cada caso termina en rollback.
+// deno test --no-lock --node-modules-dir=none --allow-net --allow-env --allow-read --env-file=.env scripts/probar-reserva-minima.ts
+import { assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
+import { correrTurno } from "../supabase/functions/_shared/turno/turno.ts";
+import { calendarioDeEnsayo } from "../supabase/functions/_shared/herramientas/tipos.ts";
+import { AHORA, contar, fila, iso, JUEVES, prueba, TZ } from "../tests/herramientas/_arnes.ts";
+
+for (const caso of [
+  { mensaje: "Quiero reservar para el jueves 6 de junio a las 12 del mediodía.", reserva: true, esperado: "reserva" },
+  { mensaje: "Quiero reservar para el jueves 6 de junio.", reserva: false, esperado: "hora" },
+  { mensaje: "¿Trabajan talles para niños? ¿Qué rango de talles tienen?", reserva: false, esperado: "infantil" },
+  { mensaje: "Quiero alquilar un traje de astronauta, ¿tienen?", reserva: false, esperado: "derivacion" },
+]) {
+  prueba(`Lucía real: ${caso.mensaje}`, async ({ sql, ctx, clienteId, conversacionId }) => {
+    await sql.query("set local lock_timeout = '5s'");
+    await sql.query("set local otto.sin_disparo = 'on'");
+    for (const archivo of ["0074_reserva_datos_minimos.sql", "0075_resumen_turno_datos_opcionales.sql", "0076_conocimiento_talles_y_derivacion.sql", "0078_prompt_consulta_por_tema.sql", "0079_domingo_cerrado.sql"]) {
+      await sql.query(await Deno.readTextFile(new URL(`../supabase/migrations/${archivo}`, import.meta.url)));
+    }
+    await sql.query("update configuracion_agenda set dias_reserva_urgencia = null");
+    await sql.query("update clientes set nombre = null, evento = null, fecha_evento = null, rol = null, email = null where id = $1", [clienteId]);
+    await sql.query("insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at) values ($1, 'entrante', 'texto', $2, $3::timestamptz)", [conversacionId, caso.mensaje, AHORA.toISOString()]);
+    const { prompt } = await fila(sql, "select prompt_vigente() as prompt");
+    const r = await correrTurno(ctx.db, {
+      clienteId, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+      calendario: calendarioDeEnsayo, derivacionTel: null, prompt,
+    });
+    console.log(JSON.stringify({ mensajes: r.mensajesAlCliente, derivo: r.derivo }));
+    if (r.derivo) console.log(JSON.stringify((await sql.query("select tipo, detalle from eventos_agente where conversacion_id=$1 order by creado_at", [conversacionId])).rows));
+    assertEquals(r.derivo, caso.esperado === "derivacion");
+    assertEquals(await contar(sql, "select count(*)::int n from turnos where cliente_id = $1", [clienteId]), caso.reserva ? 1 : 0);
+    if (caso.reserva) {
+      const t = await fila(sql, "select inicio from turnos where cliente_id = $1", [clienteId]);
+      assertEquals(new Date(t.inicio).getTime(), new Date(iso(JUEVES, "12:00")).getTime());
+      assertMatch(r.mensajesAlCliente.join("\n"), /Nombre: No especificado/);
+      assertEquals((r.mensajesAlCliente.join("\n").match(/Nombre:/g) ?? []).length, 1);
+      const antes = await fila(sql, "select id, inicio, fin from turnos where cliente_id=$1", [clienteId]);
+      // Ordenar el reloj de los mensajes ficticios en la fecha del ensayo, no en la del equipo.
+      const continuar = async (texto: string, segundos: number) => {
+        const fecha = new Date(AHORA.getTime() + segundos * 1000);
+        await sql.query(`with orden as (select id, row_number() over(order by enviado_at,id) n from mensajes where conversacion_id=$1 and direccion='saliente' and enviado_at < $2)
+          update mensajes m set enviado_at=$3::timestamptz + orden.n * interval '1 millisecond' from orden where m.id=orden.id`,
+          [conversacionId, AHORA.toISOString(), new Date(fecha.getTime()-1000).toISOString()]);
+        await sql.query("insert into mensajes(conversacion_id,direccion,tipo,contenido,enviado_at) values ($1,'entrante','texto',$2,$3)", [conversacionId,texto,fecha.toISOString()]);
+        return correrTurno(ctx.db, {clienteId, telefono:ctx.cliente.telefono, conversacionId, ahora:fecha, tz:TZ, calendario:calendarioDeEnsayo, derivacionTel:null, prompt});
+      };
+      const completado = await continuar("Me llamo Aldo Lera y mi correo es aldo@ejemplo.com", 60);
+      console.log(JSON.stringify({etapa:"datos posteriores", mensajes:completado.mensajesAlCliente,derivo:completado.derivo}));
+      assertEquals(completado.derivo, false);
+      assertMatch(completado.mensajesAlCliente.join("\n"), /Nombre: Aldo Lera/);
+      assertMatch(completado.mensajesAlCliente.join("\n"), /Gmail: aldo@ejemplo.com/);
+      assertEquals((completado.mensajesAlCliente.join("\n").match(/Nombre:/g) ?? []).length, 1);
+      assertEquals(await contar(sql, "select count(*)::int n from turnos where cliente_id=$1", [clienteId]),1);
+      assertEquals(await fila(sql,"select id,inicio,fin from turnos where cliente_id=$1",[clienteId]), antes);
+      const ficha = await fila(sql,"select fecha_evento, dia_o_noche from clientes where id=$1",[clienteId]);
+      assertEquals(ficha.fecha_evento,null);
+      assertEquals(ficha.dia_o_noche,null);
+      const gracias = await continuar("Muchas gracias por tu atención.",120);
+      assertEquals(gracias.mensajesAlCliente, []);
+    } else if (caso.esperado === "hora") {
+      assertMatch(r.mensajesAlCliente.join("\n"), /hora|horario/i);
+      assertEquals(/cerrad|no hay|no tenemos/i.test(r.mensajesAlCliente.join("\n")), false);
+    } else if (caso.esperado === "infantil") {
+      assertMatch(r.mensajesAlCliente.join("\n"), /4\s*(?:al|a|hasta|–|-)\s*16/);
+    } else {
+      assertEquals(/no tenemos|no hay|no trabajamos/i.test(r.mensajesAlCliente.join("\n")), false);
+    }
+  });
+}
