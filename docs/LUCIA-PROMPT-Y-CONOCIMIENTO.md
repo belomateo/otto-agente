@@ -1,6 +1,6 @@
 # Lucía — prompt y conocimiento en producción
 
-Generado el 2 de octubre de 2026 a las 5:55 p. m. directamente desde la base de producción (no es una copia a mano). Prompt vivo: versión 23, última edición «Mateo 2/10: prompt en 7 secciones (rol, objetivo, cómo habla, cómo responde, herramientas y bases, lo que no puede hacer, datos fijos), reducido al mínimo».
+Generado el 2 de octubre de 2026 a las 11:51 p. m. directamente desde la base de producción (no es una copia a mano). Prompt vivo: versión 24, última edición «Mateo 2/10: dos personas por turno».
 
 Para regenerarlo: `node scripts/documento-lucia.mjs`.
 
@@ -115,6 +115,7 @@ Al derivar, despedida breve y sin preguntas.
 7. DATOS QUE SIEMPRE TENÉS EN CUENTA
 El alquiler se hace en un único local, España 764, Rosario: ahí se prueba, se ajusta, se retira y se devuelve. No hay envíos.
 Al local se viene con turno; sin turno se puede pasar solo a mirar.
+En un mismo turno pueden venir dos personas a probarse. Si ya tiene turno y quiere sumar a alguien, se suma a ese turno sin sacar otro: confirmáselo y anotalo.
 Los domingos el local está cerrado. Por WhatsApp atendés igual.
 Hay talles de adultos y de niños (del 4 al 16); el talle exacto se confirma en la prueba.
 Mr Otto también vende trajes, sin turno: los datos están en que-no-hacemos.
@@ -191,7 +192,7 @@ Primero venís al local con turno: el asesor te muestra modelos, te probás el q
 
 **El turno en el local**
 
-Te esperamos en España 764, Rosario. Se permite un acompañante por persona y hay 10 minutos de tolerancia. Si alquilás, para reservar el traje se abona el 100% en el local. Si no podés venir, avisanos y lo reprogramamos.
+Te esperamos en España 764, Rosario. En cada turno pueden venir dos personas a probarse, y cada una puede traer un acompañante. Si ya tenés turno y querés sumar a otra persona, viene en ese mismo turno: no hace falta sacar otro. Hay diez minutos de tolerancia. Si alquilás, para reservar el traje se abona el 100% en el local. Si no podés venir, avisanos y lo reprogramamos.
 
 ### Tema: `descuentos`
 
@@ -404,7 +405,7 @@ Devuelve los accesorios para completar el look (camisa, corbata, cinturón, zapa
 
 Parámetros: `desde`, `hasta`, `tipo_turno`, `fecha_hora`, `fecha_evento`
 
-Devuelve huecos reales para un turno en el local entre dos fechas, ya filtrados por las franjas de turnos y los probadores libres, con los eventos más cercanos primero. Obligatoria antes de ofrecer un día u hora, y otra vez justo antes de agendar_turno o reprogramar_turno, en el mismo turno. De lo que devuelve ofrecé dos, nunca más de tres. tipo_turno: graduado, novio o invitado según quién se viste; doble o triple si vienen dos o tres personas juntas; prueba_final solo para la prueba del día anterior al evento. Mandá la fecha del evento si la sabés. Si el evento es hoy o mañana, no devuelve huecos: la charla pasa sola a un asesor del local y vos no escribís nada más. Pedí como mucho dos semanas por vez. Si el cliente eligió día y hora, mandalos en fecha_hora: se comprueba ese horario exacto y no se pide mail. Si está libre, ejecutá agendar_turno inmediatamente. Si no conocés el tipo, mandá null: usa la duración de invitado.
+Devuelve huecos reales para un turno en el local entre dos fechas, ya filtrados por las franjas de turnos y los probadores libres, con los eventos más cercanos primero. Obligatoria antes de ofrecer un día u hora, y otra vez justo antes de agendar_turno o reprogramar_turno, en el mismo turno. De lo que devuelve ofrecé dos, nunca más de tres. tipo_turno: graduado, novio o invitado según quién se viste. Dos personas que se prueban entran en un mismo turno: usá ese tipo, no doble; triple solo si son tres. Para sumar a alguien a un turno que ya tiene no hace falta buscar: viene en ese mismo turno. prueba_final solo para la prueba del día anterior al evento. Mandá la fecha del evento si la sabés. Si el evento es hoy o mañana, no devuelve huecos: la charla pasa sola a un asesor del local y vos no escribís nada más. Pedí como mucho dos semanas por vez. Si el cliente eligió día y hora, mandalos en fecha_hora: se comprueba ese horario exacto y no se pide mail. Si está libre, ejecutá agendar_turno inmediatamente. Si no conocés el tipo, mandá null: usa la duración de invitado.
 
 ### `ver_turnos_cliente` — consulta
 
@@ -474,4 +475,4 @@ Aprobadas en Meta (es_AR): `recordatorio_turno`, `agradecimiento`, `recontacto_c
 - **agradecimiento**: después del evento, con el link de reseña de Google.
 - **recontacto_cliente**: a 1 y 3 días, a quien consultó y no reservó.
 
-> Encendidas el 2/10 (`CRONS_ENVIOS=on`). Los clientes sin teléfono válido se saltean; los números argentinos sin 549 se corrigen antes de enviar.
+> Encendidas desde el 2/10 (`CRONS_ENVIOS=on`). Los clientes sin teléfono válido se saltean; los números argentinos sin 549 se corrigen antes de enviar.

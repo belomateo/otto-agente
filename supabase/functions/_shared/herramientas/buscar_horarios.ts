@@ -24,14 +24,19 @@ const MEDIODIA = 13 * MINUTOS_POR_HORA; // antes de la una se dice "a la mañana
 const POR_FRANJA = 2; // por día: dos opciones a la mañana y dos a la tarde
 const MAXIMO_OPCIONES = 16;
 
+// Dos personas por turno (Mateo, 2/10): en un turno normal pueden probarse dos. Antes esto decía
+// "doble si vienen dos" y, con un cliente que quería sumar a alguien a su turno, Lucía buscó un
+// doble de 1:30 en ese horario, no lo encontró y derivó por dato_no_encontrado.
 export const buscarHorarios: Herramienta<Args> = {
   nombre: "buscar_horarios",
   tipo: "consulta",
   descripcion: "Devuelve huecos reales para un turno en el local entre dos fechas, ya filtrados por las franjas " +
     "de turnos y los probadores libres, con los eventos más cercanos primero. Obligatoria antes de ofrecer un día " +
     "u hora, y otra vez justo antes de agendar_turno o reprogramar_turno, en el mismo turno. De lo que devuelve " +
-    "ofrecé dos, nunca más de tres. tipo_turno: graduado, novio o invitado según quién se viste; doble o triple si " +
-    "vienen dos o tres personas juntas; prueba_final solo para la prueba del día anterior al evento. Mandá la fecha " +
+    "ofrecé dos, nunca más de tres. tipo_turno: graduado, novio o invitado según quién se viste. Dos personas que " +
+    "se prueban entran en un mismo turno: usá ese tipo, no doble; triple solo si son tres. Para sumar a alguien a un " +
+    "turno que ya tiene no hace falta buscar: viene en ese mismo turno. prueba_final solo para la prueba del día " +
+    "anterior al evento. Mandá la fecha " +
     "del evento si la sabés. Si el evento es hoy o mañana, no devuelve huecos: la charla pasa sola a un asesor del " +
     "local y vos no escribís nada más. Pedí como mucho dos semanas por vez. Si el cliente eligió día y hora, " +
     "mandalos en fecha_hora: se comprueba ese horario exacto y no se pide mail. Si está libre, ejecutá " +

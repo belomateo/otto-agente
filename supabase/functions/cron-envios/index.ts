@@ -124,13 +124,17 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
 // (ya aprobada en Meta) con el mismo contenido que el recordatorio de 18h. Se llama desde
 // altaTurno (panel/lib/edicion/turno-alta.ts) en modo fire-and-forget. Si el turno ya tiene
 // recordatorio_enviado_at (porque se creó desde Lucía y el recordatorio ya salió), se omite.
+// Se reserva y registra como el recordatorio de ese turno (envio_reservar/envio_terminar), igual
+// que el cron: así queda en la charla del panel y en la bitácora, y el de 18h no sale de nuevo
+// (envios_programados es único por tipo y referencia). Antes se mandaba por fuera y no quedaba
+// rastro en el panel (prueba de Mateo, 2/10).
 async function confirmarTurno(turnoId: string): Promise<Response> {
   if (!ENCENDIDO) return Response.json({ apagado: true });
   if (!TZ) return new Response("falta NEGOCIO_TZ", { status: 500 });
 
   const { data: turno, error: eT } = await supabase
     .from("turnos")
-    .select("id, inicio, recordatorio_enviado_at, clientes(nombre, telefono)")
+    .select("id, cliente_id, inicio, recordatorio_enviado_at, clientes(nombre, telefono)")
     .eq("id", turnoId)
     .maybeSingle();
   if (eT) return Response.json({ error: eT.message }, { status: 500 });
@@ -149,12 +153,23 @@ async function confirmarTurno(turnoId: string): Promise<Response> {
   }, TZ);
   if ("falta" in plantilla) return Response.json({ omitido: true, falta: plantilla.falta });
 
+  const { data: id, error: errReserva } = await supabase.rpc("envio_reservar", {
+    p_tipo: "recordatorio_18h",
+    p_referencia: turnoId,
+    p_cliente: turno.cliente_id,
+    p_plantilla: plantilla.nombre,
+  });
+  if (errReserva) return Response.json({ error: `envio_reservar: ${errReserva.message}` }, { status: 500 });
+  if (!id) return Response.json({ omitido: true, motivo: "ya_enviado" });
+
   try {
     const wamid = await enviarPlantilla(WA, telefono, plantilla);
-    await supabase.from("turnos").update({ recordatorio_enviado_at: new Date().toISOString() }).eq("id", turnoId);
+    const registrado = await registrarConReintento(id, wamid, plantilla.texto);
+    if (!registrado) console.error("confirmacion_turno: se envió pero no se pudo registrar", turnoId, wamid);
     console.log("confirmacion_turno enviada", turnoId, wamid);
-    return Response.json({ enviado: true, wamid });
+    return Response.json({ enviado: true, wamid, registrado });
   } catch (err) {
+    await supabase.rpc("envio_terminar", { p_id: id, p_ok: false, p_wa_message_id: null, p_texto: plantilla.texto, p_error: String(err) });
     console.error("confirmacion_turno falló", turnoId, String(err));
     return Response.json({ error: String(err) }, { status: 500 });
   }
