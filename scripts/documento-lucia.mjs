@@ -1,10 +1,14 @@
-// scripts/documento-lucia.mjs — arma docs/LUCIA-PROMPT-Y-CONOCIMIENTO.md con lo que Lucía tiene
-// HOY en producción: el prompt vivo (prompt_vigente()), las reglas, los textos fijos, la base de
-// conocimiento, el catálogo, la agenda, los enlaces y las herramientas. Solo lee.
+// scripts/documento-lucia.mjs — arma, con lo que Lucía tiene HOY en producción, dos documentos:
+//   · docs/LUCIA-PROMPT.md: el prompt principal tal cual lo lee en cada mensaje (prompt_vigente(),
+//     con las reglas y los textos de contexto ya completados).
+//   · docs/LUCIA-INFORMACION-ADICIONAL.md: lo que NO sabe de memoria y consulta con herramientas
+//     (base de conocimiento, catálogo, accesorios, agenda, enlaces, textos fijos, herramientas y
+//     plantillas).
+// Pedido de Mateo (3/10): el prompt y la información adicional por separado. Solo lee.
 //
 // Uso (desde la raíz del repo):
-//   deno run --no-lock --node-modules-dir=none -A scripts/_herramientas.ts > /tmp/herr.json   (opcional)
-//   node scripts/documento-lucia.mjs [/tmp/herr.json]
+//   deno run --no-lock --node-modules-dir=none -A scripts/_herramientas.ts > herr.json   (opcional)
+//   node scripts/documento-lucia.mjs [herr.json]
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -31,7 +35,6 @@ const hoy = new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Bu
 
 const [base] = await q("select version, editado_por, editado_at from prompt_base");
 const [{ p: prompt }] = await q("select prompt_vigente() as p");
-const reglas = await q("select numero, texto from reglas_agente where activo order by numero");
 const contexto = await q("select clave, valor from contexto_agente order by clave");
 const fragmentos = await q("select tema, titulo, texto from fragmentos where activo order by tema, titulo");
 const catalogo = await q("select modelo, precio_base, colores, talles, descripcion, fotos from catalogo_alquiler where activo order by orden nulls last, modelo");
@@ -52,38 +55,123 @@ const colores = (c) => {
 };
 const listaTalles = (t) => (Array.isArray(t) ? t.join(", ") : t ?? "—");
 const cantFotos = (f) => (Array.isArray(f) ? f.length : f ? 1 : 0);
+const origen = `Generado el ${hoy} desde la base de producción (no es una copia a mano). ` +
+  `Prompt vivo: versión ${base.version}, última edición «${base.editado_por}».`;
 
-const L = [];
-const p = (...xs) => L.push(...xs);
-
-p(
-  "# Lucía — prompt y conocimiento en producción",
+// ── 1. El prompt principal ─────────────────────────────────────────────────────────────────
+const P = [
+  "# Lucía — prompt principal",
   "",
-  `Generado el ${hoy} directamente desde la base de producción (no es una copia a mano). ` +
-    `Prompt vivo: versión ${base.version}, última edición «${base.editado_por}».`,
+  origen,
   "",
-  "Para regenerarlo: `node scripts/documento-lucia.mjs`.",
+  "Es lo único que Lucía lee en **todos** los mensajes: quién es, cómo habla y responde, qué no puede hacer, " +
+    "los datos fijos y el mapa de dónde buscar todo lo demás. Las reglas numeradas y los textos de tono y " +
+    "presentación ya están completados acá, tal cual le llegan.",
   "",
-  "## Cómo está armada Lucía",
+  "Junto con el prompt, en cada mensaje recibe también:",
   "",
-  "En cada mensaje del cliente, Lucía recibe en este orden:",
+  "- **El contexto del turno**, armado por el sistema en el momento: la libreta del cliente (nombre, evento, fecha, rol, talle, mail, notas), sus turnos activos, la fecha y hora actual y el horario del local y de turnos de ese día.",
+  "- **El historial** de la charla (hasta 40 mensajes previos), con los del equipo marcados «[mostrador]».",
   "",
-  "1. **El prompt principal** (abajo, completo). Es lo único que «sabe de memoria»: quién es, cómo habla, sus reglas y el mapa de dónde buscar cada dato.",
-  "2. **El contexto del turno**, armado por el sistema en el momento: la libreta del cliente (nombre, evento, fecha, rol, talle, mail, notas), sus turnos activos, la fecha y hora actual, y el horario del local y de turnos de ese día.",
-  "3. **El historial** de la charla (hasta 40 mensajes previos), incluidos los del equipo marcados «[mostrador]».",
-  "4. **Las herramientas**: todo lo demás (precios, talles, horarios, políticas) lo consulta en la base cuando lo necesita.",
+  "Todo lo situacional (precios, talles, políticas, pagos, agenda) está en `LUCIA-INFORMACION-ADICIONAL.md`.",
   "",
-  "Además, antes de mandar cada respuesta pasan 16 controles automáticos (barandillas): precio, horario o accesorio sin consultar, negativas comerciales, preguntas de más, relleno, etc.",
-  "",
-  "## 1. Prompt principal (tal cual lo lee Lucía)",
+  "Se edita en `plantilla-agente/02-prompt.md` y se carga con `node scripts/cargar-prompt.mjs \"<quién y por qué>\"`; " +
+    "las reglas numeradas y los textos de contexto se editan desde el panel. Para regenerar este documento: " +
+    "`node scripts/documento-lucia.mjs`.",
   "",
   "```text",
   String(prompt).trim(),
   "```",
   "",
-  "## 2. Textos fijos",
+];
+
+// ── 2. La información adicional ────────────────────────────────────────────────────────────
+// Los temas en el orden del mapa del prompt (así se lee igual que lo ve Lucía); los que no están
+// en el mapa van al final.
+const ordenMapa = [...String(prompt).matchAll(/^- ([a-z-]+): /gm)].map((m) => m[1]);
+const temas = [...new Set(fragmentos.map((f) => f.tema))]
+  .sort((a, b) => (ordenMapa.indexOf(a) + 1 || 999) - (ordenMapa.indexOf(b) + 1 || 999) || a.localeCompare(b));
+const descripcionDelMapa = Object.fromEntries(
+  [...String(prompt).matchAll(/^- ([a-z-]+): (.+)$/gm)].map((m) => [m[1], m[2].trim()]),
+);
+
+const A = [
+  "# Lucía — información adicional",
   "",
-  "Los arma el sistema, no Lucía. Se editan en Configuración.",
+  origen,
+  "",
+  "Todo esto Lucía **no lo sabe de memoria**: lo consulta con sus herramientas solo cuando la charla lo necesita, " +
+    "y recién ahí lo afirma. El prompt principal (`LUCIA-PROMPT.md`) le dice dónde está cada cosa. Se edita desde " +
+    "el panel y Lucía lo usa en menos de un minuto, sin tocar el prompt.",
+  "",
+  "| Sección | Herramienta que la consulta |",
+  "|---|---|",
+  "| 1. Base de conocimiento (políticas, pagos, talles, guiones) | `buscar_informacion` |",
+  "| 2. Catálogo de alquiler | `consultar_catalogo` |",
+  "| 3. Accesorios | `consultar_accesorios` |",
+  "| 4. Agenda | `buscar_horarios`, `agendar_turno` |",
+  "| 5. Enlaces | `enviar_link` |",
+  "| 6. Textos fijos | los manda el sistema, no Lucía |",
+  "| 7. Herramientas | qué hace cada una |",
+  "| 8. Plantillas de WhatsApp | las manda el sistema, no Lucía |",
+  "",
+  "## 1. Base de conocimiento (`buscar_informacion`)",
+  "",
+];
+for (const tema of temas) {
+  A.push(`### \`${tema}\``, "");
+  if (descripcionDelMapa[tema]) A.push(`*En el mapa del prompt: ${descripcionDelMapa[tema]}*`, "");
+  for (const f of fragmentos.filter((x) => x.tema === tema)) A.push(`**${f.titulo}**`, "", String(f.texto).trim(), "");
+}
+
+A.push(
+  "## 2. Catálogo de alquiler (`consultar_catalogo`)",
+  "",
+  "| Modelo | Precio base | Colores | Talles | Fotos | Descripción |",
+  "|---|---|---|---|---|---|",
+  ...catalogo.map((m) => `| ${celda(m.modelo)} | ${pesos(m.precio_base)} | ${celda(colores(m.colores))} | ${celda(listaTalles(m.talles))} | ${cantFotos(m.fotos)} | ${celda(m.descripcion) || "—"} |`),
+  "",
+  "**Talles infantiles:** del 4 al 16 (en la base de conocimiento, tema `talles`; todavía sin modelos ni precios infantiles en el catálogo).",
+  "",
+  "## 3. Accesorios (`consultar_accesorios`)",
+  "",
+  "| Accesorio | Alquiler | Compra |",
+  "|---|---|---|",
+  ...accesorios.map((a) => `| ${celda(a.nombre)} | ${pesos(a.precio)} | ${pesos(a.precio_compra)} |`),
+  "",
+  "## 4. Agenda (`buscar_horarios`, `agendar_turno`)",
+  "",
+  "### Horario del local",
+  "",
+  "| Día | Horario |",
+  "|---|---|",
+  ...horarios.map((h) => `| ${DIAS[h.dia_semana]} | ${h.activo ? `${hm(h.hora_apertura)} a ${hm(h.hora_cierre)}` : "**Cerrado**"} |`),
+  "",
+  "### Franjas de turnos",
+  "",
+  "| Día | Desde | Hasta | Probadores |",
+  "|---|---|---|---|",
+  ...franjas.map((f) => `| ${DIAS[f.dia_semana]} | ${hm(f.desde)} | ${hm(f.hasta)} | ${f.probadores} |`),
+  "",
+  `- Probadores en total: ${conf?.cantidad_probadores ?? "—"}. **Lucía agenda solo en los primeros ${conf?.probadores_lucia ?? "todos"}**; el resto queda para el equipo.`,
+  `- Turnos cada ${conf?.escalonado_min ?? "—"} minutos. Días con probadores simultáneos: ${(conf?.dias_simultaneos ?? []).map((d) => DIAS[d]).join(", ") || "ninguno"}.`,
+  conf?.dias_reserva_urgencia
+    ? `- Reserva de urgencia: los próximos ${conf.dias_reserva_urgencia} días (hoy incluido) quedan para eventos que caen dentro de ese plazo. A un evento más lejano, o si no se sabe la fecha, se le ofrece desde después; si el día pedido cae en la reserva y no se sabe la fecha, Lucía pregunta para cuándo es el evento.`
+    : "- Reserva de urgencia: ninguna, todos los días se ofrecen a todos.",
+  `- Aviso al equipo ${conf?.aviso_turno_min ?? "—"} minutos antes de cada turno.`,
+  `- Duración por tipo: ${duraciones.map((d) => `${d.tipo} ${d.duracion_min} min`).join(" · ")}. En un mismo turno pueden venir dos personas a probarse.`,
+  `- Cierres especiales próximos: ${cierres.length ? cierres.map((c) => `${new Date(c.fecha).toISOString().slice(0, 10)} (${c.motivo ?? "sin motivo"})`).join(", ") : "ninguno cargado"}.`,
+  "- Para reservar alcanza con teléfono, día y hora. Si el evento es hoy o mañana, pasa directo al equipo.",
+  "",
+  "## 5. Enlaces (`enviar_link`)",
+  "",
+  "| Nombre | URL |",
+  "|---|---|",
+  ...enlaces.map((e) => `| ${celda(e.nombre)} | ${e.url} |`),
+  "",
+  "## 6. Textos fijos",
+  "",
+  "Los arma el sistema, no Lucía (por ejemplo, al derivar o al confirmar un turno). Se editan desde el panel.",
   "",
   "| Clave | Texto |",
   "|---|---|",
@@ -102,76 +190,16 @@ p(
   "Para completar tus datos, ¿me decís tu nombre y correo electrónico?",
   "```",
   "",
-  "## 3. Base de conocimiento (`buscar_informacion`)",
+  "## 7. Herramientas",
   "",
-  "Lucía la consulta por tema, solo cuando la pregunta lo pide.",
-  "",
-);
-let temaActual = null;
-for (const f of fragmentos) {
-  if (f.tema !== temaActual) {
-    p(`### Tema: \`${f.tema}\``, "");
-    temaActual = f.tema;
-  }
-  p(`**${f.titulo}**`, "", String(f.texto).trim(), "");
-}
-
-p(
-  "## 4. Catálogo de alquiler (`consultar_catalogo`)",
-  "",
-  "| Modelo | Precio base | Colores | Talles | Fotos | Descripción |",
-  "|---|---|---|---|---|---|",
-  ...catalogo.map((m) => `| ${celda(m.modelo)} | ${pesos(m.precio_base)} | ${celda(colores(m.colores))} | ${celda(listaTalles(m.talles))} | ${cantFotos(m.fotos)} | ${celda(m.descripcion) || "—"} |`),
-  "",
-  "**Talles infantiles:** del 4 al 16 (cargado en la base de conocimiento, todavía sin modelos ni precios infantiles en el catálogo).",
-  "",
-  "## 5. Accesorios (`consultar_accesorios`)",
-  "",
-  "| Accesorio | Alquiler | Compra |",
-  "|---|---|---|",
-  ...accesorios.map((a) => `| ${celda(a.nombre)} | ${pesos(a.precio)} | ${pesos(a.precio_compra)} |`),
-  "",
-  "## 6. Agenda (`buscar_horarios`, `agendar_turno`)",
-  "",
-  "### Horario del local",
-  "",
-  "| Día | Horario |",
-  "|---|---|",
-  ...horarios.map((h) => `| ${DIAS[h.dia_semana]} | ${h.activo ? `${hm(h.hora_apertura)} a ${hm(h.hora_cierre)}` : "**Cerrado**"} |`),
-  "",
-  "### Franjas de turnos",
-  "",
-  "| Día | Desde | Hasta | Probadores |",
-  "|---|---|---|---|",
-  ...franjas.map((f) => `| ${DIAS[f.dia_semana]} | ${hm(f.desde)} | ${hm(f.hasta)} | ${f.probadores} |`),
-  "",
-  `- Probadores en total: ${conf?.cantidad_probadores ?? "—"}. **Lucía agenda solo en los primeros ${conf?.probadores_lucia ?? "todos"}**; el resto queda para el equipo.`,
-  `- Turnos cada ${conf?.escalonado_min ?? "—"} minutos. Días con probadores simultáneos: ${(conf?.dias_simultaneos ?? []).map((d) => DIAS[d]).join(", ") || "ninguno"}.`,
-  `- Urgencia: eventos dentro de ${conf?.dias_reserva_urgencia ?? "—"} días. Aviso al equipo ${conf?.aviso_turno_min ?? "—"} min antes de cada turno.`,
-  `- Duración por tipo: ${duraciones.map((d) => `${d.tipo} ${d.duracion_min} min`).join(" · ")}.`,
-  `- Cierres especiales próximos: ${cierres.length ? cierres.map((c) => `${new Date(c.fecha).toISOString().slice(0, 10)} (${c.motivo ?? "sin motivo"})`).join(", ") : "ninguno cargado"}.`,
-  "- Para reservar alcanza con teléfono, día y hora. Si el evento es hoy o mañana, pasa directo al equipo.",
-  "",
-  "## 7. Enlaces (`enviar_link`)",
-  "",
-  "| Nombre | URL |",
-  "|---|---|",
-  ...enlaces.map((e) => `| ${celda(e.nombre)} | ${e.url} |`),
-  "",
-  "## 8. Reglas numeradas",
-  "",
-  "Ya están incluidas dentro del prompt; acá sueltas para leerlas rápido.",
-  "",
-  ...reglas.map((r) => `${r.numero}. ${r.texto}`),
-  "",
-  "## 9. Herramientas",
+  "Cada herramienta trae su propia descripción, que el modelo lee junto con ella (no se repite en el prompt).",
   "",
 );
 const porNombre = new Map(herrBase.map((h) => [h.nombre, h]));
 for (const h of herramientas) {
   const b = porNombre.get(h.nombre);
   const desc = (b?.descripcion ?? "").trim() || h.descripcion;
-  p(
+  A.push(
     `### \`${h.nombre}\` — ${h.tipo === "accion" ? "acción" : h.tipo}${b && !b.activa ? " (DESACTIVADA)" : ""}`,
     "",
     `Parámetros: ${h.parametros.map((x) => `\`${x}\``).join(", ")}`,
@@ -180,21 +208,22 @@ for (const h of herramientas) {
     "",
   );
 }
-if (!herramientas.length) p(...herrBase.map((h) => `- \`${h.nombre}\`${h.activa ? "" : " (desactivada)"}`), "");
+if (!herramientas.length) A.push(...herrBase.map((h) => `- \`${h.nombre}\`${h.activa ? "" : " (desactivada)"}`), "");
 
-p(
-  "## 10. Plantillas de WhatsApp (Meta)",
+A.push(
+  "## 8. Plantillas de WhatsApp (Meta)",
   "",
   "Aprobadas en Meta (es_AR): `recordatorio_turno`, `agradecimiento`, `recontacto_cliente`. Las manda el sistema, no Lucía:",
   "",
-  "- **recordatorio_turno**: dentro de las 18 h previas al turno, y también al crear un turno desde el panel.",
-  "- **agradecimiento**: después del evento, con el link de reseña de Google.",
+  "- **recordatorio_turno**: dentro de las 18 h previas al turno (si se sacó con más de 24 h), y también al crear un turno desde el panel.",
+  "- **agradecimiento**: después de devolver el traje, con el link de reseña de Google.",
   "- **recontacto_cliente**: a 1 y 3 días, a quien consultó y no reservó.",
   "",
-  "> Encendidas desde el 2/10 (`CRONS_ENVIOS=on`). Los clientes sin teléfono válido se saltean; los números argentinos sin 549 se corrigen antes de enviar.",
+  "Los clientes sin teléfono válido se saltean; los números argentinos sin 549 se corrigen antes de enviar.",
   "",
 );
 
-const destino = resolve(RAIZ, "docs/LUCIA-PROMPT-Y-CONOCIMIENTO.md");
-writeFileSync(destino, L.join("\n"));
-console.log(`✅ ${destino} — ${L.length} líneas`);
+for (const [archivo, lineas] of [["docs/LUCIA-PROMPT.md", P], ["docs/LUCIA-INFORMACION-ADICIONAL.md", A]]) {
+  writeFileSync(resolve(RAIZ, archivo), lineas.join("\n"));
+  console.log(`✅ ${archivo} — ${lineas.length} líneas`);
+}
