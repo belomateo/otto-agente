@@ -33,6 +33,10 @@ export type RangoBuscado = { desde: string; hasta: string };
 
 export type Traza = {
   resumenTurnoEmitido?: boolean;
+  // buscar_horarios vino vacío porque los días pedidos están en la reserva de urgencia y el
+  // cliente no dio la fecha del evento (ver buscar_horarios.ts): derivar_a_persona exige
+  // preguntarla antes de derivar por falta de lugar.
+  reservaSinFechaEvento?: boolean;
   llamadas: LlamadaHerramienta[];
   huecosOfrecidos: HuecoOfrecido[];
   preciosDevueltos: number[];

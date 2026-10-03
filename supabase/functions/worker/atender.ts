@@ -636,10 +636,10 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   }
 
   await esperarQuietud(db, d, t.conversacion_id);
-  // Mientras esperaba, alguien pudo tomar la charla desde el panel. Eso ya no la calla: desde el
-  // pedido de Mateo (21/9) Lucía sigue contestando con la charla derivada, y el turno decide solo
-  // cuándo corresponde callarse (cliente enojado o pidiendo una persona). Lo único que sigue
-  // cortando es que la hayan cerrado.
+  // Mientras esperaba, alguien pudo tomar la charla desde el panel. Desde el pedido de Mateo
+  // (3/10) derivar apaga a Lucía (lucia_activa = false, trigger de 0081 y registrarDerivacion):
+  // con la charla derivada solo contesta si alguien la volvió a activar. Antes (21/9) seguía
+  // contestando sola y mandaba un "te paso con el equipo" tras otro.
   const despues = await estadoDeLaCharla(db, t.conversacion_id);
   if (despues?.estado !== "activa" && despues?.estado !== "derivada") {
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${despues?.estado}: Lucía no contesta` });

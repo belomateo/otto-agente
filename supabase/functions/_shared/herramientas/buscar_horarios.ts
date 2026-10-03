@@ -10,14 +10,26 @@
 // Lo que se le muestra al modelo queda en la traza: es lo único que agendar_turno y
 // reprogramar_turno aceptan en este turno.
 
+import type { Db } from "../db.ts";
 import { TIPOS_TURNO, type TipoTurno } from "../enums.ts";
-import { diasEntre, fechaLarga, fechaLocal, horaLocal, isoLocal, MINUTOS_POR_HORA, minutosDelDia } from "../tiempo.ts";
+import { diasEntre, fechaLarga, fechaLocal, horaLocal, isoLocal, MINUTOS_POR_HORA, minutosDelDia, sumarDias } from "../tiempo.ts";
 import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
 import { actualizarFicha, leerFicha } from "./ficha.ts";
 import { dentroDeFranja, leerFranjas } from "./horario_laboral.ts";
 import { type Herramienta, objeto, rechazo } from "./tipos.ts";
 
-type Args = { desde: string; hasta: string; tipo_turno: TipoTurno | null; fecha_evento: string | null; fecha_hora?: string | null };
+type Args = {
+  desde: string;
+  hasta: string;
+  tipo_turno: TipoTurno | null;
+  fecha_evento: string | null;
+  fecha_hora?: string | null;
+  desde_hora?: string | null;
+  hasta_hora?: string | null;
+};
+
+const HORA_HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const aMinutos = (hm: string) => Number(hm.slice(0, 2)) * MINUTOS_POR_HORA + Number(hm.slice(3, 5));
 
 const RANGO_MAXIMO_DIAS = 13; // dos semanas por consulta
 const MEDIODIA = 13 * MINUTOS_POR_HORA; // antes de la una se dice "a la mañana"
@@ -26,7 +38,7 @@ const MAXIMO_OPCIONES = 16;
 
 // Dos personas por turno (Mateo, 2/10): en un turno normal pueden probarse dos. Antes esto decía
 // "doble si vienen dos" y, con un cliente que quería sumar a alguien a su turno, Lucía buscó un
-// doble de 1:30 en ese horario, no lo encontró y derivó por dato_no_encontrado.
+// doble de hora y media en ese horario, no lo encontró y derivó por dato_no_encontrado.
 export const buscarHorarios: Herramienta<Args> = {
   nombre: "buscar_horarios",
   tipo: "consulta",
@@ -46,6 +58,20 @@ export const buscarHorarios: Herramienta<Args> = {
     hasta: { type: "string", format: "date", description: "Último día a mirar, AAAA-MM-DD." },
     tipo_turno: { type: ["string", "null"], enum: [...TIPOS_TURNO, null], description: "Tipo de turno, o null si no se conoce." },
     fecha_hora: { type: ["string", "null"], format: "date-time", description: "Fecha y hora exactas elegidas por el cliente, con zona. null si solo busca opciones." },
+    // Franja pedida (FAQ del 3/10): de los huecos solo se mostraban los dos primeros de la mañana
+    // y los dos primeros de la tarde (la una y la una y cuarto), así que "después de las 16" o "última hora"
+    // nunca aparecían y Lucía derivaba; 6 de los 8 turnos que dio el equipo eran de semana después
+    // de las 14.
+    desde_hora: {
+      type: ["string", "null"],
+      description: "Si pidió una franja («después de las 16», «a partir de las dos», «última hora»), la primera " +
+        "hora de inicio que le sirve, HH:MM en 24 h. Para «última hora», una hora y media antes del cierre. null si no.",
+    },
+    hasta_hora: {
+      type: ["string", "null"],
+      description: "Si pidió «antes de las 15» o «a la mañana», la hora antes de la que tiene que empezar, HH:MM en " +
+        "24 h. null si no.",
+    },
     fecha_evento: {
       type: ["string", "null"],
       format: "date",
@@ -58,6 +84,7 @@ export const buscarHorarios: Herramienta<Args> = {
     const hoy = fechaLocal(ctx.ahora, ctx.tz);
     const ficha = await leerFicha(ctx.db, ctx.cliente.id);
     const fechaEvento = args.fecha_evento ?? ficha.fecha_evento;
+    if (fechaEvento) ctx.traza.reservaSinFechaEvento = false; // ya la sabe: el freno de abajo no aplica
     if (fechaEvento && fechaEvento < hoy) {
       return rechazo("fecha_evento_pasada", `La fecha del evento (${fechaEvento}) ya pasó. Confirmala con el cliente.`);
     }
@@ -81,6 +108,11 @@ export const buscarHorarios: Herramienta<Args> = {
     if (elegido && (!(elegido > ctx.ahora) || fechaLocal(elegido, ctx.tz) < desde || fechaLocal(elegido, ctx.tz) > args.hasta)) {
       return rechazo("fecha_hora_fuera_de_rango", "La fecha y hora elegidas deben ser futuras y estar dentro del rango consultado.");
     }
+    for (const h of [args.desde_hora, args.hasta_hora]) {
+      if (h && !HORA_HM.test(h)) return rechazo("hora_invalida", `${h} no es una hora válida: mandala como HH:MM, en 24 h.`);
+    }
+    const desdeMin = args.desde_hora ? aMinutos(args.desde_hora) : null;
+    const hastaMin = args.hasta_hora ? aMinutos(args.hasta_hora) : null;
 
     ctx.traza.rangosBuscados.push({ desde, hasta: args.hasta });
 
@@ -106,6 +138,10 @@ export const buscarHorarios: Herramienta<Args> = {
         descartados++;
         continue;
       }
+      // La franja pedida no filtra el horario exacto que eligió el cliente: ese se comprueba igual.
+      const minutos = minutosDelDia(inicio, ctx.tz);
+      const fueraDeFranja = (desdeMin !== null && minutos < desdeMin) || (hastaMin !== null && minutos >= hastaMin);
+      if (fueraDeFranja && !(elegido && inicio.getTime() === elegido.getTime())) continue;
       const k = inicio.getTime();
       porInicio.set(k, [...(porInicio.get(k) ?? []), { inicio, fin, probador: h.probador }]);
     }
@@ -154,6 +190,30 @@ export const buscarHorarios: Herramienta<Args> = {
     }
     if (huecos.length === 0) {
       datos.nota = "La búsqueda no devolvió huecos para esas fechas. Derivá con dato_no_encontrado sin enviar una negativa de disponibilidad ni cambiar la elección del cliente.";
+      if (desdeMin !== null || hastaMin !== null) {
+        datos.nota = "En esa franja no quedó lugar esos días. No derives ni digas que no hay lugar: buscá de nuevo " +
+          "sin desde_hora ni hasta_hora y ofrecé los horarios más cercanos a lo que pidió.";
+      }
+      // Vacío por la reserva de urgencia (huecos.ts), no porque esté lleno. Caso real del 3/10
+      // (Larisa): "turno para el lunes", sin fecha de evento; el lunes caía en la reserva, vino
+      // vacío y Lucía derivó — el equipo le dio las 18 h del lunes. Lo que falta es un dato del
+      // cliente, no una persona: se le pregunta la fecha del evento.
+      const finReserva = await finDeReservaUrgencia(ctx.db, hoy);
+      const urgente = fechaEvento !== null && finReserva !== null && fechaEvento <= finReserva;
+      if (finReserva !== null && desde < finReserva && !urgente) {
+        const ultimoReservado = fechaLarga(alMediodia(sumarDias(finReserva, -1)), ctx.tz);
+        const primeroLibre = fechaLarga(alMediodia(finReserva), ctx.tz);
+        if (fechaEvento === null) {
+          ctx.traza.reservaSinFechaEvento = true;
+          datos.nota = `Hasta el ${ultimoReservado} los turnos se guardan para eventos muy cercanos. No derives ni ` +
+            "digas que no hay lugar: preguntale para cuándo es el evento. Si es hasta el " + primeroLibre + ", buscá " +
+            "de nuevo con fecha_evento y esos días se abren; si es más adelante, buscá desde el " + finReserva +
+            " y ofrecé esos días.";
+        } else {
+          datos.nota = `Hasta el ${ultimoReservado} los turnos se guardan para eventos más cercanos que el suyo. ` +
+            `No digas que no hay lugar: buscá desde el ${finReserva} y ofrecé esos días.`;
+        }
+      }
     }
     if (avisos.length) datos.aviso = avisos.join(" ");
     if (descartados) datos.descartados_fuera_de_horario = descartados;
@@ -161,3 +221,18 @@ export const buscarHorarios: Herramienta<Args> = {
     return { ok: true, datos };
   },
 };
+
+// Un instante de ese día para nombrarlo con fechaLarga: las 15 UTC caen el mismo día en
+// cualquier huso de América.
+function alMediodia(ymd: string): Date {
+  const [a, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d, 15));
+}
+
+// Primer día que la agenda le ofrece a un evento lejano o sin fecha (hoy + dias_reserva_urgencia,
+// misma cuenta que huecos.ts), o null si no hay reserva.
+async function finDeReservaUrgencia(db: Db, hoy: string): Promise<string | null> {
+  const [c] = await db.consulta<{ dias_reserva_urgencia: number | null }>("select dias_reserva_urgencia from configuracion_agenda limit 1");
+  const n = c?.dias_reserva_urgencia;
+  return n === null || n === undefined ? null : sumarDias(hoy, Number(n));
+}

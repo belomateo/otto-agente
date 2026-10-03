@@ -60,6 +60,9 @@ export type ContextoDerivacion = { db: Db; conversacionId: string; derivacionTel
 
 // Crea la fila en derivaciones (o reusa la pendiente de esta charla) y deja la conversación
 // derivada: Lucía no contesta hasta que alguien la devuelva desde el panel.
+// Pedido de Mateo (3/10): derivar la apaga (lucia_activa = false) hasta que alguien toque
+// "Activar Lucía". El trigger de 0081 lo hace al pasar a 'derivada'; acá se repite para cuando
+// el equipo ya la había reactivado en una charla derivada y Lucía vuelve a derivar.
 export async function registrarDerivacion(
   ctx: ContextoDerivacion,
   motivo: MotivoDerivacion,
@@ -78,7 +81,7 @@ export async function registrarDerivacion(
     id = String(filas[0].id);
   }
   await ctx.db.consulta(
-    "update conversaciones set estado = 'derivada' where id = $1::uuid and estado <> 'derivada'",
+    "update conversaciones set estado = 'derivada', lucia_activa = false where id = $1::uuid",
     [ctx.conversacionId],
   );
   return { id, yaEstaba: previa.length > 0 };

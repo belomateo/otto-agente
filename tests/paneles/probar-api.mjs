@@ -429,10 +429,14 @@ async function verificarLimpieza() {
   // depende de la foto de esta corrida (que puede estar corrupta si YA venía mal): compara
   // contra el rango real del negocio (docs/ficha-del-negocio.md, "recomendado entre 60 y 7 días
   // antes"), así agarra el caso de que el propio snapshot ya esté pisado.
+  // Corrección del 3/10: "entre 60 y 7 días" es la ANTICIPACIÓN recomendada para alquilar, no la
+  // reserva de urgencia. Con ese rango este control daba por bueno el 7 (residuo de arnés) y por
+  // malo el 3 que fijó Mateo el 16/9. Si la dueña la cambia desde el panel, actualizar acá.
+  const RESERVA_DEL_NEGOCIO = 3;
   const dru = (await q("select dias_reserva_urgencia from configuracion_agenda"))[0]?.dias_reserva_urgencia;
   ok(
-    dru >= 7 && dru <= 60,
-    `configuracion_agenda.dias_reserva_urgencia sigue en un valor real de negocio, no de prueba (${dru}, esperado entre 7 y 60)`
+    dru === RESERVA_DEL_NEGOCIO,
+    `configuracion_agenda.dias_reserva_urgencia sigue en el valor del negocio, no de prueba (${dru}, esperado ${RESERVA_DEL_NEGOCIO})`
   );
 }
 

@@ -304,20 +304,44 @@ prueba("número fuera de LUCIA_TELEFONOS: ni turno ni Meta, y queda anotado", as
 // derivada, así que el arreglo del worker no corría nunca en producción. Se arregló en 0063.
 // Ahora se deriva PRIMERO y el mensaje entra con la charla ya derivada, que es lo que pasa de
 // verdad cuando alguien del local tomó la charla y el cliente sigue escribiendo.
-prueba("charla derivada: el mensaje entra, encola y el turno corre avisado (0063)", async (c) => {
-  // Una charla derivada de entrada: el cliente escribe DESPUÉS de que la tomaron.
+//
+// Regla nueva de Mateo (3/10, 0081): derivar APAGA a Lucía hasta que alguien toque "Activar
+// Lucía" en el panel — con la regla del 21/9 seguía contestando sola y repetía "te paso con el
+// equipo" encima del equipo. Las dos pruebas de abajo cubren los dos lados.
+async function derivarCharla(c: Contexto) {
   await mensajeDelCliente(c, TEL, "hola");
   await c.sql.query(
     "update conversaciones set estado = 'derivada' where cliente_id = (select id from clientes where telefono = $1)",
     [TEL],
   );
   await c.sql.query("delete from cola_trabajos");
-  await mensajeDelCliente(c, TEL, "sigo escribiendo con la charla ya derivada");
+}
 
-  // Lo primero que hay que afirmar es que HAY trabajo: sin esto, todo lo de abajo pasaría
-  // igual con Lucía muda, que es exactamente como se escondió el bug.
+prueba("charla derivada: Lucía queda apagada, el mensaje encola y el turno no corre (0081)", async (c) => {
+  await derivarCharla(c);
+  const activa = (await c.sql.query(
+    "select c.lucia_activa from conversaciones c join clientes cl on cl.id = c.cliente_id where cl.telefono = $1",
+    [TEL],
+  )).rows[0].lucia_activa;
+  assertEquals(activa, false, "pasar a 'derivada' apaga a Lucía (trigger de 0081)");
+  await mensajeDelCliente(c, TEL, "sigo escribiendo con la charla ya derivada");
+  // El mensaje igual entra a la cola (0063): el equipo lo ve en el panel.
   const enCola = (await c.sql.query("select count(*)::int as n from cola_trabajos")).rows[0].n;
   assertEquals(enCola, 1, "con la charla derivada el mensaje tiene que encolar (0063)");
+
+  const { d, turno, meta } = armar(c);
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals([turno.llamadas.length, meta.envios.length], [0, 0]);
+  assert((await eventos(c, TEL)).some((e) => String(e.detalle.nota).includes("Lucía desactivada")));
+});
+
+prueba("charla derivada y reactivada desde el panel: el turno corre avisado con yaDerivada", async (c) => {
+  await derivarCharla(c);
+  await c.sql.query(
+    "update conversaciones set lucia_activa = true where cliente_id = (select id from clientes where telefono = $1)",
+    [TEL],
+  );
+  await mensajeDelCliente(c, TEL, "sigo escribiendo con la charla ya derivada");
 
   const { d, turno } = armar(c);
   await atenderCola(c.db, d, "worker-prueba");

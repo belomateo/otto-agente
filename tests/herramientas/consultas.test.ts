@@ -183,7 +183,10 @@ prueba("buscar_horarios ofrece hasta dos por franja y por día", async ({ ctx, a
   assertEquals(ctx.traza.huecosOfrecidos.length, 4);
 });
 
-prueba("buscar_horarios busca desde hoy si le piden un día que pasó, y rechaza rangos inválidos", async ({ ctx, agenda }) => {
+prueba("buscar_horarios busca desde hoy si le piden un día que pasó, y rechaza rangos inválidos", async ({ ctx, sql, agenda }) => {
+  // Sin reserva de urgencia: con reserva y sin fecha de evento, el vacío pide la fecha del evento
+  // en vez de derivar (reserva_urgencia.test.ts); acá se prueba el vacío de siempre.
+  await sql.query("update configuracion_agenda set dias_reserva_urgencia = null");
   const r = await buscar(ctx, "2030-05-20", JUEVES, "invitado");
   esOk(r);
   assertEquals(agenda.pedidos[0].desde, LUNES);

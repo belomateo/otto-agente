@@ -16,14 +16,18 @@ for (const caso of [
   { mensaje: "Horario y con que antelación debo alquilarlo", reserva: false, esperado: "sigue" },
   // Caso real del 2/10 (Alessandro): ya tenía turno y quería sumar a otra persona; derivó.
   { mensaje: "Quiero consultarte si podés agregar a mi turno a otra persona que también quiere alquilar, así vamos juntos. Es para el mismo evento", reserva: false, esperado: "sumar", turnoPrevio: true },
-] as { mensaje: string; reserva: boolean; esperado: string; turnoPrevio?: boolean }[]) {
+  // Casos reales del 3/10: Larisa ("turno para el lunes", dentro de la reserva y sin fecha de
+  // evento) y los que pedían la tarde ("después de las 16"); los dos terminaban derivados.
+  { mensaje: "Hola! Quisiera sacar turno para el miércoles", reserva: false, esperado: "pregunta_evento", reservaDias: 3 },
+  { mensaje: "Hola, quiero un turno el jueves después de las 16", reserva: false, esperado: "franja" },
+] as { mensaje: string; reserva: boolean; esperado: string; turnoPrevio?: boolean; reservaDias?: number }[]) {
   prueba(`Lucía real: ${caso.mensaje}`, async ({ sql, ctx, clienteId, conversacionId }) => {
     await sql.query("set local lock_timeout = '5s'");
     await sql.query("set local otto.sin_disparo = 'on'");
     // 0074–0079 ya están en producción (2/10). Se prueba la plantilla del repo tal cual está, sin
     // cargarla: dentro de esta transacción, que termina en rollback.
     await sql.query("update prompt_base set texto = $1 where unica", [await Deno.readTextFile(new URL("../plantilla-agente/02-prompt.md", import.meta.url))]);
-    await sql.query("update configuracion_agenda set dias_reserva_urgencia = null");
+    await sql.query("update configuracion_agenda set dias_reserva_urgencia = $1", [caso.reservaDias ?? null]);
     await sql.query("update clientes set nombre = null, evento = null, fecha_evento = null, rol = null, email = null where id = $1", [clienteId]);
     if (caso.turnoPrevio) {
       await sql.query("insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin) values ($1, 'invitado', 45, 1, $2::timestamptz, $2::timestamptz + interval '45 minutes')", [clienteId, iso(JUEVES, "12:00")]);
@@ -72,6 +76,12 @@ for (const caso of [
       assertEquals(/cerrad|no hay|no tenemos/i.test(r.mensajesAlCliente.join("\n")), false);
     } else if (caso.esperado === "infantil") {
       assertMatch(r.mensajesAlCliente.join("\n"), /4\s*(?:al|a|hasta|–|-)\s*16/);
+    } else if (caso.esperado === "pregunta_evento") {
+      assertMatch(r.mensajesAlCliente.join("\n"), /evento|fecha|para cu[aá]ndo/i);
+      assertEquals(/no hay|no tenemos|no quedan/i.test(r.mensajesAlCliente.join("\n")), false);
+    } else if (caso.esperado === "franja") {
+      assertMatch(r.mensajesAlCliente.join("\n"), /\b1[6-8][:.]\d{2}/);
+      assertEquals(/\b13[:.](00|15)\b/.test(r.mensajesAlCliente.join("\n")), false);
     } else if (caso.esperado === "sumar") {
       assertMatch(r.mensajesAlCliente.join("\n"), /mismo turno|pueden venir|vengan|sumar/i);
       assertEquals(/no se puede|no hay|no tenemos/i.test(r.mensajesAlCliente.join("\n")), false);

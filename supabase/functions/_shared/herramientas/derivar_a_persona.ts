@@ -115,6 +115,18 @@ export const derivarAPersona: Herramienta<Args> = {
         }
       }
     }
+    // Vacío por la reserva de urgencia y sin fecha de evento (caso Larisa, 3/10): no falta una
+    // persona, falta preguntarle la fecha. Solo frena los motivos de "no encontré lugar/dato".
+    if (
+      ctx.traza.reservaSinFechaEvento && ctx.traza.huecosOfrecidos.length === 0 &&
+      (args.motivo === "dato_no_encontrado" || args.motivo === "turno_urgente_sin_hueco")
+    ) {
+      return rechazo(
+        "falta_fecha_evento",
+        "Los días que buscaste se guardan para eventos muy cercanos y todavía no sabés la fecha del evento: " +
+          "no derives, preguntale para cuándo es el evento y volvé a buscar con fecha_evento.",
+      );
+    }
     const mensaje = limpio(args.mensaje_al_cliente);
     if (mensaje && /[?¿]/.test(mensaje)) {
       return rechazo(
