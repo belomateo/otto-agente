@@ -16,7 +16,13 @@ for (const k of ['OPENAI_API_KEY', 'SUPABASE_DB_URL', 'LLM_PRINCIPAL', 'LLM_CLAS
 if (!env.OPENAI_API_KEY.startsWith('sk-')) throw new Error('La clave local no corresponde al proveedor de Lucía.');
 console.log(`Modelos del ensayo: ${env.LLM_PRINCIPAL}, ${env.LLM_CLASIFICADOR}, ${env.LLM_EXTRACTOR}`);
 const filtro = process.argv.indexOf('--filtro');
-const p = spawn('deno', ['test', '--no-lock', '--node-modules-dir=none', '--allow-net', '--allow-env', '--allow-read', ...(filtro >= 0 ? ['--filter', process.argv[filtro + 1]] : []), 'scripts/probar-reserva-minima.ts'], { env, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+// --repetir <conversacion_id> <enviado_at> [...]: en vez de la prueba, repite una charla real con
+// scripts/repetir-charla.ts (mismo entorno: la clave del .env del proyecto, nunca una ajena).
+const repetir = process.argv.indexOf('--repetir');
+const comando = repetir >= 0
+  ? ['run', '--no-lock', '--node-modules-dir=none', '-A', 'scripts/repetir-charla.ts', ...process.argv.slice(repetir + 1)]
+  : ['test', '--no-lock', '--node-modules-dir=none', '--allow-net', '--allow-env', '--allow-read', ...(filtro >= 0 ? ['--filter', process.argv[filtro + 1]] : []), 'scripts/probar-reserva-minima.ts'];
+const p = spawn('deno', comando, { env, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
 const redactar = (b) => String(b).replaceAll(env.OPENAI_API_KEY, '[clave omitida]').replace(/sk-[\w.*-]+/g, '[clave omitida]');
 p.stdout.on('data', (b) => process.stdout.write(redactar(b)));
 p.stderr.on('data', (b) => process.stderr.write(redactar(b)));
