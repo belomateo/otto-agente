@@ -22,7 +22,13 @@ export const guardarDatosCliente: Herramienta<Ficha> = {
     nombre: { type: ["string", "null"], maxLength: 80, description: "Nombre, como lo dijo." },
     evento: { type: ["string", "null"], enum: [...EVENTOS, null], description: "Para qué evento es." },
     fecha_evento: { type: ["string", "null"], format: "date", description: "Fecha del evento, AAAA-MM-DD." },
-    rol: { type: ["string", "null"], enum: [...ROLES_CLIENTE, null], description: "Quién es en el evento." },
+    // Revisión del 4/10: "es para mi novio" (la pareja, que se gradúa) quedó como novio, y a un
+    // invitado de un casamiento de noche le guardó novio sin que lo dijera.
+    rol: {
+      type: ["string", "null"],
+      enum: [...ROLES_CLIENTE, null],
+      description: "Quién se viste, solo si lo dijo. novio es el que se casa, no la pareja de quien escribe.",
+    },
     dia_o_noche: { type: ["string", "null"], enum: [...DIA_O_NOCHE, null], description: "Si el evento es de día o de noche." },
     talle_aprox: { type: ["string", "null"], maxLength: 20, description: "Talle aproximado, como lo dijo." },
     ciudad: { type: ["string", "null"], maxLength: 60, description: "De dónde es." },

@@ -317,6 +317,23 @@ Deno.test("precio_sin_herramienta no confunde días de anticipación con un prec
   );
 });
 
+// Revisión de las últimas 30 charlas, 4/10: horarios, minutos, cumples de 15 y "$150 mil".
+Deno.test("precio_sin_herramienta no confunde horarios, minutos, cumples de 15 ni «$150 mil» con un precio", () => {
+  assertEquals(montos("Los sábados atendemos hasta las 18."), []);
+  assertEquals(montos("Los turnos del sábado son de 9:30 a 12 y de 13:15 a 18:30."), []);
+  assertEquals(montos("Te esperamos entre las 10 y las 18."), []);
+  assertEquals(montos("Hay 10 minutos de tolerancia."), []);
+  assertEquals(montos("Para un cumple de 15 o una fiesta de 15."), []);
+  assertEquals(montos("El alquiler arranca en $150 mil."), [150000]);
+  assertEquals(montos("Camisa y corbata $33,5 mil."), [33500]);
+});
+
+Deno.test("precio_sin_herramienta sigue viendo un monto suelto o un total inventado (caso parecido)", () => {
+  assertEquals(montos("Te sale 90, con todo incluido."), [90]);
+  assertEquals(montos("El total sería $238.500."), [238500]);
+  assertEquals(montos("Las dos prendas por 18 mil."), [18000]);
+});
+
 // URGENTE, hallazgo de Mateo/logica en vivo contra el worker desplegado, 16/9: "te agendo el
 // martes 23 a las 13" leía el día del mes (23) como precio. Rompía agendar_turno de punta a
 // punta — la barandilla no dejaba salir ninguna confirmación, y el cliente se quedaba sin

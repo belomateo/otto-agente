@@ -34,7 +34,7 @@ export const consultarCatalogo: Herramienta<Args> = {
     "prenda, no el catálogo entero. Filtrá por color o talle solo si el cliente lo dijo. Si lo que busca no " +
     "aparece, no está cargado: no lo aproximes.",
   parametros: objeto({
-    modelo: { type: ["string", "null"], maxLength: 60, description: "Modelo puntual que preguntó el cliente, con sus palabras, o null si está mirando opciones en general." },
+    modelo: { type: ["string", "null"], maxLength: 80, description: "Modelo puntual que preguntó el cliente, con sus palabras (varios, separados por coma), o null si está mirando opciones en general." },
     color: { type: ["string", "null"], maxLength: 40, description: "Color que pidió el cliente, o null." },
     talle: { type: ["string", "null"], maxLength: 10, description: "Talle que dijo el cliente, o null." },
   }),
@@ -52,8 +52,15 @@ export const consultarCatalogo: Herramienta<Args> = {
     const color = limpio(args.color);
     const talle = limpio(args.talle);
     if (modeloBuscado) {
-      valores.push(modeloBuscado);
-      filtros.push(`immutable_unaccent(lower(modelo)) like '%' || immutable_unaccent(lower($${valores.length})) || '%'`);
+      // Varios modelos juntos ("Ambo Livorno, Smoking, Ambo Tech"): cualquiera de ellos. Revisión
+      // del 4/10: la clienta dijo "dale" a las fotos, Lucía pidió los tres en un solo texto, no
+      // coincidió ninguno y derivó en vez de mandarlas.
+      const partes = modeloBuscado.split(/\s*(?:,|;|\/|\by\b|\bo\b)\s*/i).map((p) => p.trim()).filter(Boolean);
+      const condiciones = partes.map((p) => {
+        valores.push(p);
+        return `immutable_unaccent(lower(modelo)) like '%' || immutable_unaccent(lower($${valores.length})) || '%'`;
+      });
+      filtros.push(`(${condiciones.join(" or ")})`);
     }
     if (color) {
       valores.push(color);

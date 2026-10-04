@@ -10,8 +10,9 @@
 // Uso (desde la raíz del repo):
 //   deno run --no-lock --node-modules-dir=none -A --env-file=.env scripts/repetir-charla.ts \
 //     <conversacion_id> <enviado_at del 1er mensaje a contestar> [<enviado_at del 2º> ...] \
-//     [--modelos ../otto-agente-ia/.env]
+//     [--modelos ../otto-agente-ia/.env] [--ficha-vacia]
 // --modelos: un .env de donde tomar SOLO LLM_PRINCIPAL/CLASIFICADOR/EXTRACTOR si este no los tiene.
+// Más cómodo: node scripts/ejecutar-prueba-real.mjs --modelos ../otto-agente-ia/.env --repetir <args>.
 
 // @deno-types="npm:@types/pg@8.11.10"
 import pg from "npm:pg@8.13.1";
@@ -29,6 +30,11 @@ if (iModelos >= 0) {
   }
   args.splice(iModelos, 2);
 }
+// --ficha-vacia: el cliente de prueba arranca solo con el nombre. Sin esto se copia la ficha de
+// HOY, que puede traer datos que en ese momento de la charla todavía no se sabían.
+const iVacia = args.indexOf("--ficha-vacia");
+const fichaVacia = iVacia >= 0;
+if (fichaVacia) args.splice(iVacia, 1);
 const [conversacionReal, ...puntos] = args;
 if (!conversacionReal || puntos.length === 0) throw new Error("Uso: repetir-charla.ts <conversacion_id> <enviado_at> [...]");
 const TZ = Deno.env.get("NEGOCIO_TZ") || "America/Argentina/Buenos_Aires";
@@ -49,7 +55,9 @@ try {
   const { rows: [{ id: clienteId }] } = await sql.query(
     `insert into clientes (telefono, nombre, evento, fecha_evento, rol, dia_o_noche, talle_aprox)
      values ($1, $2, $3, $4, $5, $6, $7) returning id::text as id`,
-    [telefono, real.nombre, real.evento, real.fecha_evento, real.rol, real.dia_o_noche, real.talle_aprox],
+    fichaVacia
+      ? [telefono, real.nombre, null, null, null, null, null]
+      : [telefono, real.nombre, real.evento, real.fecha_evento, real.rol, real.dia_o_noche, real.talle_aprox],
   );
   const { rows: [{ id: conversacionId }] } = await sql.query(
     "insert into conversaciones (cliente_id, canal) values ($1, 'prueba') returning id::text as id",

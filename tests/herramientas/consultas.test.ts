@@ -193,7 +193,10 @@ prueba("buscar_horarios busca desde hoy si le piden un día que pasó, y rechaza
   assertMatch(String(r.datos.aviso), /desde hoy/);
   assertMatch(String(r.datos.nota), /dato_no_encontrado/);
   esRechazo(await buscar(ctx, JUEVES, MARTES, "invitado"), "rango_invertido");
-  esRechazo(await buscar(ctx, LUNES, "2030-07-03", "invitado"), "rango_muy_largo");
+  // Más de dos semanas ya no se rechaza: se recorta a dos semanas y se avisa (4/10).
+  const largo = await buscar(ctx, LUNES, "2030-07-03", "invitado");
+  esOk(largo);
+  assertMatch(String(largo.datos.aviso), /se buscó hasta 2030-06-16/);
   esRechazo(await buscar(ctx, LUNES, JUEVES, "casamiento" as never), "argumentos_invalidos");
 });
 

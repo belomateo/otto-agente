@@ -102,10 +102,15 @@ export const buscarHorarios: Herramienta<Args> = {
     if (args.hasta < desde) {
       return rechazo("rango_invertido", "hasta es anterior a desde (o ya pasó). Pedí un rango que termine hoy o después.");
     }
-    if (diasEntre(desde, args.hasta) > RANGO_MAXIMO_DIAS) {
-      return rechazo("rango_muy_largo", `Pedí como mucho ${RANGO_MAXIMO_DIAS + 1} días por vez.`);
+    // Más de dos semanas: se recorta y se avisa, en vez de rechazar. El modelo pedía "dos semanas"
+    // contando 15 días y perdía una vuelta entera (4 rechazos en las últimas 30 charlas; a un
+    // cliente le preguntó "qué día te queda cómodo" en vez de ofrecerle horarios).
+    let hasta = args.hasta;
+    if (diasEntre(desde, hasta) > RANGO_MAXIMO_DIAS) {
+      hasta = sumarDias(desde, RANGO_MAXIMO_DIAS);
+      avisos.push(`se buscó hasta ${hasta}: dos semanas por vez.`);
     }
-    if (elegido && (!(elegido > ctx.ahora) || fechaLocal(elegido, ctx.tz) < desde || fechaLocal(elegido, ctx.tz) > args.hasta)) {
+    if (elegido && (!(elegido > ctx.ahora) || fechaLocal(elegido, ctx.tz) < desde || fechaLocal(elegido, ctx.tz) > hasta)) {
       return rechazo("fecha_hora_fuera_de_rango", "La fecha y hora elegidas deben ser futuras y estar dentro del rango consultado.");
     }
     for (const h of [args.desde_hora, args.hasta_hora]) {
@@ -114,11 +119,11 @@ export const buscarHorarios: Herramienta<Args> = {
     const desdeMin = args.desde_hora ? aMinutos(args.desde_hora) : null;
     const hastaMin = args.hasta_hora ? aMinutos(args.hasta_hora) : null;
 
-    ctx.traza.rangosBuscados.push({ desde, hasta: args.hasta });
+    ctx.traza.rangosBuscados.push({ desde, hasta });
 
     const agenda = await ctx.agenda.huecos({
       desde,
-      hasta: args.hasta,
+      hasta,
       tipo,
       ahora: ctx.ahora,
       fechaEvento,
@@ -132,7 +137,7 @@ export const buscarHorarios: Herramienta<Args> = {
       const inicio = new Date(h.inicio);
       const fin = new Date(h.fin);
       const valido = !Number.isNaN(inicio.getTime()) && inicio > ctx.ahora &&
-        fechaLocal(inicio, ctx.tz) >= desde && fechaLocal(inicio, ctx.tz) <= args.hasta &&
+        fechaLocal(inicio, ctx.tz) >= desde && fechaLocal(inicio, ctx.tz) <= hasta &&
         dentroDeFranja(inicio, fin, franjas, ctx.tz, h.probador).ok;
       if (!valido) {
         descartados++;

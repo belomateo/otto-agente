@@ -15,6 +15,7 @@
 // botones, alcanza con llenarlo. Mandar un component de botón para una plantilla registrada SIN
 // botones hace que Meta rechace el envío, así que acá va vacío siempre.
 
+import { nombreUsable } from "../nombre.ts";
 import { fechaLarga, horaLocal } from "../tiempo.ts";
 import type { PlantillaAEnviar } from "./enviar.ts";
 
@@ -69,7 +70,11 @@ function horaDePlantilla(fecha: Date, tz: string): string {
 }
 
 export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string): Plantilla | { falta: string } {
-  const nombre = primerNombre(d.nombre);
+  // Con un perfil que no es un nombre («siempre te elijo» salía «¡Hola Siempre!», 4/10): el
+  // recontacto, que es publicidad, no sale; el recordatorio y el agradecimiento, que el cliente
+  // espera, salen igual con lo que haya.
+  const usable = nombreUsable(d.nombre);
+  const nombre = primerNombre(tipo === "recontacto_1" || tipo === "recontacto_2" ? usable : usable ?? d.nombre);
   if (!nombre) return { falta: "el nombre del cliente" };
   const base = { nombre: NOMBRE_PLANTILLA[tipo], idioma: IDIOMA_PLANTILLAS, botones: [] };
 

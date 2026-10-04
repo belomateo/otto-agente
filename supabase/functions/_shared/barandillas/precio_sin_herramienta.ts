@@ -31,6 +31,16 @@ const aNumero = (s: string) => Number(s.replace(/[.\s]/g, ""));
 // números sueltos (así "talle 48" no dispara con el 48, pero "sale 48" sí).
 const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   /\d+(?:[.,]\d+)?\s*(?:mil|lucas|k)\b/g, // "150 mil": ya lo cuenta la regla del millar, es OTRO monto
+  // Horarios y minutos (revisión de las últimas 30 charlas, 4/10): "los sábados hasta las 18",
+  // "de 9:30 a 12", "entre las 10 y las 18" y "10 minutos de tolerancia" se leían como precios
+  // de $18, $12, $10. Con cuatro preguntas juntas (horarios, seña, precio, pagos) Lucía lo
+  // contestó bien, la barandilla saltó dos veces y la charla terminó derivada.
+  /\b(?:de|desde)\s+(?:las?\s+)?\d{1,2}(?:[:.]\d{2})?\s*(?:a|hasta)\s+(?:las?\s+)?\d{1,2}(?:[:.]\d{2})?\b/g,
+  /\blas?\s+\d{1,2}(?:[:.]\d{2})?\b(?!\s*(?:mil|lucas|k)\b)/g,
+  /\b\d{1,3}\s*(?:minutos?|min)\b/g,
+  // Cumples de 15: "un cumple de 15", "una fiesta de 15", "tu 15".
+  /\b(?:cumple|fiesta|fiestas|quince)\s+de\s+\d{1,2}\b/g,
+  /\b(?:un|tu|su|sus|los)\s+15\b/g,
   /\btalles?\s+\d{1,3}\s*(?:al?|hasta|[-–])\s*\d{1,3}\b/g, // "talles 4–16"
   /\btalle\s+\d{1,3}\b/g, // "talle 4" o "talle 48"
   /\bdel?\s+\d{1,3}\s+al?\s+\d{1,3}\b/g, // "del 4 al 16" y "del 44 al 68"
@@ -85,14 +95,18 @@ const escaparRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function enmascararNombre(normalizado: string, nombreCliente: string): string {
   const nombre = normalizar(nombreCliente).trim();
   if (!nombre) return normalizado;
-  return normalizado.replace(new RegExp(`\\b${escaparRegex(nombre)}\\b`, "g"), (m) => "·".repeat(m.length));
+  // Desde el 4/10 la ficha trae el nombre ya limpio ("Martin 23" → "Martin", nombre.ts): el número
+  // que venga pegado atrás también es del perfil, no un precio.
+  return normalizado.replace(new RegExp(`\\b${escaparRegex(nombre)}(?:\\s+\\d{1,4})?\\b`, "g"), (m) => "·".repeat(m.length));
 }
 
 export function montos(t: string, nombreCliente?: string | null): number[] {
   let crudo = normalizar(String(t ?? ""));
   if (nombreCliente) crudo = enmascararNombre(crudo, nombreCliente);
   const res = new Set<number>();
-  for (const m of crudo.matchAll(/\$\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?/g)) res.add(aNumero(m[1]));
+  // "$150 mil" o "$33,5 mil" no son $150 ni $33: el monto lo cuenta la regla del millar de abajo
+  // (4/10: Lucía dijo "$150 mil", saltó por "$150" y terminó sin dar el precio que tenía).
+  for (const m of crudo.matchAll(/\$\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?(?![\d,])(?!\s*(?:mil|lucas|k)\b)/g)) res.add(aNumero(m[1]));
   for (const m of crudo.matchAll(/(?<![\d$.,])(\d{1,3}(?:\.\d{3})+)(?![\d.,])/g)) res.add(aNumero(m[1]));
   for (const m of crudo.matchAll(/(?<![\d$.,])(\d{5,})(?![\d.,])/g)) res.add(Number(m[1]));
   for (const m of crudo.matchAll(/(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(?:mil|lucas|k)\b/g)) {

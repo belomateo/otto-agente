@@ -4,6 +4,7 @@
 
 import type { Db } from "../db.ts";
 import { AUTOR_LUCIA } from "../enums.ts";
+import { nombreUsable } from "../nombre.ts";
 
 export const CAMPOS_FICHA = [
   "nombre",
@@ -51,9 +52,13 @@ export async function leerFicha(db: Db, clienteId: string): Promise<Ficha> {
     [clienteId],
   );
   const f = filas[0] ?? {};
-  return Object.fromEntries(
+  const ficha = Object.fromEntries(
     CAMPOS_FICHA.map((c) => [c, f[c] === null || f[c] === undefined ? null : String(f[c])]),
   ) as Ficha;
+  // El perfil de WhatsApp no siempre es un nombre («siempre te elijo», «pichigodoy916»): si no lo
+  // parece, para Lucía y la lista del turno no hay nombre (nombre.ts). En la base queda igual.
+  ficha.nombre = nombreUsable(ficha.nombre);
+  return ficha;
 }
 
 // Escribe solo los campos que vinieron con valor y solo si cambian. Devuelve los que escribió.
