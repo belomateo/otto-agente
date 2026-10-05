@@ -7,8 +7,8 @@
 // después en el local no estaba para su talle o su fecha, el problema lo tenía el equipo. Los
 // modelos se ven en el catálogo online (enviar_link, tipo web) y la disponibilidad depende del
 // talle y de la fecha del alquiler. Por eso esto ya no devuelve nombres, colores, talles ni
-// fotos: solo el precio (o desde cuánto, si cambia según el modelo) y lo que incluye. Color y
-// talle se fueron con eso: eran filtros para recomendar. `modelo` queda para "¿cuánto sale el
+// fotos: solo desde cuánto arranca el alquiler ("a partir de", siempre) y lo que incluye. Color
+// y talle se fueron con eso: eran filtros para recomendar. `modelo` queda para "¿cuánto sale el
 // smoking?".
 
 import { accesoriosEn } from "../barandillas/accesorio_sin_herramienta.ts";
@@ -45,8 +45,9 @@ async function preciosCargados(db: Db, modelo: string | null): Promise<{ filas: 
 export const consultarCatalogo: Herramienta<Args> = {
   nombre: "consultar_catalogo",
   tipo: "consulta",
-  descripcion: "Devuelve el precio del alquiler y qué incluye. Obligatoria antes de decir cualquier precio, que va " +
-    "SIEMPRE junto con lo que incluye, en el mismo mensaje, dicho con tus palabras. No es para recomendar: no " +
+  descripcion: "Devuelve desde cuánto arranca el alquiler y qué incluye. Obligatoria antes de decir cualquier precio, " +
+    "que se dice siempre «a partir de» y va SIEMPRE junto con lo que incluye, en el mismo mensaje, dicho con tus " +
+    "palabras. No es para recomendar: no " +
     "describas, compares ni recomiendes modelos, colores o talles. Para ver los modelos mandá el catálogo online " +
     "(enviar_link, tipo web) y aclarale que la disponibilidad depende del talle y de la fecha del alquiler. Si " +
     "pregunta el precio de un modelo puntual, mandá `modelo` con su nombre o como lo describió.",
@@ -87,19 +88,19 @@ export const consultarCatalogo: Herramienta<Args> = {
     // repetir sin que accesorio_sin_herramienta la frene.
     ctx.traza.accesoriosDevueltos.push(...accesoriosEn(queIncluye));
 
+    // Mateo, 5/10: el precio se dice siempre "a partir de". El equipo le habló a un cliente de
+    // precios más altos que los cargados y no hay respuesta todavía: el piso es lo único seguro.
     const datos: Record<string, unknown> = { que_incluye: queIncluye, nota: NOTA_MODELOS };
-    if (precios.length === 1) {
-      datos.precio = precios[0];
-    } else if (precios.length > 1) {
+    if (precios.length) {
       datos.precio_desde = precios[0];
-      datos.precio_hasta = precios[precios.length - 1];
-      datos.nota_precios = "El precio cambia según el modelo: decí desde cuánto sale; el de cada modelo lo confirma el equipo en el local.";
+      datos.nota_precios = "Decí que el alquiler es a partir de ese precio («a partir de» o «desde»), nunca como un precio " +
+        "cerrado: el de cada modelo lo confirma el equipo en el local.";
     } else {
       datos.nota_precios = "No hay precio cargado: NO des ningún precio ni digas que sale cero. Decí lo que incluye y que el precio lo confirma el equipo del local.";
     }
     if (sinCoincidencia) {
       datos.nota_modelo = `No hay un precio cargado con el nombre «${modeloBuscado}»: no digas que no lo tenemos ni lo cambies por otro modelo. ` +
-        "Dale el precio del alquiler aclarando que el de ese modelo puntual se confirma en el local, y mandale el catálogo online.";
+        "Decile desde cuánto arranca el alquiler, aclarando que el de ese modelo puntual se confirma en el local, y mandale el catálogo online.";
     }
     return { ok: true, datos };
   },

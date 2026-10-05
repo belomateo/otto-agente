@@ -64,7 +64,10 @@ prueba("consultar_catalogo da el precio y qué incluye, sin modelos, colores ni 
 
   const r = await ejecutarHerramienta("consultar_catalogo", { modelo: null }, ctx);
   esOk(r);
-  assertEquals(r.datos.precio, 111);
+  // Mateo, 5/10: siempre "a partir de", aunque todos los cargados salgan lo mismo.
+  assertEquals(r.datos.precio_desde, 111);
+  assertEquals(r.datos.precio, undefined);
+  assertMatch(String(r.datos.nota_precios), /a partir de/);
   assertEquals(r.datos.que_incluye, "El precio incluye sastrería y tintorería.");
   for (const clave of ["modelos", "colores", "talles"]) assertEquals(r.datos[clave], undefined, `no devuelve ${clave}`);
   assert(!JSON.stringify(r.datos).includes("Clásico"), "no nombra los modelos");
@@ -76,15 +79,15 @@ prueba("consultar_catalogo da el precio y qué incluye, sin modelos, colores ni 
   esRechazo(await ejecutarHerramienta("consultar_catalogo", { modelo: null, color: "azul" }, ctx), "argumentos_invalidos");
 });
 
-prueba("consultar_catalogo con precios distintos según el modelo dice desde cuánto (5/10)", async ({ ctx, sql }) => {
+prueba("consultar_catalogo con precios distintos según el modelo da el más bajo, como «a partir de» (5/10)", async ({ ctx, sql }) => {
   await soloEstosModelos(sql);
   await soloEstosFragmentos(sql, [{ tema: "que-incluye", titulo: "Qué incluye el precio", texto: "El precio incluye sastrería y tintorería." }]);
   await crearModelo(sql, { modelo: "Clásico", precio: 111 });
   await crearModelo(sql, { modelo: "Noche", precio: 222 });
   const r = await ejecutarHerramienta("consultar_catalogo", { modelo: null }, ctx);
   esOk(r);
-  assertEquals([r.datos.precio, r.datos.precio_desde, r.datos.precio_hasta], [undefined, 111, 222]);
-  assertMatch(String(r.datos.nota_precios), /desde cuánto/);
+  assertEquals([r.datos.precio, r.datos.precio_desde, r.datos.precio_hasta], [undefined, 111, undefined]);
+  assertMatch(String(r.datos.nota_precios), /a partir de/);
   assertEquals([...new Set(ctx.traza.preciosDevueltos)].sort((a, b) => a - b), [111, 222]);
 });
 
@@ -100,13 +103,13 @@ prueba("consultar_catalogo: un modelo con precio_base en 0 no tiene precio, y no
 
   const r = await ejecutarHerramienta("consultar_catalogo", { modelo: null }, ctx);
   esOk(r);
-  assertEquals(r.datos.precio, 333);
+  assertEquals(r.datos.precio_desde, 333);
   assertEquals(ctx.traza.preciosDevueltos.includes(0), false);
 
   // Si el único que coincide no tiene precio: la nota le dice que no invente ni diga que sale cero.
   const sinPrecio = await ejecutarHerramienta("consultar_catalogo", { modelo: "sin precio" }, ctx);
   esOk(sinPrecio);
-  assertEquals(sinPrecio.datos.precio, undefined);
+  assertEquals(sinPrecio.datos.precio_desde, undefined);
   assertMatch(String(sinPrecio.datos.nota_precios), /NO des ningún precio/);
   assertEquals([...new Set(ctx.traza.preciosDevueltos)], [333]);
 });
@@ -117,15 +120,16 @@ prueba("consultar_catalogo: el precio de un modelo puntual, y si no está cargad
   await crearModelo(sql, { modelo: "Clásico azul marino", precio: 111, colores: ["Azul marino"], talles: ["48"] });
   await crearModelo(sql, { modelo: "Slim gris oxford", precio: 222, colores: ["Gris"], talles: ["50"] });
 
-  const puntual = await ejecutarHerramienta("consultar_catalogo", { modelo: "clasico" }, ctx);
+  const puntual = await ejecutarHerramienta("consultar_catalogo", { modelo: "slim" }, ctx);
   esOk(puntual);
-  assertEquals(puntual.datos.precio, 111);
+  assertEquals(puntual.datos.precio_desde, 222);
   assertEquals(puntual.datos.nota_modelo, undefined);
 
-  // Un modelo que no está cargado con ese nombre: el precio general, sin negarlo ni cambiarlo por otro.
+  // Un modelo que no está cargado con ese nombre: desde cuánto arranca el alquiler, sin negarlo ni
+  // cambiarlo por otro.
   const sinCoincidencia = await ejecutarHerramienta("consultar_catalogo", { modelo: "esmoquin" }, ctx);
   esOk(sinCoincidencia);
-  assertEquals([sinCoincidencia.datos.precio_desde, sinCoincidencia.datos.precio_hasta], [111, 222]);
+  assertEquals(sinCoincidencia.datos.precio_desde, 111);
   assertMatch(String(sinCoincidencia.datos.nota_modelo), /no digas que no lo tenemos/);
   assertMatch(String(sinCoincidencia.datos.nota_modelo), /catálogo online/);
 });

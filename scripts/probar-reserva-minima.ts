@@ -105,7 +105,7 @@ for (const caso of [
       assertEquals(/no tenemos|no hay|no trabajamos/i.test(t), false);
     } else if (caso.esperado === "precio") {
       const t = r.mensajesAlCliente.join("\n");
-      assertMatch(t, /150(?:\.000| mil)/);
+      assertMatch(t, /(?:a partir de|desde|arranca)[^.]{0,20}150(?:\.000| mil)/i, "siempre «a partir de» (Mateo, 5/10)");
       assertEquals(/livorno|tech|azulino|pizarra/i.test(t), false, "no nombra modelos");
     } else if (caso.esperado === "corrido") {
       const t = r.mensajesAlCliente.join("\n");

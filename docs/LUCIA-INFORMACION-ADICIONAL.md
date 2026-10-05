@@ -1,6 +1,6 @@
 # Lucía — información adicional
 
-Generado el 5 de octubre de 2026 a las 11:58 a. m. desde la base de producción (no es una copia a mano). Prompt vivo: versión 29, última edición «Mateo 5/10: prenda dudosa al catálogo; nunca «lo confirma el equipo» sin derivar».
+Generado el 5 de octubre de 2026 a las 1:28 p. m. desde la base de producción (no es una copia a mano). Prompt vivo: versión 29, última edición «Mateo 5/10: prenda dudosa al catálogo; nunca «lo confirma el equipo» sin derivar».
 
 Todo esto Lucía **no lo sabe de memoria**: lo consulta con sus herramientas solo cuando la charla lo necesita, y recién ahí lo afirma. El prompt principal (`LUCIA-PROMPT.md`) le dice dónde está cada cosa. Se edita desde el panel y Lucía lo usa en menos de un minuto, sin tocar el prompt.
 
@@ -191,7 +191,7 @@ Está perfecto comparar antes de decidir, y si en otro lado te lo dejan más bar
 
 ## 2. Catálogo de alquiler (`consultar_catalogo`)
 
-Desde el 5/10 Lucía **no asesora sobre modelos**: de esta tabla solo le llega el precio (o desde cuánto, si cambia según el modelo) y lo que incluye. Los modelos y colores se ven en el catálogo online (`enviar_link`, tipo `web`), y la disponibilidad depende del talle y de la fecha del alquiler. `enviar_fotos` está apagada en Configuración › Herramientas.
+Desde el 5/10 Lucía **no asesora sobre modelos**: de esta tabla solo le llega desde cuánto arranca el alquiler (lo dice siempre «a partir de») y lo que incluye. Los modelos y colores se ven en el catálogo online (`enviar_link`, tipo `web`), y la disponibilidad depende del talle y de la fecha del alquiler. `enviar_fotos` está apagada en Configuración › Herramientas.
 
 | Modelo | Precio base | Colores | Talles | Fotos | Descripción |
 |---|---|---|---|---|---|
@@ -240,8 +240,8 @@ El local abre de corrido. Lucía dice este horario; las franjas de abajo son int
 | Jueves | 14:00 | 19:00 | 3 |
 | Viernes | 10:00 | 14:00 | 2 |
 | Viernes | 14:00 | 19:00 | 3 |
-| Sábado | 09:30 | 12:00 | 3 |
-| Sábado | 13:15 | 18:30 | 2 |
+| Sábado | 09:30 | 12:30 | 3 |
+| Sábado | 12:30 | 18:30 | 2 |
 
 - Probadores en total: 3. **Lucía agenda solo en los primeros 2**; el resto queda para el equipo.
 - Turnos cada 15 minutos. Días con probadores simultáneos: Sábado.
@@ -308,7 +308,7 @@ Busca en la base de conocimiento de la casa. Obligatoria antes de afirmar cualqu
 
 Parámetros: `modelo`
 
-Devuelve el precio del alquiler y qué incluye. Obligatoria antes de decir cualquier precio, que va SIEMPRE junto con lo que incluye, en el mismo mensaje, dicho con tus palabras. No es para recomendar: no describas, compares ni recomiendes modelos, colores o talles. Para ver los modelos mandá el catálogo online (enviar_link, tipo web) y aclarale que la disponibilidad depende del talle y de la fecha del alquiler. Si pregunta el precio de un modelo puntual, mandá `modelo` con su nombre o como lo describió.
+Devuelve desde cuánto arranca el alquiler y qué incluye. Obligatoria antes de decir cualquier precio, que se dice siempre «a partir de» y va SIEMPRE junto con lo que incluye, en el mismo mensaje, dicho con tus palabras. No es para recomendar: no describas, compares ni recomiendes modelos, colores o talles. Para ver los modelos mandá el catálogo online (enviar_link, tipo web) y aclarale que la disponibilidad depende del talle y de la fecha del alquiler. Si pregunta el precio de un modelo puntual, mandá `modelo` con su nombre o como lo describió.
 
 ### `consultar_accesorios` — consulta
 

@@ -127,7 +127,7 @@ for (const tema of temas) {
 A.push(
   "## 2. Catálogo de alquiler (`consultar_catalogo`)",
   "",
-  "Desde el 5/10 Lucía **no asesora sobre modelos**: de esta tabla solo le llega el precio (o desde cuánto, si cambia según el modelo) y lo que incluye. Los modelos y colores se ven en el catálogo online (`enviar_link`, tipo `web`), y la disponibilidad depende del talle y de la fecha del alquiler. `enviar_fotos` está apagada en Configuración › Herramientas.",
+  "Desde el 5/10 Lucía **no asesora sobre modelos**: de esta tabla solo le llega desde cuánto arranca el alquiler (lo dice siempre «a partir de») y lo que incluye. Los modelos y colores se ven en el catálogo online (`enviar_link`, tipo `web`), y la disponibilidad depende del talle y de la fecha del alquiler. `enviar_fotos` está apagada en Configuración › Herramientas.",
   "",
   "| Modelo | Precio base | Colores | Talles | Fotos | Descripción |",
   "|---|---|---|---|---|---|",

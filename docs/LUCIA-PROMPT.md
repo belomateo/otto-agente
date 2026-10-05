@@ -1,6 +1,6 @@
 # Lucía — prompt principal
 
-Generado el 5 de octubre de 2026 a las 11:58 a. m. desde la base de producción (no es una copia a mano). Prompt vivo: versión 29, última edición «Mateo 5/10: prenda dudosa al catálogo; nunca «lo confirma el equipo» sin derivar».
+Generado el 5 de octubre de 2026 a las 1:28 p. m. desde la base de producción (no es una copia a mano). Prompt vivo: versión 29, última edición «Mateo 5/10: prenda dudosa al catálogo; nunca «lo confirma el equipo» sin derivar».
 
 Es lo único que Lucía lee en **todos** los mensajes: quién es, cómo habla y responde, qué no puede hacer, los datos fijos y el mapa de dónde buscar todo lo demás. Las reglas numeradas y los textos de tono y presentación ya están completados acá, tal cual le llegan.
 

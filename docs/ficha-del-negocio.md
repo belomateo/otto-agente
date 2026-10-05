@@ -38,6 +38,8 @@ corrigen la ficha original.
   optar por prendas de venta con descuento (camisa, cinturón, zapatos, accesorios).
 - Precio orientativo: el alquiler más básico **desde $150.000** (varía por modelo).
   ➜ Incluye sastrería y tintorería antes y después del evento.
+  ➜ **Mateo, 5/10:** Lucía lo dice siempre **«a partir de $150.000»**, nunca como precio cerrado
+  (el equipo le habló a un cliente de «desde $190.000» y no hay definición todavía).
 - Accesorios (vigentes ➜ confirmado): camisa + corbata $33.500; zapato + cinto
   $55.000.
 - Anticipación: recomendado entre 60 y 7 días antes. Se retira un día antes del
@@ -87,7 +89,8 @@ corrigen la ficha original.
   alquiler: si mostraba qué hay y en el local no estaba, el problema lo tenía el equipo. Las
   fotos del catálogo de la base ya no se mandan.
 - Horario (➜ Mateo, 5/10): **el local abre de corrido**, de lunes a viernes de 10 a 19 y los
-  sábados de 9:30 a 18:30. Lucía dice ese horario, no las franjas internas de turnos.
+  sábados de 9:30 a 18:30. Lucía dice ese horario, no las franjas internas de turnos. Los
+  turnos del sábado también son de corrido (0086): antes no se daban de 12 a 13:15.
 
 ## Sastrería a medida y confección (venta) — fuera de la V1
 
