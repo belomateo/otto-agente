@@ -307,6 +307,59 @@ prueba("derivar_a_persona acepta turno_urgente_sin_hueco si buscar_horarios ya c
   assertEquals(await contar(sql, derivacionesDe, [conversacionId]), 1);
 });
 
+// Pedido de Mateo, 5/10: por un modelo, color, estilo o foto no se deriva, va el catálogo online.
+// Casos reales: "¿lo tienen en verde oscuro?" y "algo estilo Peaky Blinders" terminaban derivados.
+const entrante = (sql: import("npm:pg@8.13.1").Client, conversacionId: string, texto: string) =>
+  sql.query("insert into mensajes (conversacion_id, direccion, tipo, contenido) values ($1, 'entrante', 'texto', $2)", [conversacionId, texto]);
+
+prueba("derivar_a_persona rechaza dato_no_encontrado si el cliente pregunta por un modelo o un color (5/10)", async ({ ctx, sql, conversacionId }) => {
+  for (const pregunta of ["Hola! Lo tienen en verde oscuro?", "Busco algo estilo Peaky Blinders, tienen?", "me mandás fotos de los modelos?"]) {
+    await sql.query("delete from mensajes where conversacion_id = $1", [conversacionId]);
+    await entrante(sql, conversacionId, pregunta);
+    const r = await ejecutarHerramienta("derivar_a_persona", { motivo: "dato_no_encontrado", mensaje_al_cliente: "Te lo confirma el equipo." }, ctx);
+    esRechazo(r, "modelo_va_al_catalogo");
+    assertMatch(r.mensaje, /enviar_link, tipo web/);
+  }
+  assertEquals(await contar(sql, derivacionesDe, [conversacionId]), 0);
+});
+
+prueba("derivar_a_persona deja derivar por un modelo si ya mandó el catálogo, o si la consulta es de otra cosa (caso parecido)", async ({ ctx, sql, conversacionId }) => {
+  const derivaCon = async (pregunta: string) => {
+    await sql.query("delete from mensajes where conversacion_id = $1", [conversacionId]);
+    await sql.query("delete from derivaciones where conversacion_id = $1", [conversacionId]);
+    await entrante(sql, conversacionId, pregunta);
+    esOk(await ejecutarHerramienta("derivar_a_persona", { motivo: "dato_no_encontrado", mensaje_al_cliente: "Te lo confirma el equipo." }, ctx));
+  };
+  await derivaCon("¿Tienen estacionamiento cerca?");
+  // Un accesorio no es del catálogo de modelos: "zapatos negros" sigue su camino.
+  await derivaCon("¿Tienen zapatos negros en 46?");
+  // Ya mandó el catálogo en este turno: si igual deriva, es por otra cosa.
+  ctx.traza.llamadas.push({ herramienta: "enviar_link", argumentos: { tipo: "web" }, ok: true });
+  await derivaCon("¿Y en verde oscuro?");
+});
+
+prueba("derivar_a_persona: el freno de modelos es solo para dato_no_encontrado (caso parecido)", async ({ ctx, sql, conversacionId }) => {
+  await entrante(sql, conversacionId, "Quiero hablar con alguien por el modelo azul");
+  esOk(await ejecutarHerramienta("derivar_a_persona", { motivo: "pide_persona", mensaje_al_cliente: "Le paso tu consulta a alguien del equipo." }, ctx));
+  assertEquals(await contar(sql, derivacionesDe, [conversacionId]), 1);
+});
+
+// Mateo, 5/10: devolverlo después del día hábil siguiente al evento lo confirma el local. Caso
+// real: "mañana lo entrego con el comisionista" (un martes, evento el fin de semana) y Lucía
+// contestó "Sí, podés mandarlo mañana".
+prueba("derivar_a_persona con devolucion_tardia manda el texto fijo con el teléfono, no la despedida del modelo (5/10)", async ({ ctx, sql, conversacionId }) => {
+  await sql.query("update contexto_agente set valor = $1 where clave = 'texto_devolucion_tardia'", ["Texto de prueba: confirmalo con el local al +54 9 341 239 2502."]);
+  const r = await ejecutarHerramienta(
+    "derivar_a_persona",
+    { motivo: "devolucion_tardia", mensaje_al_cliente: "Sí, no hay problema, mandalo mañana." },
+    ctx,
+  );
+  esOk(r);
+  assertEquals(r.efectos?.mensajesAlCliente, ["Texto de prueba: confirmalo con el local al +54 9 341 239 2502."]);
+  const d = await fila(sql, "select motivo from derivaciones where conversacion_id = $1", [conversacionId]);
+  assertEquals(d?.motivo, "devolucion_tardia");
+});
+
 // ── cualquier herramienta ────────────────────────────────────────────────────────────────
 
 prueba("una herramienta que no existe o un parámetro de más se rechazan sin tocar nada", async ({ ctx }) => {

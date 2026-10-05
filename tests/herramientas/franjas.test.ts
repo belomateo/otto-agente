@@ -75,6 +75,23 @@ Deno.test("el horario del local y el de los turnos, en palabras, como los dio Ot
   assertEquals([...h.horas].sort(), ["09:30", "10:00", "12:00", "13:00", "13:30", "18:30", "19:00"]);
 });
 
+Deno.test("dos franjas pegadas se leen como un solo horario (Mateo, 5/10: el local abre de corrido)", () => {
+  // Las de hoy: de 10 a 14 con 2 probadores y de 14 a 19 con 3. Lucía decía "de 10:00 a 14:00 y
+  // de 14:00 a 19:00", que suena a que el local corta.
+  const franjas: Franja[] = [
+    ...[1, 2, 3, 4, 5].flatMap((d) => [
+      { diaSemana: d, desde: m("10:00"), hasta: m("14:00"), probadores: 2 },
+      { diaSemana: d, desde: m("14:00"), hasta: m("19:00"), probadores: 3 },
+    ]),
+    { diaSemana: 6, desde: m("09:30"), hasta: m("12:00"), probadores: 3 },
+    { diaSemana: 6, desde: m("13:15"), hasta: m("18:30"), probadores: 2 },
+  ];
+  assertEquals(
+    describirHorarios(LOCAL, franjas).turnos,
+    "Lunes a viernes, de 10:00 a 19:00. Sábados, de 9:30 a 12:00 y de 13:15 a 18:30. Domingos, sin turnos.",
+  );
+});
+
 prueba(
   "agendar_turno no usa un probador que no toma turnos en esa franja (con franjas_turnos en la base)",
   async ({ ctx, sql, clienteId }) => {

@@ -7,7 +7,7 @@
 import type { Db } from "../db.ts";
 import { ESTADOS_QUE_LIBERAN } from "../enums.ts";
 import { leerFicha } from "../herramientas/ficha.ts";
-import { describirHorarios, leerFranjas, leerHorarioDelLocal } from "../herramientas/horario_laboral.ts";
+import { describirHorarios, leerHorarioDelLocal } from "../herramientas/horario_laboral.ts";
 import { fechaLarga, fechaLocal, horaLocal, partesLocales } from "../tiempo.ts";
 
 // Pedido de Mateo, 21/9: Lucía se presenta la primera vez de la charla, y de nuevo si pasaron
@@ -56,15 +56,13 @@ async function turnosActivosTexto(db: Db, clienteId: string, ahora: Date, tz: st
   return { texto, horas };
 }
 
+// Pedido de Mateo, 5/10: el local abre de corrido. Antes iban también las franjas de turnos de hoy
+// ("de 9:30 a 12:00 y de 13:15 a 18:30") y Lucía las contaba como si el local cortara al mediodía.
+// Los turnos libres de hoy los dice buscar_horarios.
 async function horarioDeHoyTexto(db: Db, ahora: Date, tz: string): Promise<{ texto: string; horas: string[] }> {
-  const [local, { franjas }] = await Promise.all([leerHorarioDelLocal(db), leerFranjas(db)]);
-  const dia = partesLocales(ahora, tz).diaSemana;
-  const { local: textoLocal, turnos: textoTurnos, horas } = describirHorarios(
-    local.filter((h) => h.diaSemana === dia),
-    franjas.filter((f) => f.diaSemana === dia),
-    [dia],
-  );
-  return { texto: `Local hoy: ${textoLocal} Turnos hoy: ${textoTurnos}`, horas };
+  const hoy = (await leerHorarioDelLocal(db)).filter((h) => h.diaSemana === partesLocales(ahora, tz).diaSemana);
+  const { local: textoLocal, horas } = describirHorarios(hoy, [], [partesLocales(ahora, tz).diaSemana]);
+  return { texto: `Local hoy: ${textoLocal}${hoy.length ? " Abre de corrido, sin cortar al mediodía." : ""}`, horas };
 }
 
 export async function armarContextoDelTurno(

@@ -9,7 +9,9 @@ for (const caso of [
   { mensaje: "Quiero reservar para el jueves 6 de junio a las 12 del mediodía.", reserva: true, esperado: "reserva" },
   { mensaje: "Quiero reservar para el jueves 6 de junio.", reserva: false, esperado: "hora" },
   { mensaje: "¿Trabajan talles para niños? ¿Qué rango de talles tienen?", reserva: false, esperado: "infantil" },
-  { mensaje: "Quiero alquilar un traje de astronauta, ¿tienen?", reserva: false, esperado: "derivacion" },
+  // Desde el 5/10 (Mateo) un modelo que no conocemos no se deriva ni se niega: catálogo online y
+  // que la disponibilidad depende del talle y de la fecha.
+  { mensaje: "Quiero alquilar un traje de astronauta, ¿tienen?", reserva: false, esperado: "catalogo" },
   // Casos reales de la semana del 29/9 que terminaron derivados sin motivo.
   { mensaje: "Hola buen día, con cuánta antelación tengo que sacar turno?", reserva: false, esperado: "sigue" },
   { mensaje: "Es para una graduación en dic.. a partir de qué precio y con cuánto tiempo de anticipación debo reservar", reserva: false, esperado: "sigue" },
@@ -20,6 +22,13 @@ for (const caso of [
   // evento) y los que pedían la tarde ("después de las 16"); los dos terminaban derivados.
   { mensaje: "Hola! Quisiera sacar turno para el miércoles", reserva: false, esperado: "pregunta_evento", reservaDias: 3 },
   { mensaje: "Hola, quiero un turno el jueves después de las 16", reserva: false, esperado: "franja" },
+  // Pedidos de Mateo del 5/10: modelos por el catálogo online, el teléfono del local con el evento
+  // hoy o mañana y con una devolución tardía, y el horario de corrido.
+  { mensaje: "¿Tienen trajes en verde oscuro? ¿Me mandás fotos de los modelos?", reserva: false, esperado: "catalogo" },
+  { mensaje: "Hola, ¿cuánto sale alquilar un traje?", reserva: false, esperado: "precio" },
+  { mensaje: "¿Qué horario tienen los sábados?", reserva: false, esperado: "corrido" },
+  { mensaje: "Necesito un traje para un casamiento mañana a la noche", reserva: false, esperado: "telefono" },
+  { mensaje: "Hola, alquilé el traje para el casamiento del sábado 1 de junio. ¿Lo puedo devolver el miércoles?", reserva: false, esperado: "devolucion" },
 ] as { mensaje: string; reserva: boolean; esperado: string; turnoPrevio?: boolean; reservaDias?: number }[]) {
   prueba(`Lucía real: ${caso.mensaje}`, async ({ sql, ctx, clienteId, conversacionId }) => {
     await sql.query("set local lock_timeout = '5s'");
@@ -40,7 +49,7 @@ for (const caso of [
     });
     console.log(JSON.stringify({ mensajes: r.mensajesAlCliente, derivo: r.derivo }));
     if (r.derivo) console.log(JSON.stringify((await sql.query("select tipo, detalle from eventos_agente where conversacion_id=$1 order by creado_at", [conversacionId])).rows));
-    assertEquals(r.derivo, caso.esperado === "derivacion");
+    assertEquals(r.derivo, ["derivacion", "telefono", "devolucion"].includes(caso.esperado));
     assertEquals(await contar(sql, "select count(*)::int n from turnos where cliente_id = $1", [clienteId]), (caso.reserva ? 1 : 0) + (caso.turnoPrevio ? 1 : 0));
     if (caso.reserva) {
       const t = await fila(sql, "select inicio from turnos where cliente_id = $1", [clienteId]);
@@ -87,6 +96,29 @@ for (const caso of [
       assertEquals(/no se puede|no hay|no tenemos/i.test(r.mensajesAlCliente.join("\n")), false);
     } else if (caso.esperado === "sigue") {
       assertEquals(/no tenemos|no hay|no trabajamos/i.test(r.mensajesAlCliente.join("\n")), false);
+    } else if (caso.esperado === "catalogo") {
+      const t = r.mensajesAlCliente.join("\n");
+      assertMatch(t, /mrotto\.com\.ar\/alquiler/);
+      assertMatch(t, /talle/i);
+      assertMatch(t, /fecha/i);
+      assertEquals(/livorno|tech|smoking|azulino|pizarra/i.test(t), false, "no asesora modelos del catálogo");
+      assertEquals(/no tenemos|no hay|no trabajamos/i.test(t), false);
+    } else if (caso.esperado === "precio") {
+      const t = r.mensajesAlCliente.join("\n");
+      assertMatch(t, /150(?:\.000| mil)/);
+      assertEquals(/livorno|tech|azulino|pizarra/i.test(t), false, "no nombra modelos");
+    } else if (caso.esperado === "corrido") {
+      const t = r.mensajesAlCliente.join("\n");
+      assertMatch(t, /9[:.]30/);
+      assertMatch(t, /18[:.]30/);
+      assertEquals(/\b12(?:[:.]00)?\s+y\b|13[:.](?:15|30)/.test(t), false, "no corta al mediodía");
+    } else if (caso.esperado === "telefono") {
+      assertEquals(r.motivoDerivacion, "evento_inminente");
+      assertMatch(r.mensajesAlCliente.join("\n"), /341 239 2502/);
+    } else if (caso.esperado === "devolucion") {
+      assertEquals(r.motivoDerivacion, "devolucion_tardia");
+      assertMatch(r.mensajesAlCliente.join("\n"), /341 239 2502/);
+      assertEquals(/no hay problema|est[aá] bien/i.test(r.mensajesAlCliente.join("\n")), false);
     } else {
       assertEquals(/no tenemos|no hay|no trabajamos/i.test(r.mensajesAlCliente.join("\n")), false);
     }

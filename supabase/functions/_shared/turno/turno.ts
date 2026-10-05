@@ -23,6 +23,8 @@ import {
   CLAVE_TEXTO_DERIVACION_DURA_GENERICA,
   CLAVE_TEXTO_DERIVACION_FALLO,
   CLAVE_TEXTO_DERIVACION_RECLAMO,
+  CLAVE_TEXTO_DEVOLUCION_TARDIA,
+  CLAVE_TEXTO_EVENTO_INMINENTE,
   registrarDerivacion,
   textoDeContexto,
   textoDeDerivacion,
@@ -77,7 +79,11 @@ const MOTIVOS_CON_TEXTO_CORPORATIVO: readonly MotivoDerivacion[] = ["corporativo
 
 // Qué texto fijo le toca a cada motivo al derivar por primera vez. Un solo lugar, porque lo
 // necesitan los dos caminos: el de la derivación dura por palabra clave y el de derivar().
+// evento_inminente (5/10): con la fecha ya en la ficha, esto mandaba el genérico ("te paso con
+// alguien del equipo") y no el texto propio, que desde el 5/10 trae el teléfono del local.
 function claveDeDerivacion(motivo: MotivoDerivacion): ClaveDerivacion {
+  if (motivo === "evento_inminente") return CLAVE_TEXTO_EVENTO_INMINENTE;
+  if (motivo === "devolucion_tardia") return CLAVE_TEXTO_DEVOLUCION_TARDIA;
   if (MOTIVOS_CON_TEXTO_RECLAMO.includes(motivo)) return CLAVE_TEXTO_DERIVACION_RECLAMO;
   if (MOTIVOS_CON_TEXTO_FALLO.includes(motivo)) return CLAVE_TEXTO_DERIVACION_FALLO;
   if (MOTIVOS_CON_TEXTO_CORPORATIVO.includes(motivo)) return CLAVE_TEXTO_DERIVACION_CORPORATIVO;

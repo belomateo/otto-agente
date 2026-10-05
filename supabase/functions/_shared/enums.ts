@@ -27,6 +27,9 @@ export type Seccion = typeof SECCIONES[number];
 // evento es hoy o mañana y lo resuelve una persona (decisión #8 de Mateo, 14/9). fallo_tecnico
 // (0044, logica, 16/9): un trabajo de la cola agotó los 2 intentos, o un mensaje quedó en duda
 // (el worker se cortó justo al mandarlo) — no es culpa del cliente ni una decisión de Lucía.
+// devolucion_tardia (0085, Mateo 5/10): quiere devolver el traje después del día hábil siguiente
+// al evento (de un evento de fin de semana, después del lunes). Lo confirma el local: el texto fijo
+// le pasa el teléfono, en vez de que Lucía le diga que no hay problema.
 export const MOTIVOS_DERIVACION = [
   "reclamo",
   "cliente_enojado",
@@ -37,6 +40,7 @@ export const MOTIVOS_DERIVACION = [
   "descuento",
   "dato_no_encontrado",
   "pide_persona",
+  "devolucion_tardia",
   "barandilla_doble",
   "sin_respuesta",
   "timeout",

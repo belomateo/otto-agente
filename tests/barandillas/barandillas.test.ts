@@ -334,6 +334,27 @@ Deno.test("precio_sin_herramienta sigue viendo un monto suelto o un total invent
   assertEquals(montos("Las dos prendas por 18 mil."), [18000]);
 });
 
+// 5/10, repitiendo una charla con preguntas por un nene: talles y edades de chicos.
+Deno.test("precio_sin_herramienta no confunde talles ni edades de chicos con un precio (5/10)", () => {
+  assertEquals(montos("Para los chicos hay talles 14 y 16."), []);
+  assertEquals(montos("Probá en talle 14 o 16."), []);
+  assertEquals(montos("Para un chico de 12 conviene probar."), []);
+  assertEquals(montos("Le puede ir un 14 o un 16."), []);
+  assertEquals(montos("Hay talles 4, 6 y 8."), []);
+  // Caso parecido: un precio suelto sigue saltando aunque se hable de talles.
+  assertEquals(montos("En talle 14 te sale 90."), [90]);
+});
+
+// Mateo, 5/10: con el evento hoy o mañana, el sistema le pasa al cliente el teléfono del local.
+Deno.test("precio_sin_herramienta no lee un teléfono como precio (5/10)", () => {
+  assertEquals(montos("Comunicate directo con el local al +54 9 341 239 2502: ya les avisé."), []);
+  assertEquals(montos("El local: 0341-239-2502."), []);
+  assertEquals(montos("Número: 5493412392502"), []);
+  // Caso parecido: un precio al lado del teléfono se sigue viendo.
+  assertEquals(montos("Sale $150.000; cualquier cosa, al +54 9 341 239 2502."), [150000]);
+  assertEquals(montos("Te sale 90 y el local es el +54 9 341 239 2502."), [90]);
+});
+
 // URGENTE, hallazgo de Mateo/logica en vivo contra el worker desplegado, 16/9: "te agendo el
 // martes 23 a las 13" leía el día del mes (23) como precio. Rompía agendar_turno de punta a
 // punta — la barandilla no dejaba salir ninguna confirmación, y el cliente se quedaba sin

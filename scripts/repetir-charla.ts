@@ -107,8 +107,12 @@ try {
     );
     for (const e of ev.splice(0)) {
       const d = e.detalle as Record<string, unknown>;
-      const que = d.herramienta ? `${d.herramienta}(${JSON.stringify(d.argumentos)})${d.rechazo ? ` → rechazo ${d.rechazo}` : ""}` : `${d.barandilla ?? d.motivo ?? ""} ${d.accion ?? ""}`;
-      console.log(`     · ${e.tipo}: ${String(que).slice(0, 220)}`);
+      const que = d.herramienta
+        ? `${d.herramienta}(${JSON.stringify(d.argumentos)})${d.rechazo ? ` → rechazo ${d.rechazo}` : ""}`
+        : d.saltos
+        ? `saltos: ${(d.saltos as { barandilla: string; motivo: string }[]).map((s) => `${s.barandilla} (${s.motivo})`).join("; ")}`
+        : `${d.barandilla ?? d.motivo ?? ""} ${d.accion ?? ""}${d.barandilla && d.motivo ? ` — ${d.motivo}` : ""}`;
+      console.log(`     · ${e.tipo}: ${String(que).slice(0, 400)}`);
     }
     await sql.query("delete from eventos_agente where conversacion_id = $1", [conversacionId]); // así cada turno muestra solo lo suyo
     console.log(`   derivó: ${r.derivo}`);

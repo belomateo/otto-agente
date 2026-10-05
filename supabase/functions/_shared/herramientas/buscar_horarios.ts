@@ -49,8 +49,8 @@ export const buscarHorarios: Herramienta<Args> = {
     "se prueban entran en un mismo turno: usá ese tipo, no doble; triple solo si son tres. Para sumar a alguien a un " +
     "turno que ya tiene no hace falta buscar: viene en ese mismo turno. prueba_final solo para la prueba del día " +
     "anterior al evento. Mandá la fecha " +
-    "del evento si la sabés. Si el evento es hoy o mañana, no devuelve huecos: la charla pasa sola a un asesor del " +
-    "local y vos no escribís nada más. Pedí como mucho dos semanas por vez. Si el cliente eligió día y hora, " +
+    "del evento si la sabés. Si el evento es hoy o mañana, no devuelve huecos: el sistema le pasa solo el teléfono " +
+    "del local para que lo resuelva directo, y vos no escribís nada más. Pedí como mucho dos semanas por vez. Si el cliente eligió día y hora, " +
     "mandalos en fecha_hora: se comprueba ese horario exacto y no se pide mail. Si está libre, ejecutá " +
     "agendar_turno inmediatamente. Si no conocés el tipo, mandá null: usa la duración de invitado.",
   parametros: objeto({

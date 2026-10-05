@@ -59,6 +59,7 @@ export const ESTILO_MOTIVO: Record<string, { etiqueta: string; cb: string; cf: s
   descuento: { etiqueta: 'Descuento', cb: '#F1E6D9', cf: '#A8703F', urgente: false },
   dato_no_encontrado: { etiqueta: 'Dato no encontrado', cb: '#EEF1F5', cf: '#1F2A3C', urgente: false },
   pide_persona: { etiqueta: 'Pide una persona', cb: '#EEF1F5', cf: '#1F2A3C', urgente: false },
+  devolucion_tardia: { etiqueta: 'Devolución tardía', cb: '#F6E3DF', cf: '#A6473A', urgente: true },
   barandilla_doble: { etiqueta: 'Barandilla', cb: '#F7EFDD', cf: '#B8862B', urgente: false },
   sin_respuesta: { etiqueta: 'Sin respuesta', cb: '#F7EFDD', cf: '#B8862B', urgente: false },
   timeout: { etiqueta: 'Demora', cb: '#F7EFDD', cf: '#B8862B', urgente: false },

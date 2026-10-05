@@ -42,6 +42,11 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   /\b(?:cumple|fiesta|fiestas|quince)\s+de\s+\d{1,2}\b/g,
   /\b(?:un|tu|su|sus|los)\s+15\b/g,
   /\btalles?\s+\d{1,3}\s*(?:al?|hasta|[-–])\s*\d{1,3}\b/g, // "talles 4–16"
+  // Talles y edades de chicos (5/10, repitiendo una charla con preguntas por un nene): "talles 14
+  // y 16", "en talle 14 o 16", "un chico de 12", "le puede ir un 14" se leían como precios.
+  /\btalles?\s+\d{1,3}(?:\s*(?:,|y|o|[-–/])\s*(?:el\s+)?\d{1,3})+\b/g,
+  /\b(?:chicos?|chicas?|nenes?|nenas?|ninos?|ninas?|hijos?|hijas?|pibes?)\s+de\s+\d{1,2}(?:\s+a\s+\d{1,2})?\b/g,
+  /\b(?:usa|usaria|calza|ir|va|iria|queda|quedaria)\s+(?:un|el)\s+\d{1,2}(?:\s+o\s+(?:un\s+|el\s+)?\d{1,2})?\b/g,
   /\btalle\s+\d{1,3}\b/g, // "talle 4" o "talle 48"
   /\bdel?\s+\d{1,3}\s+al?\s+\d{1,3}\b/g, // "del 4 al 16" y "del 44 al 68"
   /\b(?:mide|mido|medis|medimos|altura)\s+\d{2,3}\b/g, // "mide/medís 170", "altura 170"
@@ -100,8 +105,16 @@ function enmascararNombre(normalizado: string, nombreCliente: string): string {
   return normalizado.replace(new RegExp(`\\b${escaparRegex(nombre)}(?:\\s+\\d{1,4})?\\b`, "g"), (m) => "·".repeat(m.length));
 }
 
+// Teléfonos (Mateo, 5/10): con el evento hoy o mañana el sistema le pasa al cliente el número del
+// local, y el 54, el 341 y el 239 de "+54 9 341 239 2502" se leían como precios: la pieza se
+// descartaba y salía el texto genérico, sin el número. Un teléfono son diez dígitos o más, juntos
+// o separados por un espacio o un guion (un precio separa los miles con punto). Va antes que todo,
+// como el nombre, porque las reglas del millar y de cinco cifras también lo leerían.
+const TELEFONO = /(?:\+\s?)?\d(?:[\s-]?\d){9,}/g;
+const enmascararTelefonos = (normalizado: string) => normalizado.replace(TELEFONO, (m) => "·".repeat(m.length));
+
 export function montos(t: string, nombreCliente?: string | null): number[] {
-  let crudo = normalizar(String(t ?? ""));
+  let crudo = enmascararTelefonos(normalizar(String(t ?? "")));
   if (nombreCliente) crudo = enmascararNombre(crudo, nombreCliente);
   const res = new Set<number>();
   // "$150 mil" o "$33,5 mil" no son $150 ni $33: el monto lo cuenta la regla del millar de abajo

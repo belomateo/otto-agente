@@ -6,6 +6,8 @@
 // el día siguiente derivan siempre; desde pasado mañana sigue el camino normal. Se deriva con
 // motivo evento_inminente y un texto fijo que nunca dice que no, guardado en contexto_agente
 // (clave texto_evento_inminente) para que el dueño lo edite en Configuración › Lucía.
+// Desde el 5/10 (Mateo) ese texto le pasa al cliente el teléfono del local, para que lo resuelva
+// directo: es el único caso en que Lucía da otro contacto. El número vive en la base, no acá.
 
 import type { Db } from "../db.ts";
 import type { MotivoDerivacion } from "../enums.ts";
@@ -25,6 +27,10 @@ export const CLAVE_TEXTO_DERIVACION_FALLO = "texto_derivacion_fallo";
 // pero Lucía SIGUE contestando (corporativo no está en MOTIVOS_DE_SILENCIO_DERIVADA), así que
 // junta los otros cuatro datos en los turnos siguientes y el equipo los lee en la charla.
 export const CLAVE_TEXTO_DERIVACION_CORPORATIVO = "texto_derivacion_corporativo";
+// devolucion_tardia (Mateo, 5/10): quiere devolver el traje después del día hábil siguiente al
+// evento. Lucía le decía que no había problema; lo confirma el local, y este texto le pasa el
+// teléfono (vive en la base, como el de evento hoy o mañana).
+export const CLAVE_TEXTO_DEVOLUCION_TARDIA = "texto_devolucion_tardia";
 
 // Respaldos en código (hallazgo de logica, 19/9, auditando la entrega de "ninguna derivación
 // queda muda"): los 4 textos de arriba salen de contexto_agente, editables desde el panel sin
@@ -33,14 +39,18 @@ export const CLAVE_TEXTO_DERIVACION_CORPORATIVO = "texto_derivacion_corporativo"
 // respecto de lo que se esté editando, es infinitamente mejor que nada. Solo para textos de
 // DERIVACIÓN: texto_mensaje_no_soportado y el resto de contexto_agente no lo necesitan (ahí un
 // texto vacío no deja a nadie mudo del todo — como mucho, sin ese aviso puntual).
+// El de evento hoy o mañana no lleva el teléfono (vive en la base) ni "te paso con": esa frase la
+// lee anuncia_sin_derivar como un pase sin ejecutar y descartaba el texto (ver turno.ts).
 const RESPALDOS = {
   [CLAVE_TEXTO_EVENTO_INMINENTE]:
-    "Te paso con un asesor del local para que te ayude con tu evento, y vamos a hacer lo posible por encontrarte un lugar en la agenda.",
+    "Como tu evento está tan cerca, lo resuelve directo el equipo del local: ya les avisé para que te ayuden enseguida.",
   [CLAVE_TEXTO_DERIVACION_DURA_GENERICA]: "Te paso con alguien del equipo para que te ayude con esto. En un rato te escriben.",
   [CLAVE_TEXTO_DERIVACION_RECLAMO]: "Te leo. Esto lo sigue alguien del local: en un rato te escriben.",
   [CLAVE_TEXTO_DERIVACION_FALLO]: "Se me complicó de este lado. Ya avisé a alguien del local y en un rato te escriben.",
   [CLAVE_TEXTO_DERIVACION_CORPORATIVO]:
     "Los pedidos para empresas y uniformes los sigue un equipo aparte de Mr Otto, y ya les avisé. Para que te contacten con todo listo, ¿para cuántas personas sería?",
+  [CLAVE_TEXTO_DEVOLUCION_TARDIA]:
+    "La devolución es el día hábil siguiente al evento. Para devolverlo otro día, eso lo confirma el equipo del local: ya les avisé.",
 } as const;
 
 export type ClaveDerivacion = keyof typeof RESPALDOS;
@@ -109,7 +119,7 @@ export async function derivarPorEventoInminente(
   const datos: Record<string, unknown> = {
     derivar: "evento_inminente",
     derivacion_id: id,
-    nota: "El evento es hoy o mañana: lo resuelve una persona del equipo y el aviso al cliente sale solo. No ofrezcas turnos ni escribas nada más.",
+    nota: "El evento es hoy o mañana: el sistema ya le pasa el teléfono del local para que lo resuelva directo. No ofrezcas turnos ni escribas nada más.",
   };
   if (yaEstaba) datos.ya_estaba_derivada = true;
   if (usoRespaldo) datos.falta = `la fila de contexto_agente de esta derivación (${CLAVE_TEXTO_EVENTO_INMINENTE}) está vacía: se usó el respaldo de código`;

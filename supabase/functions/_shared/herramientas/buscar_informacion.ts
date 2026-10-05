@@ -1,13 +1,17 @@
 // buscar_informacion(seccion, consulta) — la base de conocimiento (AGENTE.md § 4 y § 8).
 // Consulta: no toca el mundo. Si la sección es ubicacion-horarios, o sale un fragmento de esa
-// sección, suma dos horarios leídos de las tablas y no de un fragmento (decisión #7): el del
-// local (horarios) y el de los turnos de alquiler (franjas_turnos). Los horarios concretos de
-// un turno salen siempre de buscar_horarios.
+// sección, suma el horario del local leído de la tabla horarios, no de un fragmento (decisión
+// #7). Los horarios concretos de un turno salen siempre de buscar_horarios.
+//
+// Pedido de Mateo, 5/10: el local abre de corrido. Hasta acá también se mandaban las franjas de
+// turnos (dos tramos por día: mañana y tarde, y los sábados con un hueco al mediodía) y Lucía las
+// recitaba como si el local cortara. Las franjas son internas de la agenda (cuántos probadores
+// hay en cada tramo): los turnos libres los dice buscar_horarios.
 
 import { accesoriosEn } from "../barandillas/accesorio_sin_herramienta.ts";
 import { buscarFragmentos } from "../conocimiento/busqueda.ts";
 import { SECCIONES, type Seccion } from "../enums.ts";
-import { describirHorarios, leerFranjas, leerHorarioDelLocal } from "./horario_laboral.ts";
+import { describirHorarios, leerHorarioDelLocal } from "./horario_laboral.ts";
 import { type Herramienta, objeto } from "./tipos.ts";
 
 type Args = { seccion: Seccion | null; consulta: string };
@@ -39,16 +43,15 @@ export const buscarInformacion: Herramienta<Args> = {
     };
     ctx.traza.accesoriosDevueltos.push(...encontrados.flatMap((f) => accesoriosEn(f.texto)));
     if (args.seccion === "ubicacion-horarios" || encontrados.some((f) => f.tema === "ubicacion-horarios")) {
-      const local = await leerHorarioDelLocal(ctx.db);
-      const { franjas } = await leerFranjas(ctx.db);
-      const h = describirHorarios(local, franjas);
+      const h = describirHorarios(await leerHorarioDelLocal(ctx.db), []);
       datos.horario_del_local = h.local;
-      datos.horario_de_turnos = h.turnos;
-      datos.nota_horarios = "El local abre más horas que las de turnos. Para un turno, los horarios concretos salen siempre de buscar_horarios.";
+      datos.nota_horarios = "El local abre de corrido, sin cortar al mediodía: si preguntan el horario, decí este. Los turnos " +
+        "se dan dentro de ese horario; los días y horas libres salen siempre de buscar_horarios.";
       ctx.traza.horasDevueltas.push(...h.horas);
     }
     if (encontrados.length === 0) {
-      datos.nota = "No hay nada cargado sobre eso. No lo supongas: si el cliente lo necesita, derivá con motivo dato_no_encontrado.";
+      datos.nota = "No hay nada cargado sobre eso. No lo supongas: si pregunta por un modelo, color o estilo, mandá el " +
+        "catálogo online (enviar_link, tipo web); si es otro dato que el cliente necesita, derivá con motivo dato_no_encontrado.";
     }
     return { ok: true, datos };
   },

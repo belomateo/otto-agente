@@ -1,6 +1,6 @@
 # Lucía — información adicional
 
-Generado el 4 de octubre de 2026 a las 6:07 p. m. desde la base de producción (no es una copia a mano). Prompt vivo: versión 25, última edición «Mateo 4/10: revisión de 30 charlas (primera persona, no suponer rol ni fecha)».
+Generado el 5 de octubre de 2026 a las 11:58 a. m. desde la base de producción (no es una copia a mano). Prompt vivo: versión 29, última edición «Mateo 5/10: prenda dudosa al catálogo; nunca «lo confirma el equipo» sin derivar».
 
 Todo esto Lucía **no lo sabe de memoria**: lo consulta con sus herramientas solo cuando la charla lo necesita, y recién ahí lo afirma. El prompt principal (`LUCIA-PROMPT.md`) le dice dónde está cada cosa. Se edita desde el panel y Lucía lo usa en menos de un minuto, sin tocar el prompt.
 
@@ -31,7 +31,7 @@ Mr Otto ofrece alquiler a medida, prendas de calidad, diseños nuevos y una solu
 
 ### `como-funciona`
 
-*En el mapa del prompt: pasos del alquiler, visita, retiro, devolución, acompañante, tolerancia y cambio de modelo.*
+*En el mapa del prompt: pasos del alquiler, visita, catálogo online, retiro, devolución, acompañante, tolerancia y cambio de modelo.*
 
 **Cambiar el modelo elegido**
 
@@ -39,11 +39,15 @@ Si ya elegiste tu traje y después querés cambiarlo por otro modelo, se puede: 
 
 **Cómo es el alquiler, paso a paso**
 
-Primero venís al local con turno: el asesor te muestra modelos, te probás el que más te guste y te toma las medidas. Si lo alquilás, la sastrería lo ajusta a tu medida. El traje se retira (lo pasás a buscar) un día antes del evento, con una prueba final para ver que esté perfecto, y se devuelve un día hábil después: lo devolvés acá mismo. En total te quedás con el traje 3 días. Si viajás o no podés retirarlo ese día, se coordina el retiro uno o dos días antes. La tintorería corre por nuestra cuenta.
+Primero venís al local con turno: el asesor te muestra modelos, te probás el que más te guste y te toma las medidas. Si lo alquilás, la sastrería lo ajusta a tu medida. El traje se retira (lo pasás a buscar) un día antes del evento, con una prueba final para ver que esté perfecto, y se devuelve acá mismo el día hábil siguiente al evento: si el evento es el fin de semana, sí o sí el lunes. En total te quedás con el traje 3 días. Si viajás o no podés retirarlo ese día, se coordina el retiro uno o dos días antes. Devolverlo más tarde lo tiene que confirmar el equipo del local. La tintorería corre por nuestra cuenta.
 
 **El turno en el local**
 
 Te esperamos en España 764, Rosario. En cada turno pueden venir dos personas a probarse, y cada una puede traer un acompañante. Si ya tenés turno y querés sumar a otra persona, viene en ese mismo turno: no hace falta sacar otro. Hay diez minutos de tolerancia. Si alquilás, para reservar el traje se abona el 100% en el local. Si no podés venir, avisanos y lo reprogramamos.
+
+**Modelos y catálogo online**
+
+Los modelos y colores de alquiler, con sus fotos, se pueden ver en el catálogo online de la web de Mr Otto. La disponibilidad de cada modelo depende del talle y de la fecha del alquiler, por eso se confirma en el local: en el turno el equipo te muestra lo que hay para tu fecha, te lo probás y elegís con su asesoramiento.
 
 ### `reserva-y-garantia`
 
@@ -59,11 +63,11 @@ El contrato de alquiler tiene una penalidad por cancelación, y cuánto es depen
 
 ### `ubicacion-horarios`
 
-*En el mapa del prompt: dirección, horario del local y de turnos, venir sin turno y canales de contacto.*
+*En el mapa del prompt: dirección, horario del local (de corrido), venir sin turno y canales de contacto.*
 
 **Dónde estamos**
 
-El local de alquiler queda en calle España 764, Rosario, y por ahora es el único: ahí se hace todo, la prueba, los ajustes, el retiro y la devolución. Lo mejor es venir con turno, así el equipo te dedica el tiempo que hace falta. El local abre más horas que las de los turnos de alquiler: los horarios de atención y de turnos salen de la agenda. Si te piden un teléfono, la consulta se sigue por este mismo WhatsApp: no pasamos otro contacto por acá.
+El local de alquiler queda en calle España 764, Rosario, y por ahora es el único: ahí se hace todo, la prueba, los ajustes, el retiro y la devolución. Lo mejor es venir con turno, así el equipo te dedica el tiempo que hace falta. El local abre de corrido, sin cortar al mediodía: el horario de atención sale de la agenda, y los turnos se dan dentro de ese horario. Si te piden un teléfono, la consulta se sigue por este mismo WhatsApp; solo si el evento es hoy o mañana se pasa el teléfono del local, para resolverlo directo.
 
 **Venir sin turno**
 
@@ -75,11 +79,11 @@ Podés pasar por el local sin turno, solo a mirar los modelos. Si en ese momento
 
 **Talles**
 
-Tenemos trajes de alquiler para adultos, en talles del XS al 4XL, y también talles infantiles. Los talles de adultos van por letra. El talle justo se confirma en el local con la prueba y los ajustes de sastrería. Para niños consultá la ficha Talles infantiles. Si necesitás otra medida, un modelo o un caso especial sin confirmación, el equipo del local lo verifica; Lucía deriva sin negar disponibilidad.
+Tenemos trajes de alquiler para adultos, en talles del XS al 4XL, y también talles infantiles. Los talles de adultos van por letra. El talle justo se confirma en el local con la prueba y los ajustes de sastrería. Para niños consultá la ficha Talles infantiles. La disponibilidad de cada modelo depende del talle y de la fecha del alquiler: se confirma en el local, sin prometerla ni negarla por acá.
 
 **Talles infantiles: niños, nenes y chicos**
 
-Sí tenemos talles de niños del 4 al 16. Para un nene, niño o chico se puede consultar por ese rango infantil. No confundir el talle con la edad: el calce se confirma al probar. Este rango no confirma modelos, colores, precios ni stock para una fecha. Si se consulta un modelo o talle fuera de lo confirmado, derivar al equipo sin decir que no hay.
+Sí tenemos talles de niños del 4 al 16. Para un nene, niño o chico se puede consultar por ese rango infantil. No confundir el talle con la edad: el calce se confirma al probar. Este rango no confirma modelos, colores, precios ni stock para una fecha: la disponibilidad depende del talle y de la fecha del alquiler, y se confirma en el local.
 
 ### `a-medida`
 
@@ -99,7 +103,7 @@ Si en la prueba final el traje necesita un retoque, los sastres lo arreglan ahí
 
 **Anticipación**
 
-¿Con cuánto tiempo conviene reservar? Lo ideal es entre 60 y 7 días antes del evento, así hay tiempo para elegir y para que la sastrería ajuste todo sin apuro. Si es urgente y el evento es en pocos días, igual llegás: siempre buscamos la forma. Si el evento es hoy o mañana, te paso con un asesor del local, que hace lo posible por encontrarte un lugar en la agenda.
+¿Con cuánto tiempo conviene reservar? Lo ideal es entre 60 y 7 días antes del evento, así hay tiempo para elegir y para que la sastrería ajuste todo sin apuro. Si es urgente y el evento es en pocos días, igual llegás: siempre buscamos la forma. Si el evento es hoy o mañana, se resuelve directo con el local: te pasamos su teléfono para que lo coordines con ellos.
 
 ### `accesorios`
 
@@ -143,7 +147,7 @@ Alquilando con nosotros, las prendas para completar el look se pueden comprar co
 
 **El que se casa (guion)**
 
-¡Felicitaciones! Si te casás, buscamos un look especial para vos: el novio tiene que estar impecable, como todos los que se casan con nosotros. Para recomendarte bien conviene saber la fecha del casamiento, si es de día o de noche, si es en salón, campo o iglesia, y si ya tenés una idea de estilo o de colores. Con eso te mostramos dos looks y te proponemos un turno para probarlos con tiempo, así la sastrería lo deja perfecto para el gran día.
+¡Felicitaciones! Si te casás, buscamos un look especial para vos: el novio tiene que estar impecable, como todos los que se casan con nosotros. Para ayudarte conviene saber la fecha del casamiento, si es de día o de noche y si es en salón, campo o iglesia. Los modelos los podés ir viendo en el catálogo online; la disponibilidad depende de tu talle y de la fecha, así que en el turno el equipo te muestra lo que hay para vos y te ayuda a elegir, con tiempo para que la sastrería lo deje perfecto para el gran día.
 
 ### `graduado`
 
@@ -151,7 +155,7 @@ Alquilando con nosotros, las prendas para completar el look se pueden comprar co
 
 **Graduaciones (guion)**
 
-Para graduaciones y fiestas de egresados del secundario tenemos diferentes modelos y colores, para elegir el look que mejor va con cada chico. Muchas veces escribe la mamá o el papá, cuando su hijo termina el colegio: se le habla a quien escribe y se le pregunta la fecha, si es de día o de noche y el talle aproximado. Si vienen de otra ciudad, coordinamos el turno pensando en la fecha para que resuelvan todo sin viajes de más.
+Para graduaciones y fiestas de egresados del secundario, los modelos se pueden ver en el catálogo online, y en el local el equipo ayuda a elegir el look que mejor va con cada chico, según lo que haya para su talle y su fecha. Muchas veces escribe la mamá o el papá, cuando su hijo termina el colegio: se le habla a quien escribe y se le pregunta la fecha, si es de día o de noche y el talle aproximado. Si vienen de otra ciudad, coordinamos el turno pensando en la fecha para que resuelvan todo sin viajes de más.
 
 ### `invitado`
 
@@ -159,7 +163,7 @@ Para graduaciones y fiestas de egresados del secundario tenemos diferentes model
 
 **Invitados (guion)**
 
-Si te invitaron al casamiento de un amigo, a una boda civil, a un cumple de 15 o a una fiesta, conviene saber la fecha, si es de día o de noche y si tenés preferencia de color. Con eso te mostramos dos opciones y te proponemos un turno para probártelas; con los accesorios del local resolvés el look completo.
+Si te invitaron al casamiento de un amigo, a una boda civil, a un cumple de 15 o a una fiesta, conviene saber la fecha y si es de día o de noche. Los modelos los podés ver en el catálogo online; la disponibilidad depende de tu talle y de la fecha, así que en el turno el equipo te muestra lo que hay para vos, y con los accesorios del local resolvés el look completo.
 
 ### `objecion-precio`
 
@@ -186,6 +190,8 @@ Si lo querés pensar y decidirlo después, no te preocupes: tomate tu tiempo par
 Está perfecto comparar antes de decidir, y si en otro lado te lo dejan más barato, vale mirar qué incluye. Lo que nos distingue es que el alquiler es a medida: el traje se ajusta en nuestra sastrería para que te quede perfecto, e incluye la tintorería antes y después. Son prendas de calidad y diseños nuevos, y resolvés el look completo con el mismo equipo. En precio, calidad y servicio es de lo mejor del mercado.
 
 ## 2. Catálogo de alquiler (`consultar_catalogo`)
+
+Desde el 5/10 Lucía **no asesora sobre modelos**: de esta tabla solo le llega el precio (o desde cuánto, si cambia según el modelo) y lo que incluye. Los modelos y colores se ven en el catálogo online (`enviar_link`, tipo `web`), y la disponibilidad depende del talle y de la fecha del alquiler. `enviar_fotos` está apagada en Configuración › Herramientas.
 
 | Modelo | Precio base | Colores | Talles | Fotos | Descripción |
 |---|---|---|---|---|---|
@@ -218,6 +224,8 @@ Está perfecto comparar antes de decidir, y si en otro lado te lo dejan más bar
 | Viernes | 10:00 a 19:00 |
 | Sábado | 09:30 a 18:30 |
 
+El local abre de corrido. Lucía dice este horario; las franjas de abajo son internas de la agenda (cuántos probadores hay en cada tramo) y ya no se las pasa a Lucía: los turnos libres salen de `buscar_horarios`.
+
 ### Franjas de turnos
 
 | Día | Desde | Hasta | Probadores |
@@ -241,7 +249,8 @@ Está perfecto comparar antes de decidir, y si en otro lado te lo dejan más bar
 - Aviso al equipo 30 minutos antes de cada turno.
 - Duración por tipo: prueba_final 15 min · graduado 45 min · invitado 45 min · novio 45 min · doble 90 min · triple 120 min. En un mismo turno pueden venir dos personas a probarse.
 - Cierres especiales próximos: ninguno cargado.
-- Para reservar alcanza con teléfono, día y hora. Si el evento es hoy o mañana, pasa directo al equipo.
+- Para reservar alcanza con teléfono, día y hora. Si el evento es hoy o mañana, la charla pasa al equipo y el sistema le manda al cliente el teléfono del local (`texto_evento_inminente`).
+- Devolución: el día hábil siguiente al evento; si el evento es el fin de semana, sí o sí el lunes. Si quiere devolverlo más tarde, Lucía deriva con motivo `devolucion_tardia` y el sistema le manda el teléfono del local (`texto_devolucion_tardia`).
 
 ## 5. Enlaces (`enviar_link`)
 
@@ -266,7 +275,8 @@ Los arma el sistema, no Lucía (por ejemplo, al derivar o al confirmar un turno)
 | `texto_derivacion_dura_generica` | Te paso con alguien del equipo para que te ayude con esto. En un rato te escriben. |
 | `texto_derivacion_fallo` | ¡Claro! 😊 Prefiero que esta consulta te la confirme alguien del equipo, para no darte un dato incorrecto. Ya les avisé: en un rato te escriben por acá. |
 | `texto_derivacion_reclamo` | Te leo. Esto lo sigue alguien del local: en un rato te escriben. |
-| `texto_evento_inminente` | Te paso con un asesor del local para que te ayude con tu evento, y vamos a hacer lo posible por encontrarte un lugar en la agenda. |
+| `texto_devolucion_tardia` | La devolución es el día hábil siguiente al evento (si el evento es el fin de semana, el lunes). Para devolverlo otro día, confirmalo directo con el local al +54 9 341 239 2502: ya les avisé. |
+| `texto_evento_inminente` | Para un evento tan cercano, lo mejor es que te comuniques directo con el local al +54 9 341 239 2502: ya les avisé, así te ayudan a resolverlo enseguida. |
 | `texto_mensaje_no_soportado` | Por ahora no puedo leer esto. ¿Me contás en un mensaje de texto qué necesitás? Así te ayudo enseguida. |
 | `texto_turno_confirmado` | ¡Gracias por confirmar! Te esperamos en el local. |
 | `tono` | Tu tono es cercano y cordial, natural y conversacional: tiene que notarse que del otro lado hay una persona y no un sistema contestando solo, así que nunca suenes automática ni armada con frases hechas. Elegante, pero sin ponerte formal ni acartonada. Profesional: transmitís seguridad y conocimiento de lo que ofrece la casa. Asesorás, no vendés: acompañás a que elija bien y nunca empujás la venta. Claro y breve, que esto es WhatsApp. Sin tantos emojis. Y usás siempre las palabras de la casa: alquiler a medida, prendas de calidad, diseños nuevos y solución completa. |
@@ -296,9 +306,9 @@ Busca en la base de conocimiento de la casa. Obligatoria antes de afirmar cualqu
 
 ### `consultar_catalogo` — consulta
 
-Parámetros: `modelo`, `color`, `talle`
+Parámetros: `modelo`
 
-Devuelve los modelos de alquiler cargados: nombre, descripción, colores, talles, precio base y si tienen fotos. Obligatoria antes de decir cualquier precio o describir un modelo. Devuelve también qué incluye el precio: eso va SIEMPRE junto con el precio, en el mismo mensaje, dicho con tus palabras. Si el cliente pregunta por un modelo puntual, mandá `modelo` con su nombre o como lo describió: te trae solo esa prenda, no el catálogo entero. Filtrá por color o talle solo si el cliente lo dijo. Si lo que busca no aparece, no está cargado: no lo aproximes.
+Devuelve el precio del alquiler y qué incluye. Obligatoria antes de decir cualquier precio, que va SIEMPRE junto con lo que incluye, en el mismo mensaje, dicho con tus palabras. No es para recomendar: no describas, compares ni recomiendes modelos, colores o talles. Para ver los modelos mandá el catálogo online (enviar_link, tipo web) y aclarale que la disponibilidad depende del talle y de la fecha del alquiler. Si pregunta el precio de un modelo puntual, mandá `modelo` con su nombre o como lo describió.
 
 ### `consultar_accesorios` — consulta
 
@@ -310,7 +320,7 @@ Devuelve los accesorios para completar el look (camisa, corbata, cinturón, zapa
 
 Parámetros: `desde`, `hasta`, `tipo_turno`, `fecha_hora`, `desde_hora`, `hasta_hora`, `fecha_evento`
 
-Devuelve huecos reales para un turno en el local entre dos fechas, ya filtrados por las franjas de turnos y los probadores libres, con los eventos más cercanos primero. Obligatoria antes de ofrecer un día u hora, y otra vez justo antes de agendar_turno o reprogramar_turno, en el mismo turno. De lo que devuelve ofrecé dos, nunca más de tres. tipo_turno: graduado, novio o invitado según quién se viste. Dos personas que se prueban entran en un mismo turno: usá ese tipo, no doble; triple solo si son tres. Para sumar a alguien a un turno que ya tiene no hace falta buscar: viene en ese mismo turno. prueba_final solo para la prueba del día anterior al evento. Mandá la fecha del evento si la sabés. Si el evento es hoy o mañana, no devuelve huecos: la charla pasa sola a un asesor del local y vos no escribís nada más. Pedí como mucho dos semanas por vez. Si el cliente eligió día y hora, mandalos en fecha_hora: se comprueba ese horario exacto y no se pide mail. Si está libre, ejecutá agendar_turno inmediatamente. Si no conocés el tipo, mandá null: usa la duración de invitado.
+Devuelve huecos reales para un turno en el local entre dos fechas, ya filtrados por las franjas de turnos y los probadores libres, con los eventos más cercanos primero. Obligatoria antes de ofrecer un día u hora, y otra vez justo antes de agendar_turno o reprogramar_turno, en el mismo turno. De lo que devuelve ofrecé dos, nunca más de tres. tipo_turno: graduado, novio o invitado según quién se viste. Dos personas que se prueban entran en un mismo turno: usá ese tipo, no doble; triple solo si son tres. Para sumar a alguien a un turno que ya tiene no hace falta buscar: viene en ese mismo turno. prueba_final solo para la prueba del día anterior al evento. Mandá la fecha del evento si la sabés. Si el evento es hoy o mañana, no devuelve huecos: el sistema le pasa solo el teléfono del local para que lo resuelva directo, y vos no escribís nada más. Pedí como mucho dos semanas por vez. Si el cliente eligió día y hora, mandalos en fecha_hora: se comprueba ese horario exacto y no se pide mail. Si está libre, ejecutá agendar_turno inmediatamente. Si no conocés el tipo, mandá null: usa la duración de invitado.
 
 ### `ver_turnos_cliente` — consulta
 
@@ -354,7 +364,7 @@ Parámetros: `texto`
 
 Anota en la libreta del cliente algo que conviene recordar y no entra en la ficha: una preferencia, una duda, algo que contó del evento. Anotá en el mismo turno en que te enterás.
 
-### `enviar_fotos` — acción
+### `enviar_fotos` — acción (DESACTIVADA)
 
 Parámetros: `modelo_ids`, `color`
 
@@ -364,13 +374,13 @@ Manda al cliente las fotos de hasta tres modelos del catálogo, con los id que d
 
 Parámetros: `tipo`
 
-Manda un link de la casa: mapa (cómo llegar al local), resena (para dejar una reseña en Google), web (la web de alquiler) o web-venta (la tienda online, para quien quiere comprar en vez de alquilar). Nunca links de pago. El link lo manda el sistema: vos no lo escribas.
+Manda un link de la casa: mapa (cómo llegar al local), resena (para dejar una reseña en Google), web (el catálogo online de alquiler: mandalo cuando pregunte por modelos, colores, estilos o fotos, y aclarale que la disponibilidad depende del talle y de la fecha del alquiler) o web-venta (la tienda online, para quien quiere comprar en vez de alquilar). Nunca links de pago. El link lo manda el sistema: vos no lo escribas.
 
 ### `derivar_a_persona` — acción
 
 Parámetros: `motivo`, `mensaje_al_cliente`
 
-Pasa la charla a una persona del equipo y corta tu turno: después de esto no escribís nada más. Antes, contestá todo lo que sí podés. motivo: por qué derivás. mensaje_al_cliente: SIEMPRE escribí una despedida corta y sin ninguna pregunta, nunca null — con reclamo o descuento el sistema la reemplaza por un texto fijo, así que no te esfuerces con esas dos, pero escribí algo igual. Nunca anuncies un pase sin llamar a esta herramienta. Si el evento del cliente es hoy o mañana, NO uses esta herramienta: llamá a buscar_horarios (con la fecha del evento) y el código se encarga de derivar solo, con el dato guardado y el texto correcto. Con motivo turno_urgente_sin_hueco: llamá primero a buscar_horarios en este mismo turno (con la fecha del evento) y confirmá que de verdad no hay hueco antes de derivar por esto.
+Pasa la charla a una persona del equipo y corta tu turno: después de esto no escribís nada más. Antes, contestá todo lo que sí podés. motivo: por qué derivás. mensaje_al_cliente: SIEMPRE escribí una despedida corta y sin ninguna pregunta, nunca null — con reclamo o descuento el sistema la reemplaza por un texto fijo, así que no te esfuerces con esas dos, pero escribí algo igual. Nunca anuncies un pase sin llamar a esta herramienta. Si el evento del cliente es hoy o mañana, NO uses esta herramienta: llamá a buscar_horarios (con la fecha del evento) y el código se encarga solo: guarda el dato y le pasa el teléfono del local. Por un modelo, color o estilo no derives: mandá el catálogo online (enviar_link, tipo web). devolucion_tardia: quiere devolver el traje después del día hábil siguiente al evento (de un evento de fin de semana, después del lunes); nunca le digas que no hay problema: el sistema le pasa el teléfono del local para confirmarlo. Con motivo turno_urgente_sin_hueco: llamá primero a buscar_horarios en este mismo turno (con la fecha del evento) y confirmá que de verdad no hay hueco antes de derivar por esto.
 
 ## 8. Plantillas de WhatsApp (Meta)
 

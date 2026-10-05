@@ -788,3 +788,65 @@ prueba("corporativo por palabra clave deriva con su propio texto, que además pr
   const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
   assertEquals([der?.motivo, der?.estado], ["corporativo", "pendiente"]);
 });
+
+// Pedido de Mateo, 5/10: con el evento hoy o mañana, el texto fijo le pasa al cliente el teléfono
+// del local. Dos caminos, los dos de punta a punta:
+//  · la fecha ya estaba en la ficha (derivación dura del paso 4a): antes salía el genérico ("te
+//    paso con alguien del equipo") en vez del texto propio;
+//  · el cliente la dice ahora y buscar_horarios deriva: el texto pasa por las barandillas, y el
+//    anterior ("Te paso con un asesor…") lo descartaba anuncia_sin_derivar. El teléfono tampoco
+//    puede leerse como precio (54, 341, 239).
+const TEXTO_CON_TELEFONO = "Para un evento tan cercano, lo mejor es que te comuniques directo con el local al +54 9 341 239 2502: ya les avisé, así te ayudan a resolverlo enseguida.";
+
+prueba("evento hoy o mañana ya en la ficha: sale el texto propio, no el genérico (5/10)", async ({ ctx, sql, clienteId, conversacionId }) => {
+  await sql.query("update contexto_agente set valor = $1 where clave = 'texto_evento_inminente'", [TEXTO_CON_TELEFONO]);
+  await sql.query("update clientes set fecha_evento = $2 where id = $1", [clienteId, "2030-06-04"]); // mañana
+  await insertarEntrante(sql, conversacionId, "hola, necesito un traje");
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: fetcherSoloExtractor(),
+  });
+  assertEquals(resultado.derivo, true);
+  assertEquals(resultado.motivoDerivacion, "evento_inminente");
+  assertEquals(resultado.mensajesAlCliente.join(" "), TEXTO_CON_TELEFONO);
+});
+
+prueba("evento hoy o mañana por buscar_horarios: el texto con el teléfono pasa las barandillas tal cual (5/10)", async ({ ctx, sql, conversacionId }) => {
+  await sql.query("update contexto_agente set valor = $1 where clave = 'texto_evento_inminente'", [TEXTO_CON_TELEFONO]);
+  await insertarEntrante(sql, conversacionId, "hola, necesito un traje para mañana a la noche");
+  let llamadasAlPrincipal = 0;
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    const nombre = body.response_format?.json_schema?.name;
+    if (nombre === "clasificacion") {
+      return Promise.resolve(respuestaChat({ contenido: JSON.stringify({ intencion: "urgente", urgencia: "alta", derivar_duro: false, motivo_derivacion: null }) }));
+    }
+    if (nombre === "ficha") {
+      return Promise.resolve(respuestaChat({
+        contenido: JSON.stringify({
+          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+        }),
+      }));
+    }
+    llamadasAlPrincipal++;
+    if (llamadasAlPrincipal === 1) {
+      return Promise.resolve(respuestaChat({
+        toolCall: {
+          nombre: "buscar_horarios",
+          argumentos: { desde: "2030-06-03", hasta: "2030-06-04", tipo_turno: null, fecha_hora: null, desde_hora: null, hasta_hora: null, fecha_evento: "2030-06-04" },
+        },
+      }));
+    }
+    return Promise.resolve(respuestaChat({ contenido: "" }));
+  }) as unknown as typeof fetch;
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+  assertEquals(resultado.derivo, true);
+  assertEquals(resultado.motivoDerivacion, "evento_inminente");
+  assertEquals(resultado.mensajesAlCliente.join(" "), TEXTO_CON_TELEFONO);
+  const saltos = await contar(sql, "select count(*)::int as n from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = 'barandilla-en-derivacion'", [conversacionId]);
+  assertEquals(saltos, 0, "ninguna barandilla tendría que saltar con este texto");
+});

@@ -36,14 +36,14 @@ prueba("buscar_informacion encuentra escribiendo como cliente y suma el horario 
 
   const h = await ejecutarHerramienta("buscar_informacion", { seccion: "ubicacion-horarios", consulta: "direccion" }, ctx);
   esOk(h);
-  // Dos horarios, los dos de tablas (decisión #7): el del local y el de los turnos.
+  // El horario del local sale de la tabla (decisión #7). Desde el 5/10 (Mateo: abre de corrido)
+  // las franjas de turnos ya no van: Lucía las recitaba como si el local cortara al mediodía.
   assertEquals(h.datos.horario_del_local, "Lunes a viernes, de 10:00 a 19:00. Sábados, de 9:30 a 18:30. Domingos, cerrado.");
-  assertEquals(
-    h.datos.horario_de_turnos,
-    "Lunes a viernes, de 10:00 a 14:00 y de 15:00 a 19:00. Sábados, de 9:30 a 18:30. Domingos, sin turnos.",
-  );
+  assertEquals(h.datos.horario_de_turnos, undefined);
+  assertMatch(String(h.datos.nota_horarios), /de corrido/);
   assertMatch(String(h.datos.nota_horarios), /buscar_horarios/);
-  for (const hora of ["10:00", "19:00", "14:00", "15:00", "09:30", "18:30"]) assert(ctx.traza.horasDevueltas.includes(hora));
+  for (const hora of ["10:00", "19:00", "09:30", "18:30"]) assert(ctx.traza.horasDevueltas.includes(hora));
+  for (const hora of ["14:00", "15:00"]) assert(!ctx.traza.horasDevueltas.includes(hora), `${hora} es de una franja de turnos, no del local`);
 });
 
 prueba("buscar_informacion sin resultados lo dice y no inventa", async ({ ctx, sql }) => {
@@ -54,30 +54,37 @@ prueba("buscar_informacion sin resultados lo dice y no inventa", async ({ ctx, s
   assertMatch(String(r.datos.nota), /dato_no_encontrado/);
 });
 
-prueba("consultar_catalogo filtra por color y talle, suma qué incluye y deja los precios en la traza", async ({ ctx, sql }) => {
+// Pedido de Mateo, 5/10: Lucía no asesora sobre modelos. consultar_catalogo da el precio y qué
+// incluye; nombres, colores, talles y fotos se ven en el catálogo online.
+prueba("consultar_catalogo da el precio y qué incluye, sin modelos, colores ni talles (5/10)", async ({ ctx, sql }) => {
   await soloEstosModelos(sql);
   await soloEstosFragmentos(sql, [{ tema: "que-incluye", titulo: "Qué incluye el precio", texto: "El precio incluye sastrería y tintorería." }]);
   await crearModelo(sql, { modelo: "Clásico", precio: 111, colores: ["Azul marino"], talles: ["48", "50"] });
-  await crearModelo(sql, { modelo: "Noche", precio: 222, colores: ["Negro"], talles: ["52"], fotos: ["n.jpg"] });
+  await crearModelo(sql, { modelo: "Noche", precio: 111, colores: ["Negro"], talles: ["52"], fotos: ["n.jpg"] });
 
-  const todos = await ejecutarHerramienta("consultar_catalogo", { color: null, talle: null }, ctx);
-  esOk(todos);
-  assertEquals((todos.datos.modelos as { modelo: string }[]).map((m) => m.modelo), ["Clásico", "Noche"]);
-  assertEquals(todos.datos.que_incluye, "El precio incluye sastrería y tintorería.");
+  const r = await ejecutarHerramienta("consultar_catalogo", { modelo: null }, ctx);
+  esOk(r);
+  assertEquals(r.datos.precio, 111);
+  assertEquals(r.datos.que_incluye, "El precio incluye sastrería y tintorería.");
+  for (const clave of ["modelos", "colores", "talles"]) assertEquals(r.datos[clave], undefined, `no devuelve ${clave}`);
+  assert(!JSON.stringify(r.datos).includes("Clásico"), "no nombra los modelos");
+  assertMatch(String(r.datos.nota), /catálogo online/);
+  assertMatch(String(r.datos.nota), /talle y de la fecha/);
+  assertEquals([...new Set(ctx.traza.preciosDevueltos)], [111]);
 
-  const azul = await ejecutarHerramienta("consultar_catalogo", { color: "azul", talle: null }, ctx);
-  esOk(azul);
-  assertEquals((azul.datos.modelos as { modelo: string }[]).map((m) => m.modelo), ["Clásico"]);
+  // Color y talle ya no son parámetros: eran filtros para recomendar.
+  esRechazo(await ejecutarHerramienta("consultar_catalogo", { modelo: null, color: "azul" }, ctx), "argumentos_invalidos");
+});
 
-  const t52 = await ejecutarHerramienta("consultar_catalogo", { color: null, talle: "52" }, ctx);
-  esOk(t52);
-  assertEquals((t52.datos.modelos as { modelo: string; tiene_fotos: boolean }[]).map((m) => [m.modelo, m.tiene_fotos]), [["Noche", true]]);
-
-  const nada = await ejecutarHerramienta("consultar_catalogo", { color: "bordó", talle: null }, ctx);
-  esOk(nada);
-  assertEquals(nada.datos.modelos, []);
-  assertMatch(String(nada.datos.nota), /Derivá con motivo dato_no_encontrado/);
-
+prueba("consultar_catalogo con precios distintos según el modelo dice desde cuánto (5/10)", async ({ ctx, sql }) => {
+  await soloEstosModelos(sql);
+  await soloEstosFragmentos(sql, [{ tema: "que-incluye", titulo: "Qué incluye el precio", texto: "El precio incluye sastrería y tintorería." }]);
+  await crearModelo(sql, { modelo: "Clásico", precio: 111 });
+  await crearModelo(sql, { modelo: "Noche", precio: 222 });
+  const r = await ejecutarHerramienta("consultar_catalogo", { modelo: null }, ctx);
+  esOk(r);
+  assertEquals([r.datos.precio, r.datos.precio_desde, r.datos.precio_hasta], [undefined, 111, 222]);
+  assertMatch(String(r.datos.nota_precios), /desde cuánto/);
   assertEquals([...new Set(ctx.traza.preciosDevueltos)].sort((a, b) => a - b), [111, 222]);
 });
 
@@ -91,35 +98,36 @@ prueba("consultar_catalogo: un modelo con precio_base en 0 no tiene precio, y no
   await crearModelo(sql, { modelo: "Sin precio", precio: 0, colores: ["Negro"], talles: ["50"] });
   await crearModelo(sql, { modelo: "Con precio", precio: 333, colores: ["Gris"], talles: ["50"] });
 
-  const r = await ejecutarHerramienta("consultar_catalogo", { color: null, talle: null }, ctx);
+  const r = await ejecutarHerramienta("consultar_catalogo", { modelo: null }, ctx);
   esOk(r);
-  const modelos = r.datos.modelos as { modelo: string; precio_base: number | null }[];
-  assertEquals(
-    modelos.map((m) => [m.modelo, m.precio_base]).sort(),
-    [["Con precio", 333], ["Sin precio", null]],
-  );
-  // La nota le dice a Lucía qué hacer con eso: no inventar y no decir que sale cero.
-  assertMatch(String(r.datos.nota_precios), /NO des precio|no des ningún precio/i);
-  // Y el 0 no queda autorizado en la traza, que es contra lo que la barandilla
-  // precio_sin_herramienta chequea que Lucía no diga un número que no salió de acá.
+  assertEquals(r.datos.precio, 333);
   assertEquals(ctx.traza.preciosDevueltos.includes(0), false);
+
+  // Si el único que coincide no tiene precio: la nota le dice que no invente ni diga que sale cero.
+  const sinPrecio = await ejecutarHerramienta("consultar_catalogo", { modelo: "sin precio" }, ctx);
+  esOk(sinPrecio);
+  assertEquals(sinPrecio.datos.precio, undefined);
+  assertMatch(String(sinPrecio.datos.nota_precios), /NO des ningún precio/);
   assertEquals([...new Set(ctx.traza.preciosDevueltos)], [333]);
 });
 
-prueba("consultar_catalogo filtra a un modelo puntual cuando el cliente pregunta por uno solo (decisión de Mateo, 16/9)", async ({ ctx, sql }) => {
+prueba("consultar_catalogo: el precio de un modelo puntual, y si no está cargado no lo niega (16/9 y 5/10)", async ({ ctx, sql }) => {
   await soloEstosModelos(sql);
   await soloEstosFragmentos(sql, [{ tema: "que-incluye", titulo: "Qué incluye el precio", texto: "El precio incluye sastrería y tintorería." }]);
   await crearModelo(sql, { modelo: "Clásico azul marino", precio: 111, colores: ["Azul marino"], talles: ["48"] });
   await crearModelo(sql, { modelo: "Slim gris oxford", precio: 222, colores: ["Gris"], talles: ["50"] });
 
-  const puntual = await ejecutarHerramienta("consultar_catalogo", { modelo: "clasico", color: null, talle: null }, ctx);
+  const puntual = await ejecutarHerramienta("consultar_catalogo", { modelo: "clasico" }, ctx);
   esOk(puntual);
-  assertEquals((puntual.datos.modelos as { modelo: string }[]).map((m) => m.modelo), ["Clásico azul marino"]);
+  assertEquals(puntual.datos.precio, 111);
+  assertEquals(puntual.datos.nota_modelo, undefined);
 
-  const sinCoincidencia = await ejecutarHerramienta("consultar_catalogo", { modelo: "esmoquin", color: null, talle: null }, ctx);
+  // Un modelo que no está cargado con ese nombre: el precio general, sin negarlo ni cambiarlo por otro.
+  const sinCoincidencia = await ejecutarHerramienta("consultar_catalogo", { modelo: "esmoquin" }, ctx);
   esOk(sinCoincidencia);
-  assertEquals(sinCoincidencia.datos.modelos, []);
-  assertMatch(String(sinCoincidencia.datos.nota), /sin negar disponibilidad/);
+  assertEquals([sinCoincidencia.datos.precio_desde, sinCoincidencia.datos.precio_hasta], [111, 222]);
+  assertMatch(String(sinCoincidencia.datos.nota_modelo), /no digas que no lo tenemos/);
+  assertMatch(String(sinCoincidencia.datos.nota_modelo), /catálogo online/);
 });
 
 prueba("consultar_catalogo y buscar_informacion anotan en la traza los accesorios que nombran sus textos (25/9)", async ({ ctx, sql }) => {
@@ -131,7 +139,7 @@ prueba("consultar_catalogo y buscar_informacion anotan en la traza los accesorio
     { tema: "accesorios", titulo: "Completar el look", texto: "También hay cinturones." },
   ]);
   await crearModelo(sql, { modelo: "Clásico", precio: 111, colores: ["Azul"], talles: ["48"] });
-  esOk(await ejecutarHerramienta("consultar_catalogo", { color: null, talle: null }, ctx));
+  esOk(await ejecutarHerramienta("consultar_catalogo", { modelo: null }, ctx));
   assertEquals([...ctx.traza.accesoriosDevueltos].sort(), ["camisa", "zapato"]);
 
   esOk(await ejecutarHerramienta("buscar_informacion", { seccion: "accesorios", consulta: "cinturon" }, ctx));
@@ -141,7 +149,7 @@ prueba("consultar_catalogo y buscar_informacion anotan en la traza los accesorio
 
 prueba("consultar_catalogo sin qué incluye cargado no da precios", async ({ ctx, sql }) => {
   await soloEstosFragmentos(sql, []);
-  esRechazo(await ejecutarHerramienta("consultar_catalogo", { color: null, talle: null }, ctx), "falta_que_incluye");
+  esRechazo(await ejecutarHerramienta("consultar_catalogo", { modelo: null }, ctx), "falta_que_incluye");
   assertEquals(ctx.traza.preciosDevueltos, []);
 });
 

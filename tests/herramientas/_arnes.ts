@@ -48,7 +48,9 @@ export function hueco(ymd: string, hm: string, minutos: number, probador = 1): H
 
 // El texto fijo de la derivación por evento hoy o mañana, adentro de la transacción: así la
 // prueba demuestra que sale de contexto_agente y no de un texto escrito en el código.
-export const TEXTO_EVENTO_INMINENTE = "Texto de prueba: te paso con un asesor del local.";
+// Sin "te paso con" (5/10): en un turno entero, anuncia_sin_derivar lo descartaba y salía el
+// genérico, igual que pasaba con el texto real de antes. Lleva un teléfono, como el de producción.
+export const TEXTO_EVENTO_INMINENTE = "Texto de prueba: comunicate directo con el local al +54 9 341 239 2502.";
 
 // La agenda de logica (H1.13) todavía no existe: el doble devuelve lo que la prueba le carga,
 // aunque esté mal (así se prueba que las herramientas no le creen).

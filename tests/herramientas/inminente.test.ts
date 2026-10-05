@@ -5,10 +5,13 @@
 // parecido (pasado mañana) que tiene que seguir el camino normal.
 
 import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
+import { aplicarBarandillas } from "../../supabase/functions/_shared/barandillas/index.ts";
+import { trazaNueva } from "../../supabase/functions/_shared/traza.ts";
 import { esEventoInminente } from "../../supabase/functions/_shared/herramientas/derivacion.ts";
 import { ejecutarHerramienta } from "../../supabase/functions/_shared/herramientas/index.ts";
 import type { Resultado } from "../../supabase/functions/_shared/herramientas/tipos.ts";
 import {
+  AHORA,
   agendar,
   buscar,
   conBase,
@@ -101,6 +104,31 @@ prueba("reprogramar_turno con el evento hoy deriva en vez de mover", async ({ ct
   await quedoDerivado(sql, conversacionId, r);
   const t = await fila(sql, "select inicio from turnos where id = $1", [turno]);
   assertEquals(new Date(t.inicio).getTime(), local(LUNES, "16:00").getTime());
+});
+
+// Mateo, 5/10: el texto real lleva el teléfono del local. Sale por buscar_horarios, así que pasa
+// por las barandillas: el anterior ("Te paso con un asesor…") lo descartaba anuncia_sin_derivar y
+// el teléfono no puede leerse como precio.
+// El de devolución tardía (0085) sale por derivar_a_persona y también pasa por las barandillas.
+Deno.test({
+  name: "los textos reales con el teléfono del local pasan las barandillas tal cual (5/10)",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: () =>
+    conBase(async (sql) => {
+      for (const [clave, herramienta] of [["texto_evento_inminente", "buscar_horarios"], ["texto_devolucion_tardia", "derivar_a_persona"]]) {
+        const f = await fila(sql, "select valor from contexto_agente where clave = $1", [clave]);
+        assert(f && String(f.valor).trim().length > 0, `falta ${clave} en contexto_agente`);
+        assert(!/(^|[^\p{L}])no([^\p{L}]|$)/iu.test(String(f.valor)), `${clave} dice que no: ${f.valor}`);
+        const traza = trazaNueva();
+        traza.llamadas.push({ herramienta, argumentos: {}, ok: true });
+        const b = await aplicarBarandillas({
+          texto: String(f.valor), traza, ahora: AHORA, ultimoMensajeClienteAt: AHORA, esPrimerMensaje: false, intencion: "otro", nombreCliente: null,
+        });
+        assertEquals(b.decision, "enviar", `${clave}: ${JSON.stringify(b.saltos)}`);
+        assertEquals(b.texto, String(f.valor), clave);
+      }
+    }),
 });
 
 Deno.test({

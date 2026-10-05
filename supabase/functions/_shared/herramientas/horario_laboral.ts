@@ -91,6 +91,19 @@ export async function leerFranjas(db: Db): Promise<{ franjas: Franja[]; origen: 
 const unirFranjas = (fs: { desde: number; hasta: number }[]) =>
   fs.map((f) => `de ${paraLeer(f.desde)} a ${paraLeer(f.hasta)}`).join(" y ");
 
+// Dos franjas pegadas (la mañana con 2 probadores y la tarde con 3, una termina donde empieza la
+// otra) son un solo horario para quien lo lee: un tramo, no dos, que suenan a que el local corta
+// (pedido de Mateo, 5/10: abre de corrido).
+function fundirPegadas(fs: { desde: number; hasta: number }[]): { desde: number; hasta: number }[] {
+  const res: { desde: number; hasta: number }[] = [];
+  for (const f of [...fs].sort((a, b) => a.desde - b.desde)) {
+    const ultimo = res[res.length - 1];
+    if (ultimo && f.desde <= ultimo.hasta) ultimo.hasta = Math.max(ultimo.hasta, f.hasta);
+    else res.push({ desde: f.desde, hasta: f.hasta });
+  }
+  return res;
+}
+
 // ¿El turno [inicio, fin) entra entero en una franja de ese día? Si viene el probador, además
 // tiene que ser uno de los que toman turnos en esa franja.
 export function dentroDeFranja(
@@ -157,7 +170,7 @@ export function describirHorarios(local: HorarioLocal[], franjas: Franja[], dias
     return h ? `de ${paraLeer(h.apertura)} a ${paraLeer(h.cierre)}` : null;
   }, "cerrado", dias);
   const textoTurnos = frases((d) => {
-    const fs = franjas.filter((f) => f.diaSemana === d).sort((a, b) => a.desde - b.desde);
+    const fs = fundirPegadas(franjas.filter((f) => f.diaSemana === d));
     return fs.length ? unirFranjas(fs) : null;
   }, "sin turnos", dias);
   return { local: textoLocal, turnos: textoTurnos, horas: [...horas] };

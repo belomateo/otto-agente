@@ -42,13 +42,52 @@
 import { MOTIVOS_DERIVACION_LLM, MOTIVOS_SIN_MENSAJE, MOTIVOS_SOLO_CODIGO, type MotivoDerivacion } from "../enums.ts";
 import { hastaMasLejanoBuscado, llamoA } from "../traza.ts";
 import { diasEntre, fechaLocal, sumarDias } from "../tiempo.ts";
-import { CLAVE_TEXTO_DERIVACION_DURA_GENERICA, CLAVE_TEXTO_DERIVACION_RECLAMO, registrarDerivacion, textoDeDerivacion } from "./derivacion.ts";
+import {
+  type ClaveDerivacion,
+  CLAVE_TEXTO_DERIVACION_DURA_GENERICA,
+  CLAVE_TEXTO_DERIVACION_RECLAMO,
+  CLAVE_TEXTO_DEVOLUCION_TARDIA,
+  registrarDerivacion,
+  textoDeDerivacion,
+} from "./derivacion.ts";
+import { normalizar } from "../barandillas/texto.ts";
 import { leerFicha } from "./ficha.ts";
-import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
+import { type ContextoHerramienta, type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
 // Mismo techo que buscar_horarios.ts (RANGO_MAXIMO_DIAS): no le podemos pedir que busque más
 // lejos que lo que la herramienta acepta en una sola llamada.
 const RANGO_MAXIMO_DIAS = 13;
+
+// Motivos con un texto fijo propio, que reemplaza la despedida del modelo (5/10): el de
+// devolucion_tardia le pasa al cliente el teléfono del local, que Lucía nunca escribe.
+const TEXTO_FIJO_DEL_MOTIVO: Partial<Record<MotivoDerivacion, ClaveDerivacion>> = {
+  devolucion_tardia: CLAVE_TEXTO_DEVOLUCION_TARDIA,
+};
+
+// Palabras de una consulta por modelos (5/10). Sin "traje" ni "ambo" a secas: "¿cuánto sale un
+// traje de nene?" es otra consulta. Y si nombra un accesorio, es de accesorios, no del catálogo.
+const PALABRAS_DE_MODELO = new RegExp(
+  "\\b(?:modelos?|colou?r(?:es)?|fotos?|catalogos?|estilos?|smoking|esmoquin|jacket|" +
+    "negros?|azul(?:es|ino)?|gris(?:es)?|verdes?|bordo|beige|marron(?:es)?|celestes?|blancos?|crema|arena|" +
+    "rojos?|mostaza|rayad[oa]s?|cuadros?)\\b",
+);
+const PALABRAS_DE_ACCESORIO = /\b(?:zapat\w*|camisa\w*|corbata\w*|cintur\w*|cinto\w*|mono|monos)\b/;
+
+function mandoElCatalogo(ctx: ContextoHerramienta): boolean {
+  return ctx.traza.llamadas.some((l) => l.ok && l.herramienta === "enviar_link" && (l.argumentos as { tipo?: string } | null)?.tipo === "web");
+}
+
+// Lo que escribió el cliente en esta ráfaga (todo lo entrante desde la última respuesta).
+async function preguntaPorModelos(ctx: ContextoHerramienta): Promise<boolean> {
+  const filas = await ctx.db.consulta<{ texto: string | null }>(
+    `select string_agg(concat_ws(' ', contenido, transcripcion), ' ' order by enviado_at) as texto from mensajes
+      where conversacion_id = $1::uuid and direccion = 'entrante'
+        and enviado_at > coalesce((select max(enviado_at) from mensajes where conversacion_id = $1::uuid and direccion = 'saliente'), '-infinity'::timestamptz)`,
+    [ctx.conversacionId],
+  );
+  const texto = normalizar(filas[0]?.texto ?? "");
+  return PALABRAS_DE_MODELO.test(texto) && !PALABRAS_DE_ACCESORIO.test(texto);
+}
 
 type Args = { motivo: MotivoDerivacion; mensaje_al_cliente: string | null };
 
@@ -60,8 +99,11 @@ export const derivarAPersona: Herramienta<Args> = {
     "despedida corta y sin ninguna pregunta, nunca null — con reclamo o descuento el sistema la reemplaza por un " +
     "texto fijo, así que no te esfuerces con esas dos, pero escribí algo igual. Nunca anuncies un pase sin llamar " +
     "a esta herramienta. Si el evento del cliente es hoy o mañana, NO uses esta herramienta: llamá a " +
-    "buscar_horarios (con la fecha del evento) y el código se encarga de derivar solo, con el dato guardado y el " +
-    "texto correcto. Con motivo turno_urgente_sin_hueco: llamá primero a buscar_horarios en este mismo turno (con " +
+    "buscar_horarios (con la fecha del evento) y el código se encarga solo: guarda el dato y le pasa el teléfono " +
+    "del local. Por un modelo, color o estilo no derives: mandá el catálogo online (enviar_link, tipo web). " +
+    "devolucion_tardia: quiere devolver el traje después del día hábil siguiente al evento (de un evento de fin de " +
+    "semana, después del lunes); nunca le digas que no hay problema: el sistema le pasa el teléfono del local para " +
+    "confirmarlo. Con motivo turno_urgente_sin_hueco: llamá primero a buscar_horarios en este mismo turno (con " +
     "la fecha del evento) y confirmá que de verdad no hay hueco antes de derivar por esto.",
   parametros: objeto({
     motivo: { type: "string", enum: [...MOTIVOS_DERIVACION_LLM], description: "Por qué derivás." },
@@ -127,6 +169,18 @@ export const derivarAPersona: Herramienta<Args> = {
           "no derives, preguntale para cuándo es el evento y volvé a buscar con fecha_evento.",
       );
     }
+    // Pedido de Mateo, 5/10: por un modelo, un color, un estilo o una foto no se deriva. Lucía ya
+    // no asesora sobre modelos: manda el catálogo online y aclara que la disponibilidad depende del
+    // talle y de la fecha. Antes "¿tienen en verde oscuro?" o "estilo Peaky Blinders" terminaban en
+    // dato_no_encontrado, Lucía quedaba apagada y el cliente esperaba horas una respuesta.
+    if (args.motivo === "dato_no_encontrado" && !mandoElCatalogo(ctx) && await preguntaPorModelos(ctx)) {
+      return rechazo(
+        "modelo_va_al_catalogo",
+        "Por un modelo, un color, un estilo o una foto no se deriva: mandá el catálogo online (enviar_link, tipo web) " +
+          "y aclarale que la disponibilidad depende del talle y de la fecha del alquiler; en la visita el equipo le " +
+          "muestra lo que hay para su fecha.",
+      );
+    }
     const mensaje = limpio(args.mensaje_al_cliente);
     if (mensaje && /[?¿]/.test(mensaje)) {
       return rechazo(
@@ -144,8 +198,11 @@ export const derivarAPersona: Herramienta<Args> = {
     // cae al respaldo de código en vez de dejar al cliente mudo de nuevo.
     let textoAlCliente: string;
     let usoRespaldo = false;
+    const claveFija = TEXTO_FIJO_DEL_MOTIVO[args.motivo];
     if (sinDespedida) {
       ({ texto: textoAlCliente, usoRespaldo } = await textoDeDerivacion(ctx.db, CLAVE_TEXTO_DERIVACION_RECLAMO));
+    } else if (claveFija) {
+      ({ texto: textoAlCliente, usoRespaldo } = await textoDeDerivacion(ctx.db, claveFija));
     } else if (mensaje) {
       textoAlCliente = mensaje;
     } else {
@@ -153,7 +210,7 @@ export const derivarAPersona: Herramienta<Args> = {
     }
     const datos: Record<string, unknown> = {
       derivacion_id: id,
-      nota: sinDespedida
+      nota: sinDespedida || claveFija
         ? `Con motivo ${args.motivo} tu despedida no se manda: la reemplaza un texto fijo, sigue una persona. No escribas nada más.`
         : "La charla quedó en manos del equipo. No escribas nada más.",
     };

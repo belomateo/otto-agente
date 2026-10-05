@@ -45,7 +45,9 @@ corrigen la ficha original.
   gente que alquila la misma semana o el mismo día y **nunca se le dice que no**.
   ➜ **Evento hoy o mañana: lo resuelve una persona** (Mateo, 14/9). Lucía deriva sin
   decir que no, con algo como «te paso con un asesor del local, y vamos a hacer lo
-  posible por encontrarte un lugar en la agenda».
+  posible por encontrarte un lugar en la agenda». ➜ **Desde el 5/10 (Mateo): se le pasa
+  el teléfono del local, +54 9 341 239 2502**, para que lo resuelva directo. Es uno de los
+  dos únicos casos en que Lucía da otro contacto (el otro es la devolución tardía).
 - Talles: del XS al **68** de saco. Fuera de ese rango se puede confeccionar con
   tiempo, pero solo para la venta. ➜ Nota de Otto España (14/9), tal cual: «Cuando
   preguntan por talles / tienen trajes de venta». Sin cambio: lo que no entra en el
@@ -71,11 +73,21 @@ corrigen la ficha original.
   de los trajes.
 - Devolución fuera de plazo (➜ Sofía, 17/9): **nunca pasó**; por contrato están obligados a
   entregarlo. ➜ Interno: Lucía no habla de esto, si aparece deriva como reclamo.
+  ➜ **Mateo, 5/10:** si el evento es el fin de semana, se devuelve **sí o sí el lunes**. Si el
+  cliente quiere devolverlo el martes o después, Lucía no le dice que no hay problema: deriva
+  con motivo `devolucion_tardia` y el sistema le pasa el teléfono del local para confirmarlo
+  (caso real del 5/10: un comisionista lo traía el martes y Lucía le dijo que sí).
 - Sin turno (➜ Sofía, 17/9): **se puede ir al local sin turno** a mirar, y si en ese
   momento hay lugar **también medirse y reservar**. El turno sigue siendo lo recomendado
   (el asesor le dedica el tiempo), pero no es excluyente para entrar.
 - Solo retiro en el local: España 764, Rosario. No se envía.
 - Niños: hay trajes desde el talle 4.
+- Modelos (➜ Mateo, 5/10): **Lucía no asesora sobre modelos.** Manda el catálogo online
+  (mrotto.com.ar/alquiler) y aclara que la disponibilidad depende del talle y de la fecha del
+  alquiler: si mostraba qué hay y en el local no estaba, el problema lo tenía el equipo. Las
+  fotos del catálogo de la base ya no se mandan.
+- Horario (➜ Mateo, 5/10): **el local abre de corrido**, de lunes a viernes de 10 a 19 y los
+  sábados de 9:30 a 18:30. Lucía dice ese horario, no las franjas internas de turnos.
 
 ## Sastrería a medida y confección (venta) — fuera de la V1
 

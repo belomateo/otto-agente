@@ -91,9 +91,11 @@ Motivos (enum): `reclamo`, `cliente_enojado` (el tono, no el contenido: lo detec
 clasificador aunque no diga "reclamo" ni nombre nada roto — pedido de Mateo, 16/9),
 `prenda_danada`, `corporativo`, `turno_urgente_sin_hueco`,
 `evento_inminente` (evento hoy o mañana: deriva siempre, decisión #8 del 14/9),
-`descuento`, `dato_no_encontrado`, `pide_persona`, `barandilla_doble`, `sin_respuesta`,
-`timeout`, `fallo_tecnico` (se agotaron los 2 intentos de un trabajo de la cola, o un mensaje
-quedó en duda al mandarlo por Meta — logica, 0044, 16/9).
+`descuento`, `dato_no_encontrado`, `pide_persona`, `devolucion_tardia` (quiere devolver el traje
+después del día hábil siguiente al evento, o después del lunes si el evento es el fin de semana:
+lo confirma el local, y el texto fijo le pasa su teléfono — Mateo, 0085, 5/10), `barandilla_doble`,
+`sin_respuesta`, `timeout`, `fallo_tecnico` (se agotaron los 2 intentos de un trabajo de la cola,
+o un mensaje quedó en duda al mandarlo por Meta — logica, 0044, 16/9).
 
 ---
 
