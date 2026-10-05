@@ -13,6 +13,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { probarTurnosEquipo } from "./turnos-equipo.mjs";
 
 // Rutas relativas a este archivo (tests/paneles/ → raíz del repo).
 const RAIZ = fileURLToPath(new URL("../../", import.meta.url));
@@ -2039,6 +2040,10 @@ try {
       await q("delete from clientes where id = $1", [clienteNuevoId]);
     }
   }
+
+  // Buscar cliente, mover y evento hoy o mañana (pedido de Mateo, 5/10): en su archivo, para poder
+  // correrlo solo (probar-turnos-equipo.mjs) sin tocar ninguna fila real. Crea y borra lo suyo.
+  await probarTurnosEquipo({ api, q, ok, seccion, sesion: sn, email: N.email });
 
   seccion("Quitar acceso a alguien del equipo (decisión de Mateo, 16/9)");
   {

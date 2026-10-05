@@ -20,18 +20,38 @@
 // tenga en cuenta el margen de confección de su evento — no lo hago para no atar el orden en
 // que se llenan los campos del formulario. El POST vuelve a calcular todo con el cliente real
 // al confirmar, así que nunca hay drift entre lo que se mostró y lo que quedó guardado.
+//
+// El cliente se busca en GET /api/turnos/clientes, no en /api/clientes (la pestaña Clientes, solo
+// de la dueña): el equipo da turnos sin depender de un admin (pedido de Mateo, 5/10). Si el
+// cliente tiene el evento hoy o mañana, el POST lo frena (Lucía no da esos turnos) y acá se
+// ofrece dárselo igual, tildándolo: aceptar_evento_inminente (turno-alta.ts, huecosPara).
+// ListaHuecos, los tipos y los estilos se comparten con «Mover» (MoverTurno.tsx).
 
 import { useEffect, useState } from 'react';
 import { enviar, ErrorApi, obtener } from '@/components/api/cliente';
 import { ETIQUETA_TIPO_TURNO } from '@/lib/etiquetas';
-import type { FilaCliente } from '@/lib/queries/clientes';
+import type { ClienteParaTurno } from '@/lib/queries/clientes';
 
-const TIPOS_TURNO = Object.keys(ETIQUETA_TIPO_TURNO);
+export const TIPOS_TURNO = Object.keys(ETIQUETA_TIPO_TURNO);
 
-type Hueco = { inicio: string; fin: string; probador: number; dentro_urgencia: boolean };
+export type Hueco = { inicio: string; fin: string; probador: number; dentro_urgencia: boolean };
 
-const ETIQUETA = 'flex flex-col gap-1 text-[14px] font-medium text-grafito md:text-[11.5px]';
-const CAMPO = 'w-full rounded-otto border border-borde px-2.5 py-2 text-sm text-tinta outline-none focus:border-cobre';
+export const ETIQUETA = 'flex flex-col gap-1 text-[14px] font-medium text-grafito md:text-[11.5px]';
+export const CAMPO = 'w-full rounded-otto border border-borde px-2.5 py-2 text-sm text-tinta outline-none focus:border-cobre';
+
+/** El 409 del POST (o del GET de huecos) cuando el evento del cliente es hoy o mañana. */
+export const esEventoInminente = (e: unknown) =>
+  e instanceof ErrorApi && (e.detalle as { motivo?: string } | undefined)?.motivo === 'evento_inminente';
+
+/** Tilde para dar el turno igual a un cliente con el evento hoy o mañana (decisión #8). */
+export function AceptarInminente({ aceptado, onCambio }: { aceptado: boolean; onCambio: (v: boolean) => void }) {
+  return (
+    <label className="flex items-start gap-2 rounded-otto border border-ambar bg-ambar-suave p-2.5 text-[13px] leading-[1.4] text-ambar">
+      <input type="checkbox" checked={aceptado} onChange={(e) => onCambio(e.target.checked)} className="mt-0.5" />
+      El evento de este cliente es hoy o mañana: Lucía no le da turno, lo resuelve el equipo. Tildá esto para dárselo igual.
+    </label>
+  );
+}
 
 function horaCortaISO(iso: string): string {
   return new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -41,7 +61,7 @@ function horaCortaISO(iso: string): string {
 // dentro de la reserva de urgencia se ofrecen igual, pero marcados: elegirlos exige tildar
 // "pisar la urgencia" más abajo antes de poder confirmar (checkbox explícito, nunca implícito
 // — turno-alta.ts:14, decisión de Mateo).
-function ListaHuecos({ huecos, elegido, onElegir }: { huecos: Hueco[]; elegido: Hueco | null; onElegir: (h: Hueco) => void }) {
+export function ListaHuecos({ huecos, elegido, onElegir }: { huecos: Hueco[]; elegido: Hueco | null; onElegir: (h: Hueco) => void }) {
   if (huecos.length === 0) return <div className="text-[14px] text-grafito">No hay huecos para ese tipo y esa fecha.</div>;
   const ordenados = [...huecos].sort((a, b) => a.inicio.localeCompare(b.inicio) || a.probador - b.probador);
   return (
@@ -87,7 +107,7 @@ function BuscadorCliente({
 }) {
   const [modo, setModo] = useState<'buscar' | 'nuevo'>('buscar');
   const [busqueda, setBusqueda] = useState('');
-  const [resultados, setResultados] = useState<FilaCliente[] | null>(null);
+  const [resultados, setResultados] = useState<ClienteParaTurno[] | null>(null);
   const [buscando, setBuscando] = useState(false);
   const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
 
@@ -101,9 +121,9 @@ function BuscadorCliente({
     setErrorBusqueda(null);
     const id = setTimeout(async () => {
       try {
-        // obtener() (no fetch crudo) para no confundir un 403 de permisos con "no existe" —
-        // r.json() sin mirar r.ok mostraba "Nadie con ese nombre o teléfono" para los dos casos.
-        const j = await obtener<{ clientes: FilaCliente[] }>(`/api/clientes?q=${encodeURIComponent(busqueda.trim())}`);
+        // obtener() (no fetch crudo) para no confundir un error con "no existe" — r.json() sin
+        // mirar r.ok mostraba "Nadie con ese nombre o teléfono" para los dos casos.
+        const j = await obtener<{ clientes: ClienteParaTurno[] }>(`/api/turnos/clientes?q=${encodeURIComponent(busqueda.trim())}`);
         setResultados(j.clientes ?? []);
       } catch (e) {
         setResultados([]);
@@ -191,6 +211,15 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [alternativas, setAlternativas] = useState<Hueco[]>([]);
+  // El POST dijo que el evento de este cliente es hoy o mañana: se puede dar igual, tildándolo.
+  const [inminente, setInminente] = useState(false);
+  const [aceptarInminente, setAceptarInminente] = useState(false);
+
+  // Otro cliente, otra fecha de evento: lo que dijo el POST del anterior ya no vale.
+  useEffect(() => {
+    setInminente(false);
+    setAceptarInminente(false);
+  }, [clienteElegido, telefono]);
 
   useEffect(() => {
     setHuecoElegido(null);
@@ -212,7 +241,13 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
       .finally(() => setCargandoHuecos(false));
   }, [tipo, fecha]);
 
-  const puedeConfirmar = Boolean(tipo && huecoElegido && (clienteElegido || telefono.trim()) && (!huecoElegido.dentro_urgencia || pisarUrgencia));
+  const puedeConfirmar = Boolean(
+    tipo &&
+      huecoElegido &&
+      (clienteElegido || telefono.trim()) &&
+      (!huecoElegido.dentro_urgencia || pisarUrgencia || aceptarInminente) &&
+      (!inminente || aceptarInminente)
+  );
 
   async function confirmar(hueco: Hueco) {
     setEnviando(true);
@@ -225,11 +260,14 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
         probador: hueco.probador,
         inicio: hueco.inicio,
         ...(hueco.dentro_urgencia ? { pisar_urgencia: true } : {}),
+        ...(aceptarInminente ? { aceptar_evento_inminente: true } : {}),
       });
       onCreado();
       onCerrar();
     } catch (e) {
-      if (e instanceof ErrorApi) {
+      if (esEventoInminente(e)) {
+        setInminente(true);
+      } else if (e instanceof ErrorApi) {
         setError(e.message);
         const detalle = e.detalle as { alternativas?: Hueco[] } | undefined;
         if (detalle?.alternativas?.length) setAlternativas(detalle.alternativas);
@@ -300,6 +338,8 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
               onNombre={setNombreNuevo}
             />
           )}
+
+          {inminente && <AceptarInminente aceptado={aceptarInminente} onCambio={setAceptarInminente} />}
 
           {error && (
             <div className="text-[13px] text-ladrillo">

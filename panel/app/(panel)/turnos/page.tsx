@@ -8,9 +8,9 @@
 //
 // Los estados del turno (Marcar alquiló/retiró/devolvió, No vino, Cancelar) van contra
 // PATCH /api/turnos/<id> (lib/edicion/entidades.ts, `turnos`): el servidor valida qué
-// transición es posible desde el estado actual y exige un motivo para cancelar. «Mover» a otro
-// horario todavía no tiene ruta en paneles: queda deshabilitado con una nota, en vez de simular
-// una acción que no pasa a ninguna base. «Nuevo turno» sí (NuevoTurno.tsx, 22/9).
+// transición es posible desde el estado actual y exige un motivo para cancelar. «Nuevo turno»
+// (NuevoTurno.tsx, 22/9) y «Mover» a otro horario, día o tipo (MoverTurno.tsx, 5/10) también:
+// todo esto lo hace cualquiera del equipo, no hace falta ser admin (pedido de Mateo, 5/10).
 //
 // Vista semana (?vista=semana&dia=AAAA-MM-DD, GET /api/turnos/semana?desde=, H1.8 paneles):
 // no hay maqueta de Claude Design para esto (pedido de Mateo 18/9, sin mock previo) — es una
@@ -39,6 +39,7 @@ import { useDatos } from '@/components/api/useDatos';
 import { useEstadoTurno } from '@/components/api/useEstadoTurno';
 import type { AgendaDelDia, FilaTurno } from '@/lib/queries/turnos';
 import { aHora, aMinutos, describirFranjas, horaCorta } from '../configuracion/agenda/franjas';
+import { MoverTurnoModal } from './MoverTurno';
 import { NuevoTurnoModal } from './NuevoTurno';
 
 type Franja = AgendaDelDia['franjas'][number];
@@ -253,10 +254,13 @@ const SIGUIENTES: Record<string, { estado: string; label: string }[]> = {
   retiro: [{ estado: 'devolvio', label: 'Marcar devolvió' }],
 };
 const PUEDE_CANCELAR = new Set(['sin-confirmar', 'confirmado', 'alquilo', 'retiro']);
+// Lo mismo que acepta POST /api/turnos/<id>/mover: los otros ya pasaron por el local.
+const PUEDE_MOVER = new Set(['sin-confirmar', 'confirmado']);
 
 function AccionesTurno({ turno, compacto = false, onCambio }: { turno: FilaTurno; compacto?: boolean; onCambio: () => void }) {
   const { enviando, error, cambiarEstado } = useEstadoTurno(turno, onCambio);
   const [cancelando, setCancelando] = useState(false);
+  const [moviendo, setMoviendo] = useState(false);
   const [motivo, setMotivo] = useState('');
 
   const boton = compacto
@@ -311,9 +315,11 @@ function AccionesTurno({ turno, compacto = false, onCambio }: { turno: FilaTurno
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled title={SIN_CONECTAR} className={`${boton} text-[#8A8578]`}>
-          Mover
-        </button>
+        {PUEDE_MOVER.has(turno.estado) && (
+          <button type="button" onClick={() => setMoviendo(true)} disabled={enviando} className={boton}>
+            Mover
+          </button>
+        )}
         {siguientes.map((s) => (
           <button key={s.estado} type="button" onClick={() => cambiarEstado(s.estado)} disabled={enviando} className={boton}>
             {s.label}
@@ -326,6 +332,7 @@ function AccionesTurno({ turno, compacto = false, onCambio }: { turno: FilaTurno
         )}
       </div>
       {error && <div className="mt-1 text-center text-[14px] text-ladrillo md:text-xs">{error}</div>}
+      {moviendo && <MoverTurnoModal turno={turno} onCerrar={() => setMoviendo(false)} onMovido={onCambio} />}
     </>
   );
 }

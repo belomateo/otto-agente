@@ -13,10 +13,14 @@
 //      pasando diasReservaUrgencia: null a calcularHuecos — no un parámetro nuevo en la función
 //      que usa producción. El margen de confección (huecos.ts:79-85) NO se pisa nunca: es una
 //      promesa al cliente sobre cuándo llega el traje, no una política de agenda.
+//      La excepción es el evento hoy o mañana (aceptar_evento_inminente, más abajo).
+// Y moverTurno (pedido de Mateo, 5/10: cualquiera del equipo da, edita y reagenda turnos): otro
+// horario, otro día u otro tipo para un turno que ya existe, validado igual, con los huecos del día
+// nuevo sin contar el turno que se mueve. Actualiza la misma fila, como reprogramar_turno de Lucía.
 import 'server-only';
 import { z } from 'zod';
 import { desdeErrorDeBase, error, json } from '@/lib/api/respuestas';
-import { esUuid, validar } from '@/lib/api/validar';
+import { esUuid, leerCuerpo, validar } from '@/lib/api/validar';
 import type { Sesion } from '@/lib/api/sesion';
 import { telefonoAlta } from './entidades';
 import {
@@ -41,6 +45,8 @@ export const ESQUEMA_ALTA_TURNO = z
     inicio: z.string().refine((v) => !Number.isNaN(Date.parse(v)), 'Fecha y hora inválidas').optional(),
     /** Explícito: el cliente ya está parado en el local (decisión de Mateo, 19/9). */
     pisar_urgencia: z.boolean().optional(),
+    /** Explícito: el evento es hoy o mañana y lo resuelve quien agenda (ver huecosPara). */
+    aceptar_evento_inminente: z.boolean().optional(),
     // Modo B — panel con hora libre (admin agenda sin pasar por la lista de huecos):
     // el admin elige la hora directamente y cuántos probadores quiere ocupar. No valida
     // contra calcularHuecos; la constraint GiST de la base impide solapamientos reales.
@@ -117,11 +123,11 @@ export async function altaTurno(sesion: Sesion, request: Request) {
   const inicio = new Date(datos.inicio!);
   const fin = new Date(inicio.getTime() + duracion.duracion_min * 60_000);
   const fecha = fechaEnZonaDe(inicio, ZONA_NEGOCIO);
-  const pisarUrgencia = Boolean(datos.pisar_urgencia);
+  const opciones = { pisarUrgencia: Boolean(datos.pisar_urgencia), aceptarInminente: Boolean(datos.aceptar_evento_inminente) };
 
   // Paso 3: la agenda real — las mismas reglas que calculan los huecos que Lucía ofrece. Un
   // solo día alcanza: ya sabemos el inicio pedido.
-  const primero = await validarHueco(sesion, datos.tipo, duracion.duracion_min, fecha, fechaEvento, pisarUrgencia);
+  const primero = await huecosPara(sesion, datos.tipo, duracion.duracion_min, fecha, fechaEvento, opciones);
   if (primero instanceof Response) return primero;
   const probador = elegirProbador(primero.huecos, inicio, datos.probador);
   if (!probador) return error(409, 'Ese horario ya no está disponible', { motivo: 'sin_hueco', alternativas: primero.huecos.slice(0, 5) });
@@ -139,9 +145,113 @@ export async function altaTurno(sesion: Sesion, request: Request) {
   }
   if (!intento.chocoConOtroTurno) return intento.respuesta;
 
-  const reintento = await validarHueco(sesion, datos.tipo, duracion.duracion_min, fecha, fechaEvento, pisarUrgencia);
+  const reintento = await huecosPara(sesion, datos.tipo, duracion.duracion_min, fecha, fechaEvento, opciones);
   const alternativas = reintento instanceof Response ? [] : reintento.huecos.slice(0, 5);
   return error(409, 'Ese horario se ocupó justo ahora', { motivo: 'agenda_ocupada', alternativas });
+}
+
+// Mover un turno (pedido de Mateo, 5/10): POST /api/turnos/<id>/mover con { version, inicio,
+// probador?, tipo?, pisar_urgencia?, aceptar_evento_inminente? }. Lo puede hacer cualquiera del
+// equipo, como marcar los estados. Solo un turno sin-confirmar o confirmado: los demás ya pasaron
+// por el local o se cancelaron. Como reprogramar_turno de Lucía (_shared/herramientas/turnos.ts),
+// es la misma fila y el ciclo arranca de nuevo: vuelve a sin-confirmar y el recordatorio se
+// manda para el horario nuevo. El historial lo deja la base (0004), con quién lo movió (0017).
+const ESQUEMA_MOVER = z.strictObject({
+  version: z.number().int().min(1),
+  /** ISO, con zona: uno de los huecos de GET /api/turnos/huecos?excluir=<id>. */
+  inicio: z.string().refine((v) => !Number.isNaN(Date.parse(v)), 'Fecha y hora inválidas'),
+  probador: z.number().int('Tiene que ser un número entero').min(1, 'Mínimo 1').optional(),
+  /** Otro tipo de turno (p. ej. invitado → doble): cambia la duración. Sin esto, el mismo. */
+  tipo: z.enum(TIPOS_TURNO).optional(),
+  pisar_urgencia: z.boolean().optional(),
+  aceptar_evento_inminente: z.boolean().optional(),
+});
+
+const SE_MUEVEN = ['sin-confirmar', 'confirmado'];
+
+export async function moverTurno(sesion: Sesion, id: string, request: Request) {
+  if (!esUuid(id)) return error(400, 'Identificador inválido');
+  const datos = await leerCuerpo(request, ESQUEMA_MOVER);
+  if (datos instanceof Response) return datos;
+
+  const { data: turno, error: e1 } = await sesion.supabase
+    .from('turnos')
+    .select('id, version, cliente_id, tipo, estado, clientes(fecha_evento)')
+    .eq('id', id)
+    .maybeSingle();
+  if (e1) return desdeErrorDeBase(e1);
+  if (!turno) return error(404, 'Ese turno no existe');
+  if (turno.version !== datos.version) {
+    return error(409, 'Alguien lo editó mientras tanto: recargá y volvé a intentar', { version_actual: turno.version });
+  }
+  if (!SE_MUEVEN.includes(turno.estado)) {
+    return error(409, `Un turno en estado "${turno.estado}" ya no se mueve: si quiere venir otra vez, dale un turno nuevo`);
+  }
+
+  const tipo = datos.tipo ?? turno.tipo;
+  const { data: duracion, error: e2 } = await sesion.supabase.from('duraciones_turno').select('duracion_min').eq('tipo', tipo).maybeSingle();
+  if (e2) return desdeErrorDeBase(e2);
+  if (!duracion) return error(400, `No hay una duración cargada para "${tipo}" en Configuración › Agenda`);
+
+  const inicio = new Date(datos.inicio);
+  const fin = new Date(inicio.getTime() + duracion.duracion_min * 60_000);
+  const fecha = fechaEnZonaDe(inicio, ZONA_NEGOCIO);
+  const fechaEvento = (turno.clientes as { fecha_evento: string | null } | null)?.fecha_evento ?? null;
+  const opciones = {
+    pisarUrgencia: Boolean(datos.pisar_urgencia),
+    aceptarInminente: Boolean(datos.aceptar_evento_inminente),
+    excluirTurno: id,
+  };
+
+  const agenda = await huecosPara(sesion, tipo, duracion.duracion_min, fecha, fechaEvento, opciones);
+  if (agenda instanceof Response) return agenda;
+  const probador = elegirProbador(agenda.huecos, inicio, datos.probador);
+  if (!probador) return error(409, 'Ese horario ya no está disponible', { motivo: 'sin_hueco', alternativas: agenda.huecos.slice(0, 5) });
+
+  const { data: movido, error: e3 } = await sesion.supabase
+    .from('turnos')
+    .update({
+      tipo,
+      duracion_min: duracion.duracion_min,
+      probador,
+      inicio: inicio.toISOString(),
+      fin: fin.toISOString(),
+      estado: 'sin-confirmar',
+      confirmado: false,
+      confirmado_at: null,
+      confirmado_por: null,
+      recordatorio_enviado_at: null,
+      aviso_ok_at: null,
+      aviso_ok_por: null,
+    })
+    .eq('id', id)
+    .eq('version', datos.version)
+    .select()
+    .maybeSingle();
+  if (e3) {
+    // Un bloqueo o un cierre que apareció recién lo explica la base (0067); otro 23P01 es que
+    // alguien tomó ese horario entre el cálculo y el update: se ofrecen los que quedan.
+    if (e3.code !== '23P01' || /turno_en_/.test(e3.message)) return desdeErrorDeBase(e3);
+    const reintento = await huecosPara(sesion, tipo, duracion.duracion_min, fecha, fechaEvento, opciones);
+    const alternativas = reintento instanceof Response ? [] : reintento.huecos.slice(0, 5);
+    return error(409, 'Ese horario se ocupó justo ahora', { motivo: 'agenda_ocupada', alternativas });
+  }
+  if (!movido) return error(409, 'Alguien lo editó mientras tanto: recargá y volvé a intentar');
+
+  // El recordatorio sale una sola vez por turno (envios_programados es único por tipo y
+  // referencia, 0021). Si ya le había llegado el del horario anterior, el nuevo no le llega solo:
+  // el panel le pide a quien lo movió que le avise.
+  const { data: yaLeLlego, error: e4 } = await sesion.supabase
+    .from('envios_programados')
+    .select('id')
+    .eq('tipo', 'recordatorio_18h')
+    .eq('referencia', id)
+    .eq('estado', 'enviado')
+    .limit(1);
+  if (e4) console.error('[turnos] mover: no se pudo ver si ya salió el recordatorio:', e4.message);
+  const avisarAlCliente = Boolean(yaLeLlego?.length);
+  if (!avisarAlCliente) dispararConfirmacion(id);
+  return json({ fila: movido, avisar_al_cliente: avisarAlCliente });
 }
 
 // Modo libre: el admin eligió tipo + fecha + hora + cantidad de probadores sin ver la lista de
@@ -239,11 +349,14 @@ export type HuecoConUrgencia = Hueco & { dentro_urgencia: boolean };
 // después rechaza. cliente_id es opcional: sin cliente elegido todavía (walk-in que ni
 // siquiera tiene ficha), no hay fecha_evento que aplique el margen de confección — el POST
 // vuelve a validar con el cliente real al confirmar, esto es una vista previa.
+// excluirTurno: el turno que se está moviendo (moverTurno) no ocupa su propio lugar, así se puede
+// correr un rato dentro del mismo día.
 export async function huecosDelDia(
   sesion: Sesion,
   tipo: string,
   fecha: string,
-  clienteId?: string
+  clienteId?: string,
+  o: { excluirTurno?: string; aceptarInminente?: boolean } = {}
 ): Promise<{ huecos: HuecoConUrgencia[] } | Response> {
   const { data: duracion, error: e1 } = await sesion.supabase.from('duraciones_turno').select('duracion_min').eq('tipo', tipo).maybeSingle();
   if (e1) return desdeErrorDeBase(e1);
@@ -257,9 +370,10 @@ export async function huecosDelDia(
     fechaEvento = data.fecha_evento;
   }
 
+  const base = { aceptarInminente: Boolean(o.aceptarInminente), excluirTurno: o.excluirTurno };
   const [sinPisar, conPisar] = await Promise.all([
-    validarHueco(sesion, tipo, duracion.duracion_min, fecha, fechaEvento, false),
-    validarHueco(sesion, tipo, duracion.duracion_min, fecha, fechaEvento, true),
+    huecosPara(sesion, tipo, duracion.duracion_min, fecha, fechaEvento, { ...base, pisarUrgencia: false }),
+    huecosPara(sesion, tipo, duracion.duracion_min, fecha, fechaEvento, { ...base, pisarUrgencia: true }),
   ]);
   if (sinPisar instanceof Response) return sinPisar;
   if (conPisar instanceof Response) return conPisar;
@@ -269,20 +383,46 @@ export async function huecosDelDia(
   return { huecos: conPisar.huecos.map((h) => ({ ...h, dentro_urgencia: !libres.has(clave(h)) })) };
 }
 
+type OpcionesAgenda = { pisarUrgencia: boolean; aceptarInminente: boolean; excluirTurno?: string };
+
+// Evento hoy o mañana (decisión #8): Lucía no da turno, lo resuelve una persona del equipo. Desde
+// el 5/10 Lucía además le pasa al cliente el teléfono del local, y quien lo atiende tiene que poder
+// anotarlo en la agenda. Se puede, pero explícito (aceptar_evento_inminente, mismo criterio que
+// pisar_urgencia): sin la fecha del evento, que es lo que frenaba, y pisando la reserva de
+// urgencia, que existe justamente para estos casos. Sin aceptarlo, el 409 de siempre.
+async function huecosPara(
+  sesion: Sesion,
+  tipo: string,
+  duracionMin: number,
+  fecha: string,
+  fechaEvento: string | null,
+  o: OpcionesAgenda
+): Promise<{ huecos: Hueco[] } | Response> {
+  const r = await validarHueco(sesion, tipo, duracionMin, fecha, fechaEvento, o.pisarUrgencia, o.excluirTurno);
+  if (r instanceof Response || !r.inminente) return r;
+  if (!o.aceptarInminente) {
+    return error(409, 'El evento de este cliente es hoy o mañana: Lucía no le da turno, lo resuelve el equipo. Si se lo das vos, confirmalo', {
+      motivo: 'evento_inminente',
+    });
+  }
+  return validarHueco(sesion, tipo, duracionMin, fecha, null, true, o.excluirTurno);
+}
+
 async function validarHueco(
   sesion: Sesion,
   tipo: string,
   duracionMin: number,
   fecha: string,
   fechaEvento: string | null,
-  pisarUrgencia: boolean
-): Promise<{ huecos: Hueco[] } | Response> {
+  pisarUrgencia: boolean,
+  excluirTurno?: string
+): Promise<{ huecos: Hueco[]; inminente: boolean } | Response> {
   const [config, franjasFilas, ocupadosFilas, cierreFila, bloqueosFilas, diasSimultaneosFilas] = await Promise.all([
     sesion.supabase.from('configuracion_agenda').select('escalonado_min, dias_reserva_urgencia').maybeSingle(),
     sesion.supabase.from('franjas_turnos').select('dia_semana, desde, hasta, probadores'),
     sesion.supabase
       .from('turnos')
-      .select('probador, inicio, fin')
+      .select('id, probador, inicio, fin')
       .not('estado', 'in', '(cancelado,no-vino)')
       .gte('inicio', `${fecha}T00:00:00${OFFSET_NEGOCIO}`)
       .lt('inicio', `${fecha}T23:59:59.999${OFFSET_NEGOCIO}`),
@@ -339,18 +479,17 @@ async function validarHueco(
     diasConfeccion: tipo === 'prueba_final' ? 1 : DIAS_CONFECCION_POR_DEFECTO,
     diasSimultaneos,
   };
-  const ocupados: Ocupado[] = (ocupadosFilas.data ?? []).map((t) => ({
-    probador: t.probador,
-    inicio: new Date(t.inicio),
-    fin: new Date(t.fin),
-  }));
+  const ocupados: Ocupado[] = (ocupadosFilas.data ?? [])
+    .filter((t) => t.id !== excluirTurno)
+    .map((t) => ({
+      probador: t.probador,
+      inicio: new Date(t.inicio),
+      fin: new Date(t.fin),
+    }));
 
   const cerrados = new Set<string>(cierreFila.data ? [fecha] : []);
   const r = calcularHuecos(reglas, ocupados, { desde: fecha, hasta: fecha, ahora: new Date(), fechaEvento, tz: ZONA_NEGOCIO, cerrados, bloqueos });
-  if (r.derivar === 'evento_inminente') {
-    return error(409, 'El evento es hoy o mañana: la agenda no ofrece turnos, se resuelve a mano', { motivo: 'evento_inminente' });
-  }
-  return { huecos: r.huecos };
+  return { huecos: r.huecos, inminente: r.derivar === 'evento_inminente' };
 }
 
 function elegirProbador(huecos: Hueco[], inicio: Date, probadorPedido?: number): number | null {

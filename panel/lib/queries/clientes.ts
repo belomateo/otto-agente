@@ -64,6 +64,29 @@ export async function listarClientes(
   return { clientes: filas, total: filas.length };
 }
 
+/** Un cliente para elegir en «Nuevo turno»: lo justo para reconocerlo. */
+export type ClienteParaTurno = { id: string; n: string; tel: string };
+
+const MAX_PARA_TURNO = 8;
+
+// «Nuevo turno» (pedido de Mateo, 5/10: dar turnos no depende de un admin). La lista de
+// Clientes sigue siendo solo de la dueña (16/9): esto es buscar a quién se le da el turno, con
+// algo escrito, de a pocos y con nombre y teléfono nada más. Un teléfono se busca por sus
+// dígitos, escrito como sea: "341 555-1234" encuentra 5493415551234.
+export async function buscarParaTurno(db: ClienteDb, texto: string): Promise<{ clientes: ClienteParaTurno[] }> {
+  const crudo = texto.trim();
+  const b = /^[\d\s()+.-]+$/.test(crudo) ? crudo.replace(/\D/g, '') : normalizar(crudo);
+  if (b.length < 2) return { clientes: [] };
+  const { data, error } = await db
+    .from('clientes')
+    .select('id, nombre, telefono')
+    .ilike('busqueda', `%${escaparIlike(b)}%`)
+    .order('creado_at', { ascending: false })
+    .limit(MAX_PARA_TURNO);
+  if (error) throw error;
+  return { clientes: (data ?? []).map((c) => ({ id: c.id, n: nombreDe(c), tel: telefonoLegible(c.telefono) })) };
+}
+
 export type FichaDeCliente = {
   /** La fila completa, con `version` para editarla (PATCH /api/clientes/[id]). */
   cliente: Fila<'clientes'>;
