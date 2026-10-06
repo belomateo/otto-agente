@@ -27,11 +27,14 @@ export const esTipoEnvio = (v: unknown): v is TipoEnvio => (TIPOS_ENVIO as reado
 // el nombre de una plantilla no se puede cambiar después de crearla, así que manda el de allá.
 // Verificados contra la API (GET /{waba}/message_templates) el 24/9. Si alguno no existe con este
 // nombre exacto, Meta rechaza el envío entero y no sale nada.
+// recontacto_2 tiene su propia plantilla desde el 6/10: antes usaba la misma del primero y al
+// cliente le llegaba el mismo mensaje dos veces, palabra por palabra. Mientras Meta no la apruebe,
+// cron-envios no manda el segundo (ver plantillaAprobada allá).
 export const NOMBRE_PLANTILLA: Record<TipoEnvio, string> = {
   recordatorio_18h: "recordatorio_turno",
   agradecimiento_resena: "agradecimiento",
   recontacto_1: "recontacto_cliente",
-  recontacto_2: "recontacto_cliente",
+  recontacto_2: "recontacto_cliente_2",
 };
 export const IDIOMA_PLANTILLAS = "es_AR";
 
@@ -124,6 +127,12 @@ export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string): Plan
     };
   }
 
+  if (tipo === "recontacto_2") {
+    // El texto tiene que ser EXACTAMENTE el de la plantilla registrada en Meta (TEXTO_RECONTACTO_2):
+    // la charla guarda lo que recibió el cliente.
+    return { ...base, cuerpo: [nombre], texto: TEXTO_RECONTACTO_2.replace("{{1}}", nombre) };
+  }
+
   return {
     ...base,
     cuerpo: [nombre],
@@ -134,3 +143,10 @@ export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string): Plan
       "¿Seguís buscando? ¿Querés que agendemos un turno?",
   };
 }
+
+// El cuerpo de recontacto_cliente_2 tal como se registra en Meta (MARKETING, es_AR, variable {{1}}
+// = el primer nombre). Distinto del primero a propósito: más corto, con un motivo concreto para
+// venir pronto, y libera al que ya lo resolvió de tener que contestar.
+export const TEXTO_RECONTACTO_2 = "¡Hola {{1}}! 👋 Te escribimos de Otto Su Misura por el traje para tu evento. Como " +
+  "la disponibilidad depende del talle y de la fecha, conviene venir a probarte con tiempo. Si querés, respondé " +
+  "este mensaje y te buscamos un turno. Si ya lo resolviste, no hace falta que contestes 🙂";

@@ -236,7 +236,29 @@ Deno.test("precio_sin_herramienta no salta con el mismo texto y la herramienta e
 Deno.test("precio_sin_herramienta salta con un total que no devolvió ninguna herramienta (regla 9)", async () => {
   const conPrecios = traza({ herramientas: ["consultar_catalogo", "consultar_accesorios"], precios: [150000, 33500] });
   const r = await salta(precioSinHerramienta, entrada("Con camisa y corbata te queda en $183.500.", { traza: conPrecios }));
-  assertMatch(r.motivo, /no se suman/);
+  assertMatch(r.motivo, /no sumes/);
+  // Y le dice qué hacer en cambio (6/10: sin esto, el segundo intento volvía a sumar y derivaba).
+  assertMatch(r.motivo, /cada precio por separado/);
+});
+
+Deno.test("precio_sin_herramienta lee bien un precio seguido de una coma (6/10: $33.500, se leía $33)", () => {
+  assertEquals(montos("También tenemos camisa y corbata por $33.500, y zapatos y cinturón por $55.000, cada conjunto por separado."), [33500, 55000]);
+  assertEquals(montos("El alquiler es a partir de $150.000, e incluye el ambo."), [150000]);
+  assertEquals(montos("Sale 150.000, más los accesorios."), [150000]);
+  assertEquals(montos("Son 150000, con todo."), [150000]);
+  // Casos parecidos: lo que ya andaba sigue igual.
+  assertEquals(montos("la camisa y corbata 33,5 mil"), [33500]);
+  assertEquals(montos("$150 mil"), [150000]);
+  assertEquals(montos("$150.000."), [150000]);
+});
+
+Deno.test("precio_sin_herramienta no confunde «del 30» ni «de 60 a 7 días» con un precio (revisión del 6/10)", () => {
+  assertEquals(montos("Llegás bien para tu casamiento del 30, Juan."), []);
+  assertEquals(montos("Conviene que vengas antes del 30."), []);
+  assertEquals(montos("Lo ideal es reservar de 60 a 7 días antes del evento."), []);
+  assertEquals(montos("Desde 60 hasta 7 días antes del evento está perfecto."), []);
+  // Caso parecido: un precio suelto sigue saltando.
+  assertEquals(montos("El traje te sale 30."), [30]);
 });
 
 Deno.test("precio_sin_herramienta reconoce 150 mil y 150000 sin signo", async () => {

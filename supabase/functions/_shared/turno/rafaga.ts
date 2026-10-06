@@ -67,6 +67,11 @@ export type Rafaga = {
   // hubo algo entrante en la ventana, no es lo mismo que "no pasó nada" — turno.ts contesta con
   // el texto fijo de contexto_agente en vez de quedarse en silencio.
   soloNoTexto: boolean;
+  // Lo único que llegó son stickers. Un sticker es un gesto (un corazón, un pulgar, un "gracias"),
+  // no una consulta: contestarle "no puedo leer esto, escribime en texto" quedaba frío y
+  // robótico (6/10: a una clienta que contaba que había perdido a su hijo; a otra que acababa de
+  // reservar). turno.ts no contesta nada en ese caso.
+  soloStickers: boolean;
   // Al menos un adjunto todavía se está bajando (el worker le puso un tope de tiempo/cantidad a
   // bajarMediosPendientes y este quedó para el turno que viene). NO es un error: decir "no pude
   // leerlo" acá sería mentir, porque sí se va a leer. turno.ts contesta distinto a esto.
@@ -142,20 +147,23 @@ export async function agruparRafaga(
   );
   let ultimoEnviadoAt = filas.length ? new Date(filas[filas.length - 1].enviado_at) : null;
   if (filas.length === 0) {
-    const [otros] = await db.consulta<{ n: number; ultimo: string | null }>(
-      `select count(*)::int as n, max(enviado_at) as ultimo from mensajes
+    const [otros] = await db.consulta<{ n: number; stickers: number; ultimo: string | null }>(
+      `select count(*)::int as n, count(*) filter (where tipo = 'sticker')::int as stickers, max(enviado_at) as ultimo
+         from mensajes
         where conversacion_id = $1 and direccion = 'entrante'
           and enviado_at > $2::timestamptz and enviado_at <= $3::timestamptz`,
       [conversacionId, desdeIso, ahora.toISOString()],
     );
     if (otros?.ultimo) ultimoEnviadoAt = new Date(otros.ultimo);
+    const n = otros?.n ?? 0;
     return {
       texto: "",
       imagenes: [],
       mensajeIds: [],
       desde: new Date(desdeIso),
       ultimoEnviadoAt,
-      soloNoTexto: (otros?.n ?? 0) > 0,
+      soloNoTexto: n > 0,
+      soloStickers: n > 0 && (otros?.stickers ?? 0) === n,
       hayAdjuntoPendiente: false,
       hayAdjuntoNoLegible: false,
       recortada: false,
@@ -223,6 +231,7 @@ export async function agruparRafaga(
     desde: new Date(desdeIso),
     ultimoEnviadoAt,
     soloNoTexto: texto === "" && imagenes.length === 0,
+    soloStickers: false,
     hayAdjuntoPendiente,
     hayAdjuntoNoLegible,
     recortada,

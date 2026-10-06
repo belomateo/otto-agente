@@ -52,6 +52,28 @@ Con «Necesito reprogramar», Lucía retoma la charla y le ofrece otro horario.
 Cualquiera de los dos botones vuelve a abrir la charla con Lucía: con «Sí» busca horarios, y
 con «Más adelante» lo acepta sin insistir.
 
+## 4. `recontacto_cliente_2` — el segundo recontacto (Mateo, 6/10)
+
+Hasta el 6/10 el segundo recontacto usaba la misma plantilla que el primero (`recontacto_cliente`)
+y al cliente le llegaba el mismo mensaje dos veces, palabra por palabra. Ahora tiene la suya.
+Mientras Meta no la apruebe, el segundo no sale (cron-envios lo pregunta antes de mandar).
+
+- **Cuándo sale:** a los tres días del último mensaje del cliente, solo si salió el primero y el
+  cliente **no lo contestó**. No sale con Lucía apagada en la charla, ni a quien ya alquiló en los
+  últimos 60 días (0088).
+- **Categoría en Meta:** marketing. **Idioma:** español (Argentina), `es_AR`.
+- **Nombre exacto:** `recontacto_cliente_2` (si se registra con otro nombre, no sale).
+- **Variables:** `{{1}}` el primer nombre (ejemplo para Meta: «Juan»). Sin botones.
+
+> ¡Hola {{1}}! 👋 Te escribimos de Otto Su Misura por el traje para tu evento. Como la
+> disponibilidad depende del talle y de la fecha, conviene venir a probarte con tiempo. Si
+> querés, respondé este mensaje y te buscamos un turno. Si ya lo resolviste, no hace falta que
+> contestes 🙂
+
+El texto tiene que quedar igual al de `TEXTO_RECONTACTO_2` en `_shared/whatsapp/plantillas.ts`
+(la charla guarda lo que recibió el cliente). Si en Meta se cambia una palabra, cambiarla también
+ahí.
+
 ## Cómo se escribieron
 
 - Con la voz de Lucía: voseo, cálida, sin presionar, una sola pregunta y al final.

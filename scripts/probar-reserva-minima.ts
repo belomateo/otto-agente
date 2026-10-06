@@ -29,6 +29,11 @@ for (const caso of [
   { mensaje: "¿Qué horario tienen los sábados?", reserva: false, esperado: "corrido" },
   { mensaje: "Necesito un traje para un casamiento mañana a la noche", reserva: false, esperado: "telefono" },
   { mensaje: "Hola, alquilé el traje para el casamiento del sábado 1 de junio. ¿Lo puedo devolver el miércoles?", reserva: false, esperado: "devolucion" },
+  // Revisión de las últimas 20 charlas (Mateo, 6/10).
+  { mensaje: "Cuánto sale todo completo, con camisa, corbata y zapatos?", reserva: false, esperado: "completo" },
+  { mensaje: "No voy a poder ir al turno, mi hijo no va a estar", reserva: false, esperado: "cancela_y_ofrece", turnoPrevio: true },
+  { mensaje: "Si el traje vuelve con una mancha, me cobran algo extra por la tintorería?", reserva: false, esperado: "mancha" },
+  { mensaje: "Para medirse el traje hay que sacar turno?", reserva: false, esperado: "sin_turno" },
 ] as { mensaje: string; reserva: boolean; esperado: string; turnoPrevio?: boolean; reservaDias?: number }[]) {
   prueba(`Lucía real: ${caso.mensaje}`, async ({ sql, ctx, clienteId, conversacionId }) => {
     await sql.query("set local lock_timeout = '5s'");
@@ -36,6 +41,9 @@ for (const caso of [
     // 0074–0079 ya están en producción (2/10). Se prueba la plantilla del repo tal cual está, sin
     // cargarla: dentro de esta transacción, que termina en rollback.
     await sql.query("update prompt_base set texto = $1 where unica", [await Deno.readTextFile(new URL("../plantilla-agente/02-prompt.md", import.meta.url))]);
+    // Los fragmentos de la revisión del 6/10 (manchas, anticipación): idempotente, se aplica igual
+    // esté o no cargada en producción.
+    await sql.query(await Deno.readTextFile(new URL("../supabase/migrations/0087_manchas_y_anticipacion.sql", import.meta.url)));
     await sql.query("update configuracion_agenda set dias_reserva_urgencia = $1", [caso.reservaDias ?? null]);
     await sql.query("update clientes set nombre = null, evento = null, fecha_evento = null, rol = null, email = null where id = $1", [clienteId]);
     if (caso.turnoPrevio) {
@@ -107,6 +115,23 @@ for (const caso of [
       const t = r.mensajesAlCliente.join("\n");
       assertMatch(t, /(?:a partir de|desde|arranca)[^.]{0,20}150(?:\.000| mil)/i, "siempre «a partir de» (Mateo, 5/10)");
       assertEquals(/livorno|tech|azulino|pizarra/i.test(t), false, "no nombra modelos");
+      // No corta en el precio: cierra preguntando por el evento o el turno (6/10).
+      assertMatch(t, /(?:evento|fecha|turno)[^.!]*\?\s*$/i, "después del precio, una pregunta que acerque la visita");
+    } else if (caso.esperado === "completo") {
+      const t = r.mensajesAlCliente.join("\n");
+      assertMatch(t, /150\.000/);
+      assertMatch(t, /33\.500/, "da el precio de camisa y corbata");
+      assertMatch(t, /55\.000/, "da el precio de zapatos y cinturón");
+      assertEquals(/238\.500|183\.500|205\.000/.test(t), false, "no suma un total");
+    } else if (caso.esperado === "cancela_y_ofrece") {
+      const t = r.mensajesAlCliente.join("\n");
+      assertMatch(t, /otro d[ií]a|otra fecha|reprogram|te busco|buscamos|busque/i, "al cancelar ofrece otro día (6/10)");
+    } else if (caso.esperado === "mancha") {
+      const t = r.mensajesAlCliente.join("\n");
+      assertMatch(t, /nuestra cuenta|primera/i, "la primera limpieza la cubre Otto");
+      assertMatch(t, /segunda|de nuevo|nuevamente/i, "si hay que mandarlo de nuevo, la paga el cliente");
+    } else if (caso.esperado === "sin_turno") {
+      assertMatch(r.mensajesAlCliente.join("\n"), /hay lugar/i, "sin turno también se puede medir si hay lugar");
     } else if (caso.esperado === "corrido") {
       const t = r.mensajesAlCliente.join("\n");
       assertMatch(t, /9[:.]30/);

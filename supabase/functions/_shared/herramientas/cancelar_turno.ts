@@ -14,7 +14,8 @@ export const cancelarTurno: Herramienta<Args> = {
   nombre: "cancelar_turno",
   tipo: "accion",
   descripcion: "Cancela un turno del cliente cuando te dice que no va a venir y no quiere otro horario (si quiere " +
-    "otro horario, usá reprogramar_turno). Anotá el motivo con sus palabras. El turno queda cancelado, no se borra.",
+    "otro horario, usá reprogramar_turno). Anotá el motivo con sus palabras. El turno queda cancelado, no se borra. " +
+    "Al contarle que lo cancelaste, ofrecele buscar otro día.",
   parametros: objeto({
     turno_id: { type: "string", format: "uuid", description: "El turno_id que figura en sus turnos." },
     motivo: { type: "string", minLength: 3, maxLength: 300, description: "Por qué cancela, con sus palabras." },
@@ -48,7 +49,10 @@ export const cancelarTurno: Herramienta<Args> = {
       datos: {
         turno_id: t.id,
         estado: ESTADO_TURNO_CANCELADO,
-        nota: "El turno quedó cancelado. Si más adelante quiere venir, buscá horarios y agendá uno nuevo.",
+        // Caso real del 5/10: «no voy a poder asistir hoy» → «Listo, cancelé el turno de
+        // hoy», y nada más; el recordatorio le había prometido «avisanos y lo reprogramamos».
+        nota: "El turno quedó cancelado. En el mismo mensaje ofrecele buscar otro día para que venga, salvo que ya " +
+          "te haya dicho que no lo necesita. Si acepta, buscá horarios y agendá uno nuevo.",
       },
     };
   },

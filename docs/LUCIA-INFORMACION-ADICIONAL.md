@@ -1,6 +1,6 @@
 # Lucía — información adicional
 
-Generado el 5 de octubre de 2026 a las 1:28 p. m. desde la base de producción (no es una copia a mano). Prompt vivo: versión 29, última edición «Mateo 5/10: prenda dudosa al catálogo; nunca «lo confirma el equipo» sin derivar».
+Generado el 6 de octubre de 2026 a las 5:15 p. m. desde la base de producción (no es una copia a mano). Prompt vivo: versión 31, última edición «Revisión del 6/10: ejemplo de visita sin turno sin el nombre real de la clienta».
 
 Todo esto Lucía **no lo sabe de memoria**: lo consulta con sus herramientas solo cuando la charla lo necesita, y recién ahí lo afirma. El prompt principal (`LUCIA-PROMPT.md`) le dice dónde está cada cosa. Se edita desde el panel y Lucía lo usa en menos de un minuto, sin tocar el prompt.
 
@@ -51,7 +51,7 @@ Los modelos y colores de alquiler, con sus fotos, se pueden ver en el catálogo 
 
 ### `reserva-y-garantia`
 
-*En el mapa del prompt: pago del 100% en el local, medios de pago, transferencias, cuotas, garantía con tarjeta y cancelaciones.*
+*En el mapa del prompt: pago del 100% en el local, medios de pago, transferencias, cuotas, garantía con tarjeta, cancelaciones y manchas.*
 
 **Pago y garantía**
 
@@ -60,6 +60,10 @@ No se deja seña: para reservar el traje se abona el 100% del alquiler, todo jun
 **Si cancelás el alquiler**
 
 El contrato de alquiler tiene una penalidad por cancelación, y cuánto es depende de cuándo cancelás: dentro de los 5 días hábiles de haber firmado el contrato, la penalidad es del 30% del total; pasado ese plazo y hasta 10 días antes de la fecha de uso, es del 70%; y desde los 9 días antes de la fecha de uso ya no hay devolución. Cuánto corresponde en cada caso lo cierra el equipo del local, porque depende de las fechas que figuran en el contrato.
+
+**Si el traje vuelve manchado**
+
+Si el traje vuelve con alguna mancha, lo mandamos a la tintorería y esa limpieza corre por nuestra cuenta. Si la mancha no sale y hay que mandarlo de nuevo, esa segunda limpieza la abona el cliente. Si una prenda vuelve rota o dañada, el equipo del local la revisa y te cuenta cómo sigue.
 
 ### `ubicacion-horarios`
 
@@ -103,7 +107,7 @@ Si en la prueba final el traje necesita un retoque, los sastres lo arreglan ahí
 
 **Anticipación**
 
-¿Con cuánto tiempo conviene reservar? Lo ideal es entre 60 y 7 días antes del evento, así hay tiempo para elegir y para que la sastrería ajuste todo sin apuro. Si es urgente y el evento es en pocos días, igual llegás: siempre buscamos la forma. Si el evento es hoy o mañana, se resuelve directo con el local: te pasamos su teléfono para que lo coordines con ellos.
+¿Con cuánto tiempo conviene reservar? Lo ideal es venir a probarse entre 60 y 7 días antes del evento, así hay tiempo para elegir y para que la sastrería ajuste todo sin apuro. Lo que cuenta es el día de la visita al local: si entre la visita y el evento quedan menos de siete días, ya es con poco tiempo, pero igual llegás: siempre buscamos la forma, y conviene dejar el turno reservado ya. Si el evento es hoy o mañana, se resuelve directo con el local: te pasamos su teléfono para que lo coordines con ellos.
 
 ### `accesorios`
 
@@ -344,7 +348,7 @@ Mueve a otro horario un turno que ya tiene el cliente. Antes, en este mismo turn
 
 Parámetros: `turno_id`, `motivo`
 
-Cancela un turno del cliente cuando te dice que no va a venir y no quiere otro horario (si quiere otro horario, usá reprogramar_turno). Anotá el motivo con sus palabras. El turno queda cancelado, no se borra.
+Cancela un turno del cliente cuando te dice que no va a venir y no quiere otro horario (si quiere otro horario, usá reprogramar_turno). Anotá el motivo con sus palabras. El turno queda cancelado, no se borra. Al contarle que lo cancelaste, ofrecele buscar otro día.
 
 ### `confirmar_turno` — acción
 

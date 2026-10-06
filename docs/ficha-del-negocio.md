@@ -57,6 +57,10 @@ corrigen la ficha original.
 - Reserva y garantía: el alquiler se paga 100% al reservarlo. Tarjeta de crédito
   como garantía el día de la prueba final. Hay tabla de daños por grado ➜ **el
   agente no la comparte: deriva siempre.**
+  ➜ **Manchas (Selene a un cliente, 6/10):** si el traje vuelve manchado, la primera limpieza de
+  tintorería corre por cuenta de Otto; si la mancha no sale y hay que mandarlo de nuevo, esa
+  segunda la abona el cliente. Lucía lo contesta (fragmento de reserva-y-garantia, 0087); una
+  prenda que ya volvió dañada o manchada sigue yendo al equipo.
 - Medios de pago del alquiler (➜ Sofía, 17/9): efectivo, transferencia, tarjeta de
   débito y **crédito en 1 pago**. **Crédito en 3 pagos con 10% de recargo.** ➜ Ojo: no
   confundir con las 3 cuotas sin interés de la VENTA online (más abajo), que es otra cosa.
@@ -170,6 +174,9 @@ que más nos importa.»
 - Post-devolución ➜ agradecer, pedir reseña de Google si le pareció buen servicio,
   pedir fotos del evento.
 - Recontacto de presupuesto/consulta sin turno: al día siguiente y a las 72 hs.
+  ➜ **Mateo, 6/10:** el de las 72 hs con un texto distinto (plantilla `recontacto_cliente_2`, ver
+  docs/plantillas-whatsapp.md) y solo si no contestó el primero. Ninguno sale si el equipo apagó a
+  Lucía en esa charla, ni a quien ya alquiló.
 
 ## Enlaces
 

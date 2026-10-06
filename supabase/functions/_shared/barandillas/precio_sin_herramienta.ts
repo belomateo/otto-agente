@@ -67,7 +67,9 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   // "el 23" a secas (sin día de la semana ni mes al lado, o con "de" seguido de algo que no es
   // un mes — "el 23 de la tarde"): en español nadie dice un precio así ("te sale el 90" no es
   // una frase real); acotado a 1-31 para no comerse un "el 150" si alguna vez apareciera.
-  /\bel\s+(?:[12]?\d|3[01])\b/g,
+  // "del 30" y "al 30" también (caso real del 5/10: "para tu casamiento del 30" se leyó
+  // como un precio de $30, saltó dos veces y la charla terminó derivada hasta el día siguiente).
+  /\b(?:el|del|al)\s+(?:[12]?\d|3[01])\b/g,
   // Porcentaje (hallazgo de la auditoría, 17/9): "se abona el 100%" o "la seña es del 50 por
   // ciento" no son precios — son la sección que-incluye/reserva-y-garantia hablando de una
   // proporción, no un monto en pesos.
@@ -79,8 +81,9 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   // buscar_informacion, no inventado) y la barandilla igual lo lee como un precio de $60, pide
   // rehacer, Lucía repite el mismo dato porque es el correcto, y se cae a derivación. "entre A y B
   // días" va primero porque "60" ahí no está pegado a "días" (lo está "7"), así que el patrón
-  // general de abajo no lo agarra solo.
-  /\bentre\s+\d{1,3}\s+y\s+\d{1,3}\s+dias?\b/g,
+  // general de abajo no lo agarra solo. Lo mismo dicho "de 60 a 7 días" o "desde 60 hasta 7
+  // días" (2/10: saltó por "$60" con el dato bien citado).
+  /\b(?:entre|de|desde)\s+\d{1,3}\s+(?:y|a|hasta)\s+\d{1,3}\s+dias?\b/g,
   /\b\d{1,3}\s+dias?\b/g,
 ];
 
@@ -119,9 +122,14 @@ export function montos(t: string, nombreCliente?: string | null): number[] {
   const res = new Set<number>();
   // "$150 mil" o "$33,5 mil" no son $150 ni $33: el monto lo cuenta la regla del millar de abajo
   // (4/10: Lucía dijo "$150 mil", saltó por "$150" y terminó sin dar el precio que tenía).
-  for (const m of crudo.matchAll(/\$\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?(?![\d,])(?!\s*(?:mil|lucas|k)\b)/g)) res.add(aNumero(m[1]));
-  for (const m of crudo.matchAll(/(?<![\d$.,])(\d{1,3}(?:\.\d{3})+)(?![\d.,])/g)) res.add(aNumero(m[1]));
-  for (const m of crudo.matchAll(/(?<![\d$.,])(\d{5,})(?![\d.,])/g)) res.add(Number(m[1]));
+  // Una coma o un punto DESPUÉS del monto corta la cifra solo si sigue otro dígito ("$33,5 mil");
+  // si sigue un espacio es la puntuación de la oración. Caso real del 6/10: "camisa y
+  // corbata por $33.500, y zapatos y cinturón por $55.000, cada conjunto…" se leía como $33 y $55
+  // —la coma de la oración hacía retroceder al patrón hasta los miles—, saltó dos veces y la
+  // charla terminó derivada con los precios bien dados.
+  for (const m of crudo.matchAll(/\$\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?(?![\d]|,\d)(?!\s*(?:mil|lucas|k)\b)/g)) res.add(aNumero(m[1]));
+  for (const m of crudo.matchAll(/(?<![\d$.,])(\d{1,3}(?:\.\d{3})+)(?![\d]|[.,]\d)/g)) res.add(aNumero(m[1]));
+  for (const m of crudo.matchAll(/(?<![\d$.,])(\d{5,})(?![\d]|[.,]\d)/g)) res.add(Number(m[1]));
   for (const m of crudo.matchAll(/(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(?:mil|lucas|k)\b/g)) {
     res.add(Math.round(Number(m[1].replace(",", ".")) * 1000));
   }
@@ -148,9 +156,13 @@ export const precioSinHerramienta: Barandilla = {
     const fuera = encontrados.filter((m) => !devueltos.has(m));
     if (fuera.length === 0) return NO_SALTA;
     const lista = fuera.map((m) => `$${m.toLocaleString("es-AR")}`).join(", ");
+    // "Decí cada precio por separado" (6/10: "¿y sumándole camisa, corbata y
+    // zapatos?"): sin esa salida, el segundo intento volvía a sumar o escondía los precios de los
+    // accesorios, y la charla terminaba derivada por una pregunta que tiene respuesta.
     const motivo = devueltos.size === 0
       ? `un precio (${lista}) sin consultar_catalogo en este turno`
-      : `un monto (${lista}) que no devolvió ninguna herramienta: no se suman precios ni se inventan totales`;
+      : `un monto (${lista}) que no devolvió ninguna herramienta: no sumes precios ni inventes totales; si te ` +
+        "pidieron el total, decí cada precio por separado, tal como te lo dieron las herramientas";
     return { salta: true, accion: "rehacer", motivo };
   },
 };

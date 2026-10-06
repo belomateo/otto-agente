@@ -41,7 +41,7 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
 | Elección de momento | 🧠→🔧 | Lucía pregunta mañana/tarde; `buscar_horarios` calcula huecos reales | traza en `eventos_agente` |
 | Agenda | 🔧 | `agendar_turno` valida hueco, horario laboral, datos mínimos, sin turno previo → fila + evento en Google Calendar | `turnos`, `google_event_id` |
 | Confirmación al cliente | 🔧 | Texto fijo: día, hora, España 764, mapa, un acompañante, 45 min con 10 de tolerancia, la reserva del traje se abona en el local, avisar si no puede | `mensajes` |
-| Recontacto si NO agendó | 🔧 | Consultó y no agendó → plantilla al día siguiente y a los tres días, una vez cada una (la dueña, 16/9) | `envios_programados` |
+| Recontacto si NO agendó | 🔧 | Consultó y no agendó → plantilla al día siguiente y a los tres días, una vez cada una (la dueña, 16/9). Desde el 6/10: el segundo con otra plantilla (`recontacto_cliente_2`) y solo si no contestó el primero; ninguno con Lucía apagada en la charla ni a quien alquiló en los últimos 60 días | `envios_programados` |
 | 18 hs antes | 🔧 | Plantilla `recordatorio_turno_18h` con botones. `recordatorio_enviado_at` | `turnos` |
 | Confirmación | 🧠→🔧 | Decisión de Mateo, 16/9: sin botón. Lucía entiende la intención de confirmar, venga como venga (respondiendo al recordatorio o en cualquier otro momento de la charla) y ejecuta `confirmar_turno`, que marca `confirmado=true` con `confirmado_por = 'cliente'`. "Reprogramar" → Lucía retoma con `reprogramar_turno` | `turnos.confirmado_at` |
 | Sin respuesta al recordatorio | 👤 | Aparece en Turnos con estado "sin confirmar"; el equipo decide llamar | panel |

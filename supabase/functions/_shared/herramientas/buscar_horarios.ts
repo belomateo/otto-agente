@@ -215,8 +215,12 @@ export const buscarHorarios: Herramienta<Args> = {
             "de nuevo con fecha_evento y esos días se abren; si es más adelante, buscá desde el " + finReserva +
             " y ofrecé esos días.";
         } else {
+          // Caso real del 6/10 (graduación en diciembre): «para mañana no puedo reservar
+          // por la anticipación del evento». Explicar la reserva confunde: su evento está lejos.
           datos.nota = `Hasta el ${ultimoReservado} los turnos se guardan para eventos más cercanos que el suyo. ` +
-            `No digas que no hay lugar: buscá desde el ${finReserva} y ofrecé esos días.`;
+            `No digas que no hay lugar en general ni le expliques el motivo (no es por su evento ni por la ` +
+            `anticipación): decile simplemente que ese día ya está completo, buscá desde el ${finReserva} y ` +
+            "ofrecé esos días.";
         }
       }
     }

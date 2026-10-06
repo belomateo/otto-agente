@@ -12,6 +12,8 @@
 // cercano a "alguien va a hablar con una persona". Dos saltos del mismo turno → 'barandilla_doble'.
 
 import { aplicarBarandillas } from "../barandillas/index.ts";
+import { horas } from "../barandillas/horario_sin_herramienta.ts";
+import { montos } from "../barandillas/precio_sin_herramienta.ts";
 import type { Db } from "../db.ts";
 import type { MotivoDerivacion } from "../enums.ts";
 import { actualizarFicha, leerFicha } from "../herramientas/ficha.ts";
@@ -159,6 +161,27 @@ function quedarseCalladaDerivada(): ResultadoTurno {
   return { mensajesAlCliente: [], imagenes: [], derivo: false, bloqueadoPorVentana: false };
 }
 
+// Lo que Lucía ya dijo en esta charla pasó por las barandillas cuando lo dijo: las horas que
+// ofreció y los precios que dio salieron de una herramienta en su momento. Repetirlos en el turno
+// siguiente no es inventarlos. Caso real del 6/10: Lucía le ofreció a una clienta el viernes 9 a las
+// 15:30; en el turno siguiente la clienta preguntó otra cosa, Lucía repitió la hora,
+// horario_sin_herramienta la frenó dos veces (no la había devuelto una herramienta EN ESE turno) y
+// la charla terminó derivada: tres horas esperando para reservar lo que ya tenía elegido.
+// Solo los últimos mensajes propios: un precio o una hora de hace semanas ya no se da por vigente.
+const ULTIMOS_MENSAJES_PROPIOS = 8;
+function loQueYaDijo(historial: MensajeChat[], nombreCliente: string | null): { horas: string[]; precios: number[] } {
+  const propios = historial.filter((m) => m.role === "assistant").slice(-ULTIMOS_MENSAJES_PROPIOS);
+  return {
+    horas: propios.flatMap((m) => horas(m.content)),
+    precios: propios.flatMap((m) => montos(m.content, nombreCliente)),
+  };
+}
+
+// Lo que Lucía quiso mandar cuando una barandilla la frenó: sin esto, la bitácora decía "un precio
+// ($30)" y no había forma de saber de dónde salía el número (revisión del 6/10).
+const LARGO_BORRADOR = 1000;
+const borrador = (texto: string | null) => (texto ?? "").slice(0, LARGO_BORRADOR);
+
 let promptCacheado: string | null = null;
 async function leerPrompt(): Promise<string> {
   if (promptCacheado !== null) return promptCacheado;
@@ -239,6 +262,12 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       // soloNoTexto lo distingue). No tiene sentido gastar el clasificador ni el principal en
       // esto: no hay una palabra que entender, así que el texto es fijo, en código, como el de
       // una derivación dura.
+      // Solo stickers (rafaga.soloStickers): un gesto, no una consulta. No se contesta.
+      if (rafaga.soloStickers) {
+        eventos.push({ tipo: "pensamiento", detalle: { etapa: "no-es-texto", nota: "solo un sticker: no se contesta (es un gesto, no una consulta)" } });
+        resultado = { mensajesAlCliente: [], imagenes: [], derivo: false, bloqueadoPorVentana: false };
+        return resultado;
+      }
       if (rafaga.soloNoTexto) {
         eventos.push({ tipo: "pensamiento", detalle: { etapa: "no-es-texto", nota: "mensaje entrante sin nada legible: contesta con el texto fijo, sin pasar por el modelo" } });
         const texto = await textoDeContexto(db, CLAVE_TEXTO_MENSAJE_NO_SOPORTADO);
@@ -371,7 +400,9 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     // traza.ts y horario_sin_herramienta.ts prometen horasDevueltas sembrada con los turnos del
     // cliente y el horario de hoy que ya le pasamos en el contexto: si el modelo repite una hora
     // que ya leyó ahí (p.ej. contestando "¿a qué hora era mi turno?"), no es un horario inventado.
-    const traza = { ...trazaNueva(), horasDevueltas: contexto.horas };
+    // Y con lo que Lucía misma ya dijo en la charla (loQueYaDijo, arriba).
+    const yaDicho = loQueYaDijo(historial, ficha.nombre);
+    const traza = { ...trazaNueva(), horasDevueltas: [...contexto.horas, ...yaDicho.horas], preciosDevueltos: yaDicho.precios };
     const ctxHerramientas = contextoDeHerramientas({
       db, tz: p.tz, cliente: { id: p.clienteId, telefono: p.telefono }, conversacionId: p.conversacionId,
       ahora: p.ahora, calendario: p.calendario, derivacionTel: p.derivacionTel, traza,
@@ -449,7 +480,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
 
     let b = await evaluar(r.textoFinal, 0);
     if (b.decision === "rehacer") {
-      eventos.push({ tipo: "error", detalle: { etapa: "barandilla", saltos: b.saltos, instruccion: b.instruccion } });
+      eventos.push({ tipo: "error", detalle: { etapa: "barandilla", saltos: b.saltos, instruccion: b.instruccion, borrador: borrador(r.textoFinal) } });
       const r2 = await correrPrincipal({
         mensajes: [...r.mensajes, { role: "system", content: `CORRECCIÓN INTERNA, no se la muestres al cliente ni la menciones: ${b.instruccion}` }],
         herramientas, ctxHerramientas, limiteMs, iteracionesYaUsadas: r.iteracionesUsadas, fetcher: p.fetcher,
@@ -465,7 +496,9 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       b = await evaluar(r.textoFinal, 1);
     }
     eventos.push(...eventosDeLaTraza(ctxHerramientas.traza));
-    for (const s of b.saltos) eventos.push({ tipo: "error", detalle: { etapa: "barandilla", barandilla: s.barandilla, accion: s.accion, motivo: s.motivo } });
+    for (const s of b.saltos) {
+      eventos.push({ tipo: "error", detalle: { etapa: "barandilla", barandilla: s.barandilla, accion: s.accion, motivo: s.motivo, ...(b.decision === "enviar" ? {} : { borrador: borrador(r.textoFinal) }) } });
+    }
 
     const efectosMensajes = mensajesDeEfectos(r.efectos);
     const imagenes = r.efectos.flatMap((e) => e.imagenes ?? []);
@@ -491,8 +524,16 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     // burbuja como su propia fila 'saliente', para que el próximo turno de esta charla la vea
     // en el historial. Timestamps crecientes a mano: dos inserts seguidos pueden caer en el
     // mismo now() de la base, y el id (uuid) no sirve de desempate porque no es secuencial.
+    // Arrancan justo después del último mensaje del cliente que Lucía leyó en esta ráfaga (o de
+    // `ahora` si no hubo ninguno), no en el reloj de cuando terminó de pensar. Caso real del 5/10:
+    // «Hola», y un minuto después «Necesito un turno para alquilar un traje». El segundo
+    // llegó mientras Lucía contestaba el primero; la respuesta se guardó con la hora en que
+    // terminó, posterior al segundo mensaje, y el turno siguiente lo dio por contestado («no había
+    // ningún mensaje entrante nuevo»): Lucía preguntó «¿en qué te puedo ayudar?» y la clienta tuvo
+    // que repetirlo. Pegada al último mensaje leído, cualquier cosa que haya entrado después —aunque
+    // WhatsApp la entregue con demora— queda después de la respuesta, y el próximo turno la contesta.
     if (resultado && resultado.mensajesAlCliente.length) {
-      let t = Date.now();
+      let t = (rafaga.ultimoEnviadoAt ?? p.ahora).getTime();
       for (const texto of resultado.mensajesAlCliente) {
         t += 10;
         await db.consulta(

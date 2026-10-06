@@ -64,19 +64,24 @@ Deno.test("los nombres son los que están registrados en Meta, no los que había
   assertEquals(n("recordatorio_18h"), "recordatorio_turno");
   assertEquals(n("agradecimiento_resena"), "agradecimiento");
   assertEquals(n("recontacto_1"), "recontacto_cliente");
-  assertEquals(n("recontacto_2"), "recontacto_cliente");
+  assertEquals(n("recontacto_2"), "recontacto_cliente_2");
 });
 
-Deno.test("recontacto: la misma plantilla para el primero y el segundo, sin botones", () => {
-  for (const tipo of ["recontacto_1", "recontacto_2"] as const) {
-    const p = armarPlantilla(tipo, { nombre: "MARTÍN", inicio: null, referencia: CHARLA, linkResena: null }, TZ);
-    assert(!("falta" in p));
-    assertEquals(p.nombre, "recontacto_cliente");  // el nombre real registrado en Meta
+Deno.test("recontacto: el primero y el segundo son plantillas distintas, sin botones (revisión del 6/10)", () => {
+  const p1 = armarPlantilla("recontacto_1", { nombre: "MARTÍN", inicio: null, referencia: CHARLA, linkResena: null }, TZ);
+  const p2 = armarPlantilla("recontacto_2", { nombre: "MARTÍN", inicio: null, referencia: CHARLA, linkResena: null }, TZ);
+  assert(!("falta" in p1) && !("falta" in p2));
+  assertEquals(p1.nombre, "recontacto_cliente"); // el nombre real registrado en Meta
+  assertEquals(p2.nombre, "recontacto_cliente_2");
+  for (const p of [p1, p2]) {
     assertEquals(p.cuerpo, ["Martín"]);
     assertEquals(p.botones, []);
-    assert(p.texto.startsWith("¡Hola Martín! 😊"));
-    assert(p.texto.includes("¿Querés que agendemos un turno?"));
   }
+  assert(p1.texto.startsWith("¡Hola Martín! 😊"));
+  assert(p1.texto.includes("¿Querés que agendemos un turno?"));
+  assert(p2.texto.startsWith("¡Hola Martín! 👋"));
+  assert(!p2.texto.includes("{{1}}"));
+  assert(p1.texto !== p2.texto, "el segundo no puede repetir el primero");
 });
 
 Deno.test("sin nombre no sale ninguna plantilla (Meta no acepta variables vacías)", () => {

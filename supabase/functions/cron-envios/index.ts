@@ -10,7 +10,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { enlaceDeTipo } from "../_shared/herramientas/enlaces.ts";
 import type { Db } from "../_shared/db.ts";
 import { enviarPlantilla } from "../_shared/whatsapp/enviar.ts";
-import { armarPlantilla, esTipoEnvio, primerNombre, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
+import { armarPlantilla, esTipoEnvio, NOMBRE_PLANTILLA, primerNombre, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
 import { igualesEnTiempoConstante } from "../_shared/whatsapp/firma.ts";
 import { telefonoParaMeta } from "../_shared/whatsapp/telefono.ts";
 
@@ -61,7 +61,31 @@ async function registrarConReintento(id: string, wamid: string, texto: string): 
   return false;
 }
 
+// ¿Meta ya aprobó esta plantilla? Solo se pregunta por la del segundo recontacto, que es nueva
+// (6/10): hasta que esté aprobada, ese envío no sale — antes era la misma plantilla del primero y
+// al cliente le llegaba el mismo mensaje dos veces. Sin WA_WABA_ID, o si Meta no contesta, se toma
+// como "todavía no": mejor un solo recontacto que uno rechazado o repetido.
+const WABA_ID = Deno.env.get("WA_WABA_ID") ?? "";
+async function plantillaAprobada(nombre: string): Promise<boolean> {
+  if (!WABA_ID || !WA.token) return false;
+  try {
+    const url = `https://graph.facebook.com/v21.0/${WABA_ID}/message_templates?name=${encodeURIComponent(nombre)}&fields=name,status`;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${WA.token}` } });
+    if (!r.ok) return false;
+    const j = await r.json() as { data?: { name: string; status: string }[] };
+    return (j.data ?? []).some((t) => t.name === nombre && t.status === "APPROVED");
+  } catch {
+    return false;
+  }
+}
+
 async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
+  if (tipo === "recontacto_2" && !(await plantillaAprobada(NOMBRE_PLANTILLA.recontacto_2))) {
+    return {
+      tipo, candidatos: 0, enviados: 0, errores: 0, sin_registrar: [] as string[],
+      omitidos: [`la plantilla ${NOMBRE_PLANTILLA.recontacto_2} todavía no está aprobada en Meta: el segundo recontacto queda en pausa`],
+    };
+  }
   const { data, error } = await supabase.rpc("envios_pendientes", { p_tipo: tipo, p_tz: TZ });
   if (error) throw new Error(`envios_pendientes(${tipo}): ${error.message}`);
   const candidatos = (data ?? []) as Candidato[];

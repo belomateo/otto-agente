@@ -35,6 +35,19 @@ if (iModelos >= 0) {
 const iVacia = args.indexOf("--ficha-vacia");
 const fichaVacia = iVacia >= 0;
 if (fichaVacia) args.splice(iVacia, 1);
+// --prompt-repo: usa plantilla-agente/02-prompt.md tal cual está en el repo, sin cargarlo (dentro
+// de la transacción, que termina en rollback). Sirve para probar un cambio de prompt antes de
+// ponerlo en producción.
+const iPromptRepo = args.indexOf("--prompt-repo");
+const promptRepo = iPromptRepo >= 0;
+if (promptRepo) args.splice(iPromptRepo, 1);
+// --antes <archivo.sql>: corre ese SQL adentro de la transacción antes de repetir (una migración
+// de datos todavía sin aplicar: fragmentos, textos fijos). Se puede repetir.
+const sqlAntes: string[] = [];
+for (let i = args.indexOf("--antes"); i >= 0; i = args.indexOf("--antes")) {
+  sqlAntes.push(await Deno.readTextFile(args[i + 1]));
+  args.splice(i, 2);
+}
 const [conversacionReal, ...puntos] = args;
 if (!conversacionReal || puntos.length === 0) throw new Error("Uso: repetir-charla.ts <conversacion_id> <enviado_at> [...]");
 const TZ = Deno.env.get("NEGOCIO_TZ") || "America/Argentina/Buenos_Aires";
@@ -45,6 +58,10 @@ await sql.connect();
 try {
   await sql.query("begin");
   await sql.query("set local otto.sin_disparo = 'on'"); // que ningún trigger encole ni dispare envíos
+  for (const s of sqlAntes) await sql.query(s);
+  if (promptRepo) {
+    await sql.query("update prompt_base set texto = $1 where unica", [await Deno.readTextFile(new URL("../plantilla-agente/02-prompt.md", import.meta.url))]);
+  }
   const { rows: [real] } = await sql.query(
     `select cl.nombre, cl.evento, cl.fecha_evento, cl.rol, cl.dia_o_noche, cl.talle_aprox
        from conversaciones co join clientes cl on cl.id = co.cliente_id where co.id = $1`,
@@ -113,6 +130,8 @@ try {
         ? `saltos: ${(d.saltos as { barandilla: string; motivo: string }[]).map((s) => `${s.barandilla} (${s.motivo})`).join("; ")}`
         : `${d.barandilla ?? d.motivo ?? ""} ${d.accion ?? ""}${d.barandilla && d.motivo ? ` — ${d.motivo}` : ""}`;
       console.log(`     · ${e.tipo}: ${String(que).slice(0, 400)}`);
+      // Lo que Lucía quiso mandar cuando la frenó una barandilla (turno.ts, 6/10).
+      if (d.borrador) console.log(`       borrador: ${String(d.borrador).replace(/\n+/g, " ⏎ ").slice(0, 500)}`);
     }
     await sql.query("delete from eventos_agente where conversacion_id = $1", [conversacionId]); // así cada turno muestra solo lo suyo
     console.log(`   derivó: ${r.derivo}`);
