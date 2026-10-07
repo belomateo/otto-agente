@@ -5,12 +5,12 @@ import { type Barandilla, NO_SALTA } from "./tipos.ts";
 // en la lista, toda pregunta por envíos terminaba derivada aunque Lucía contestara lo correcto
 // (una madre con el hijo en Reconquista; después preguntó "¿hacen envíos?" y nadie le contestó).
 export const disponibilidadNegada: Barandilla = {
-  nombre: "disponibilidad_negada", etapa: "reglas", accion: "ejecutar_derivacion",
+  nombre: "disponibilidad_negada", etapa: "reglas", accion: "rehacer",
   evaluar({ texto }) {
     const n = normalizar(texto);
     const negativa = /\bno\s+(?:tenemos(?!\s+que\b)|contamos con|disponemos de|manejamos|trabajamos|ofrecemos|alquilamos|vendemos|quedan)\b/.test(n) ||
       /\b(?:sin stock|agotad[oa]s?|no (?:esta|estan) disponibles?)\b/.test(n) ||
       /\bno hay\s+(?:disponibilidad|stock|lugar|lugares|turnos|horarios|talles|trajes|modelos|zapatos|camisas|para ninos|para nenes)\b/.test(n);
-    return negativa ? { salta: true, accion: "ejecutar_derivacion", motivo: "No enviar una negativa comercial: el equipo debe confirmar disponibilidad.", texto: "Le paso tu consulta al equipo del local para que te lo confirme." } : NO_SALTA;
+    return negativa ? { salta: true, accion: "rehacer", motivo: "No afirmes que no tenés ni que no hay: no se confirma disponibilidad por acá. Si preguntan por un modelo, color o estilo, mandá el catálogo online (enviar_link, tipo web) y decile que la disponibilidad depende del talle y de la fecha, y se confirma en el turno con el asesor. Si es un turno que no encontró, buscá de nuevo sin la restricción o decile que le buscás otra fecha." } : NO_SALTA;
   },
 };

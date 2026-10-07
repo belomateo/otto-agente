@@ -69,9 +69,11 @@ const TEXTO_FIJO_DEL_MOTIVO: Partial<Record<MotivoDerivacion, ClaveDerivacion>> 
 const PALABRAS_DE_MODELO = new RegExp(
   "\\b(?:modelos?|colou?r(?:es)?|fotos?|catalogos?|estilos?|smoking|esmoquin|jacket|" +
     "negros?|azul(?:es|ino)?|gris(?:es)?|verdes?|bordo|beige|marron(?:es)?|celestes?|blancos?|crema|arena|" +
-    "rojos?|mostaza|rayad[oa]s?|cuadros?)\\b",
+    "rojos?|mostaza|rayad[oa]s?|cuadros?|chocolate|cruzad[oa]|slim|clasic[oa]|entallad[oa])\\b",
 );
 const PALABRAS_DE_ACCESORIO = /\b(?:zapat\w*|camisa\w*|corbata\w*|cintur\w*|cinto\w*|mono|monos)\b/;
+
+const DESPEDIDA = /^(?:(?:(?:muchas?|mil)\s+)?gracias?\b|ok(?:ay)?\b|bueno\b|dale\b|perfect[oa]?\b|buenisim[oa]?\b|list[oa]?\b|genial\b|bien\b|(?:de\s+)?acuerdo\b|clar[oa]?\b|(?:muy\s+)?amable\b|okok\b|eso\s+era\b|nada\s+mas\b|ya\s+(?:esta|fue)\b)/;
 
 function mandoElCatalogo(ctx: ContextoHerramienta): boolean {
   return ctx.traza.llamadas.some((l) => l.ok && l.herramienta === "enviar_link" && (l.argumentos as { tipo?: string } | null)?.tipo === "web");
@@ -89,13 +91,32 @@ async function preguntaPorModelos(ctx: ContextoHerramienta): Promise<boolean> {
   return PALABRAS_DE_MODELO.test(texto) && !PALABRAS_DE_ACCESORIO.test(texto);
 }
 
+async function esDespedida(ctx: ContextoHerramienta): Promise<boolean> {
+  const filas = await ctx.db.consulta<{ texto: string | null }>(
+    `select string_agg(concat_ws(' ', contenido, transcripcion), ' ' order by enviado_at) as texto from mensajes
+      where conversacion_id = $1::uuid and direccion = 'entrante'
+        and enviado_at > coalesce((select max(enviado_at) from mensajes where conversacion_id = $1::uuid and direccion = 'saliente'), '-infinity'::timestamptz)`,
+    [ctx.conversacionId],
+  );
+  const texto = normalizar(filas[0]?.texto ?? "").trim();
+  if (!texto || texto.length > 80 || /[?¿]/.test(texto)) return false;
+  return DESPEDIDA.test(texto);
+}
+
+function despedidaMencionaModelo(mensaje: string | null): boolean {
+  if (!mensaje) return false;
+  const n = normalizar(mensaje);
+  return PALABRAS_DE_MODELO.test(n) && !PALABRAS_DE_ACCESORIO.test(n);
+}
+
 type Args = { motivo: MotivoDerivacion; mensaje_al_cliente: string | null };
 
 export const derivarAPersona: Herramienta<Args> = {
   nombre: "derivar_a_persona",
   tipo: "accion",
   descripcion: "Pasa la charla a una persona del equipo y corta tu turno: después de esto no escribís nada más. " +
-    "Antes, contestá todo lo que sí podés. motivo: por qué derivás. mensaje_al_cliente: SIEMPRE escribí una " +
+    "Antes, contestá todo lo que sí podés. Si el cliente se despide o agradece, no derives: cerrá la charla. " +
+    "motivo: por qué derivás. mensaje_al_cliente: SIEMPRE escribí una " +
     "despedida corta y sin ninguna pregunta, nunca null — con reclamo o descuento el sistema la reemplaza por un " +
     "texto fijo, así que no te esfuerces con esas dos, pero escribí algo igual. Nunca anuncies un pase sin llamar " +
     "a esta herramienta. Si el evento del cliente es hoy o mañana, NO uses esta herramienta: llamá a " +
@@ -169,16 +190,29 @@ export const derivarAPersona: Herramienta<Args> = {
           "no derives, preguntale para cuándo es el evento y volvé a buscar con fecha_evento.",
       );
     }
+    if (args.motivo === "dato_no_encontrado" && await esDespedida(ctx)) {
+      return rechazo(
+        "despedida_no_es_derivacion",
+        "El cliente se está despidiendo o agradeciendo, no falta un dato. No derives: cerrá la charla " +
+          "con algo como «De nada, cualquier cosa me escribís por acá» y listo.",
+      );
+    }
     // Pedido de Mateo, 5/10: por un modelo, un color, un estilo o una foto no se deriva. Lucía ya
     // no asesora sobre modelos: manda el catálogo online y aclara que la disponibilidad depende del
     // talle y de la fecha. Antes "¿tienen en verde oscuro?" o "estilo Peaky Blinders" terminaban en
     // dato_no_encontrado, Lucía quedaba apagada y el cliente esperaba horas una respuesta.
-    if (args.motivo === "dato_no_encontrado" && !mandoElCatalogo(ctx) && await preguntaPorModelos(ctx)) {
+    // 7/10: también mira la despedida del modelo ("confirmar opciones en verde") y funciona aunque
+    // el catálogo ya se haya mandado — antes la guardia pasaba si mandoElCatalogo era true.
+    if (args.motivo === "dato_no_encontrado" && (await preguntaPorModelos(ctx) || despedidaMencionaModelo(args.mensaje_al_cliente))) {
+      const yaMando = mandoElCatalogo(ctx);
       return rechazo(
-        "modelo_va_al_catalogo",
-        "Por un modelo, un color, un estilo o una foto no se deriva: mandá el catálogo online (enviar_link, tipo web) " +
-          "y aclarale que la disponibilidad depende del talle y de la fecha del alquiler; en la visita el equipo le " +
-          "muestra lo que hay para su fecha.",
+        yaMando ? "modelo_ya_resuelto" : "modelo_va_al_catalogo",
+        yaMando
+          ? "Ya le mandaste el catálogo. Por un modelo, color o estilo no se deriva: decile que la disponibilidad se " +
+            "confirma en el turno con el asesor, y que ahí le muestran todas las opciones para su fecha."
+          : "Por un modelo, un color, un estilo o una foto no se deriva: mandá el catálogo online (enviar_link, tipo web) " +
+            "y aclarale que la disponibilidad depende del talle y de la fecha del alquiler; en la visita el equipo le " +
+            "muestra lo que hay para su fecha.",
       );
     }
     const mensaje = limpio(args.mensaje_al_cliente);

@@ -93,8 +93,7 @@ export async function aplicarBarandillas(
   const quedoVacio = texto.trim() === "" && saltos.length > 0 && !cortoSoloConfirmacionDoble;
 
   if (hay("bloquear")) return { texto, decision: "bloquear", saltos };
-  if (hay("ejecutar_derivacion")) return { texto, decision: "derivar", saltos, ejecutarDerivacion: true,
-    ...(saltos.some((s) => s.barandilla === "disponibilidad_negada") ? { motivoDerivacion: "dato_no_encontrado" as const } : {}) };
+  if (hay("ejecutar_derivacion")) return { texto, decision: "derivar", saltos, ejecutarDerivacion: true };
   if ((paraRehacer.length || quedoVacio) && (opciones.saltosPrevios ?? 0) >= 1) {
     return { texto, decision: "derivar", saltos, motivoDerivacion: "barandilla_doble" };
   }

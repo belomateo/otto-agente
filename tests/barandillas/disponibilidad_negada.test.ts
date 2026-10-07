@@ -3,12 +3,16 @@ import { aplicarBarandillas } from "../../supabase/functions/_shared/barandillas
 import { disponibilidadNegada } from "../../supabase/functions/_shared/barandillas/disponibilidad_negada.ts";
 import { esCierreCortes } from "../../supabase/functions/_shared/turno/cierre_cortes.ts";
 import { entrada } from "./_ayuda.ts";
-Deno.test("negativas comerciales derivan incluso con alternativa", async () => {
+Deno.test("negativas comerciales se rehacen en el primer intento", async () => {
   for (const texto of ["No tenemos talles de niños, pero sí de adultos.", "Ese modelo está agotado.", "No hay disponibilidad.", "No alquilamos zapatos."]) {
     const r = await aplicarBarandillas(entrada(texto));
-    assertEquals(r.decision, "derivar", texto);
-    assertEquals(r.motivoDerivacion, "dato_no_encontrado");
+    assertEquals(r.decision, "rehacer", texto);
   }
+});
+Deno.test("negativa que persiste después del rehacer cae a barandilla_doble", async () => {
+  const r = await aplicarBarandillas(entrada("No tenemos ese modelo."), { saltosPrevios: 1 });
+  assertEquals(r.decision, "derivar");
+  assertEquals(r.motivoDerivacion, "barandilla_doble");
 });
 // Política confirmada, no falta de stock (caso real del 4/10): no deriva.
 Deno.test("«no hacemos envíos» explicado con la política no deriva", async () => {
