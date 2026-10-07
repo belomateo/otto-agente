@@ -20,7 +20,10 @@ Deno.test("«no hacemos envíos» explicado con la política no deriva", async (
   assertEquals((await disponibilidadNegada.evaluar(entrada(texto))).salta, false);
 });
 Deno.test("no confunde tranquilidad ni información positiva con falta de stock", async () => {
-  for (const texto of ["No hay problema.", "No tenemos que pedirte el nombre.", "No encuentro un turno tuyo agendado.", "Sí tenemos talles infantiles del 4 al 16."]) assertEquals((await disponibilidadNegada.evaluar(entrada(texto))).salta, false, texto);
+  for (const texto of ["No hay problema.", "No tenemos que pedirte el nombre.", "No encuentro un turno tuyo agendado.", "Sí tenemos talles infantiles del 4 al 16.", "No quedan dudas de que es el mejor traje.", "No quedan más de 3 días para tu evento."]) assertEquals((await disponibilidadNegada.evaluar(entrada(texto))).salta, false, texto);
+});
+Deno.test("no quedan + producto sí dispara", async () => {
+  for (const texto of ["No quedan talles chicos.", "No quedan turnos para el viernes."]) assertEquals((await disponibilidadNegada.evaluar(entrada(texto))).salta, true, texto);
 });
 Deno.test("agradecimientos no vuelven a disparar la venta; preguntas y confirmaciones siguen", () => {
   for (const t of ["Ok.", "Muchas gracias por tu atención.", "Ok. Muchas gracias por su atención", "Gracias 😊"]) assertEquals(esCierreCortes(t), true, t);
