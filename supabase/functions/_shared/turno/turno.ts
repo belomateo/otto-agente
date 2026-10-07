@@ -468,7 +468,11 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     };
     // La lista guardada ya es una respuesta completa. El modelo puede obedecer
     // «no la repitas» dejando su texto vacío; no perder la reserva ni derivar por eso.
+    // Mismo criterio para enviar_link y cualquier herramienta que produzca mensajes al
+    // cliente vía efectos (bug del 7/10: enviar_link ponía el link en efectos, el modelo no
+    // escribía nada más, y caía en sin_respuesta → derivación muda).
     if (r.textoFinal === null && r.efectos.some((e) => e.resumenTurnoId)) r.textoFinal = "";
+    if (r.textoFinal === null && mensajesDeEfectos(r.efectos).length > 0) r.textoFinal = "";
     if (r.textoFinal === null) {
       resultado = await sinRespuesta(r.seCortoPorTiempo ? "timeout" : "sin_respuesta");
       return resultado;

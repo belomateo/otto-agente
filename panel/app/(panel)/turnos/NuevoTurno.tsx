@@ -152,9 +152,14 @@ function BuscadorCliente({
         </button>
       </div>
       {modo === 'nuevo' ? (
-        <div className="grid grid-cols-2 gap-2">
-          <input value={telefono} onChange={(e) => onTelefono(e.target.value)} placeholder="Teléfono" className={CAMPO} />
-          <input value={nombre} onChange={(e) => onNombre(e.target.value)} placeholder="Nombre (opcional)" className={CAMPO} />
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <input value={telefono} onChange={(e) => onTelefono(e.target.value)} type="tel" inputMode="tel" placeholder="Ej: 3415551234" className={CAMPO} />
+            <input value={nombre} onChange={(e) => onNombre(e.target.value)} placeholder="Nombre (opcional)" className={CAMPO} />
+          </div>
+          {telefono.trim() && telefono.trim().replace(/\D/g, '').length < 8 && (
+            <div className="text-[12px] text-ambar">Revisá el teléfono: tiene que tener al menos 8 números.</div>
+          )}
         </div>
       ) : clienteElegido ? (
         <div className="flex items-center gap-2 rounded-otto border border-cobre bg-cobre-claro/40 px-2.5 py-2 text-sm">
@@ -241,10 +246,11 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
       .finally(() => setCargandoHuecos(false));
   }, [tipo, fecha]);
 
+  const telefonoLimpio = telefono.trim().replace(/\D/g, '');
   const puedeConfirmar = Boolean(
     tipo &&
       huecoElegido &&
-      (clienteElegido || telefono.trim()) &&
+      (clienteElegido || (telefono.trim() && telefonoLimpio.length >= 8)) &&
       (!huecoElegido.dentro_urgencia || pisarUrgencia || aceptarInminente) &&
       (!inminente || aceptarInminente)
   );
@@ -268,9 +274,15 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
       if (esEventoInminente(e)) {
         setInminente(true);
       } else if (e instanceof ErrorApi) {
-        setError(e.message);
-        const detalle = e.detalle as { alternativas?: Hueco[] } | undefined;
-        if (detalle?.alternativas?.length) setAlternativas(detalle.alternativas);
+        // Si es un 400 de validación, el detalle trae los mensajes por campo — mostrar
+        // esos en vez del genérico "Datos inválidos" que no le dice nada a nadie.
+        const detalle = e.detalle as { alternativas?: Hueco[] } | Array<{ campo?: string; mensaje?: string }> | undefined;
+        if (Array.isArray(detalle) && detalle.length > 0 && detalle[0]?.mensaje) {
+          setError(detalle.map((d) => d.mensaje).join('. '));
+        } else {
+          setError(e.message);
+        }
+        if (detalle && !Array.isArray(detalle) && detalle.alternativas?.length) setAlternativas(detalle.alternativas);
       } else {
         setError('No se pudo crear el turno');
       }

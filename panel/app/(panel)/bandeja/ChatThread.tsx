@@ -330,12 +330,24 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
       </div>
 
       {compacto && (
-        <div className="flex gap-2 border-b border-borde bg-lino p-3.5 pt-0">
+        <div className="flex flex-wrap gap-2 border-b border-borde bg-lino p-3.5 pt-0">
           {esAdmin && (
             <Link href={`/clientes?id=${charla.cliente.id}`} className="flex-1 rounded-otto border border-borde bg-lino py-2 text-center text-[14px] font-medium md:text-[13px]">
               Ver ficha
             </Link>
           )}
+          <button
+            type="button"
+            onClick={onToggleLucia}
+            disabled={enviando}
+            className={`flex-1 rounded-otto py-2 text-[14px] font-medium disabled:opacity-50 md:text-[13px] ${
+              charla.lucia_activa
+                ? 'border border-borde bg-lino text-grafito'
+                : 'bg-cobre text-lino'
+            }`}
+          >
+            {charla.lucia_activa ? 'Lucía activa' : 'Activar Lucía'}
+          </button>
           {charla.estado === 'activa' && (
             <button type="button" onClick={onTomar} disabled={enviando} className="flex-1 rounded-otto bg-cobre py-2 text-[14px] font-medium text-lino disabled:opacity-60 md:text-[13px]">
               Tomar la charla

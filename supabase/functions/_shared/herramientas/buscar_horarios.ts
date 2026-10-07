@@ -191,7 +191,9 @@ export const buscarHorarios: Herramienta<Args> = {
       datos.horario_elegido_disponible = porInicio.has(elegido.getTime());
       datos.nota = datos.horario_elegido_disponible
         ? "El horario elegido está libre. Agendá ahora con el teléfono de la charla, aunque falten nombre o correo; no pidas datos adicionales ni otra confirmación."
-        : "No se pudo confirmar el horario elegido. Derivá con dato_no_encontrado antes de negar disponibilidad; no reserves otra hora por tu cuenta.";
+        : huecos.length > 0
+          ? "El horario que eligió no está disponible. No derives: ofrecé los horarios más cercanos de la lista y preguntale cuál le queda bien."
+          : "No se pudo confirmar el horario elegido y no quedan otros huecos en esos días. Derivá con dato_no_encontrado sin enviar una negativa de disponibilidad.";
     }
     if (huecos.length === 0) {
       datos.nota = "La búsqueda no devolvió huecos para esas fechas. Derivá con dato_no_encontrado sin enviar una negativa de disponibilidad ni cambiar la elección del cliente.";
