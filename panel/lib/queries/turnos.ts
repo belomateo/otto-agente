@@ -3,9 +3,9 @@
 // que Fase 2 necesita (id, probador, inicio/fin, aviso de sincronización de 0011).
 import 'server-only';
 import type { TurnoDelDia } from '@/lib/mock-data';
-import { ESTILO_ESTADO_TURNO, ETIQUETA_TIPO_TURNO } from '@/lib/etiquetas';
-import { diaDeLaSemana, diasEnMes, fechaEnZona, fechaLarga, hora, rangoDelDia, rangoDelMes, sumarDias } from '@/lib/formato';
-import { ESTADOS_LIBERAN, nombreDe, type ClienteDb } from './comun';
+import { ESTILO_ESTADO_TURNO, ETIQUETA_DIA_O_NOCHE, ETIQUETA_EVENTO, ETIQUETA_ROL, ETIQUETA_TIPO_TURNO } from '@/lib/etiquetas';
+import { diaDeLaSemana, diaMes, diasEnMes, fechaEnZona, fechaLarga, hora, rangoDelDia, rangoDelMes, sumarDias } from '@/lib/formato';
+import { ESTADOS_LIBERAN, nombreDe, telefonoLegible, type ClienteDb, type Fila } from './comun';
 import { aBloqueoDelDia, faltaLaTabla, listarBloqueos, type BloqueoDelDia } from './bloqueos';
 
 export type FilaTurno = TurnoDelDia & {
@@ -31,7 +31,37 @@ export type FilaTurno = TurnoDelDia & {
   /** El cliente con el evento más cercano: le tocó el turno más próximo de la agenda (0046,
    *  decisión de Mateo). Lo pone logica desde el cálculo de huecos. */
   urgencia: boolean;
+  /** La charla más reciente del cliente (para abrirla en la Bandeja); null = no tiene. */
+  conversacion_id: string | null;
+  /** '341 785-1686' ('' si el turno no tiene cliente). */
+  telefono: string;
+  /** Mini ficha del cliente para la tarjeta del turno (pedido de Mateo, 9/10): lo que Lucía fue
+   *  guardando de la charla, una línea por tema. [] = no se sabe nada todavía. */
+  ficha: string[];
 };
+
+type DatosTarjeta = Pick<
+  Fila<'clientes'>,
+  'rol' | 'evento' | 'fecha_evento' | 'dia_o_noche' | 'talle_aprox' | 'color_preferido' | 'presupuesto_mencionado' | 'ciudad' | 'email' | 'notas_libres'
+>;
+
+// 'otro' no dice nada en la tarjeta («Otro · Otro 17/10»): se omite el rol y el evento queda
+// como «Evento» si al menos hay fecha.
+function fichaDeTarjeta(c: DatosTarjeta | null | undefined): string[] {
+  if (!c) return [];
+  const evento = c.evento && c.evento !== 'otro' ? (ETIQUETA_EVENTO[c.evento] ?? c.evento) : c.fecha_evento ? 'Evento' : null;
+  const lineas = [
+    [
+      c.rol && c.rol !== 'otro' ? (ETIQUETA_ROL[c.rol] ?? c.rol) : null,
+      evento ? `${evento}${c.fecha_evento ? ` el ${diaMes(c.fecha_evento)}` : ''}` : null,
+      c.dia_o_noche ? (ETIQUETA_DIA_O_NOCHE[c.dia_o_noche] ?? c.dia_o_noche) : null,
+    ],
+    [c.color_preferido ? `Busca ${c.color_preferido}` : null, c.talle_aprox ? `Talle ${c.talle_aprox}` : null],
+    [c.presupuesto_mencionado ? `Precio que se habló: ${c.presupuesto_mencionado}` : null],
+    [c.ciudad, c.email],
+  ].map((l) => l.filter(Boolean).join(' · '));
+  return [...lineas, c.notas_libres?.trim() ?? ''].filter(Boolean);
+}
 
 export type AgendaDelDia = {
   fecha: string;
@@ -73,7 +103,7 @@ export async function turnosDelDia(
   let q = db
     .from('turnos')
     .select(
-      'id, version, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado, aviso, confirmado_por, aviso_ok_at, aviso_ok_por, urgencia, clientes(nombre, telefono)'
+      'id, version, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado, aviso, confirmado_por, aviso_ok_at, aviso_ok_por, urgencia, clientes(nombre, telefono, rol, evento, fecha_evento, dia_o_noche, talle_aprox, color_preferido, presupuesto_mencionado, ciudad, email, notas_libres)'
     )
     .gte('inicio', desde)
     .lt('inicio', hasta)
@@ -106,6 +136,21 @@ export async function turnosDelDia(
     listarBloqueos(db, fecha, fecha),
   ]);
   for (const r of [turnos, horario, franjas, config, sinConfirmar, cierre]) if (r.error) throw r.error;
+
+  // La charla de cada cliente, para el botón «Abrir la charla de WhatsApp»: la más reciente,
+  // igual que el cartel de turno (avisos.ts). Un turno cargado a mano puede no tener ninguna.
+  const idsClientes = [...new Set((turnos.data ?? []).map((t) => t.cliente_id))];
+  const charlaDe = new Map<string, string>();
+  if (idsClientes.length > 0) {
+    const charlas = await db
+      .from('conversaciones')
+      .select('id, cliente_id')
+      .in('cliente_id', idsClientes)
+      .order('ultimo_mensaje_at', { ascending: false, nullsFirst: false })
+      .order('iniciado_at', { ascending: false });
+    if (charlas.error) throw charlas.error;
+    for (const c of charlas.data ?? []) if (!charlaDe.has(c.cliente_id)) charlaDe.set(c.cliente_id, c.id);
+  }
 
   const h = horario.data && horario.data.activo ? horario.data : null;
   return {
@@ -146,6 +191,9 @@ export async function turnosDelDia(
         aviso_ok_at: t.aviso_ok_at,
         aviso_ok_por: t.aviso_ok_por,
         urgencia: t.urgencia,
+        conversacion_id: charlaDe.get(t.cliente_id) ?? null,
+        telefono: t.clientes ? telefonoLegible(t.clientes.telefono) : '',
+        ficha: fichaDeTarjeta(t.clientes),
         h: hora(t.inicio),
         n: nombreDe(t.clientes),
         t: `${ETIQUETA_TIPO_TURNO[t.tipo] ?? t.tipo} · ${t.duracion_min}’`,

@@ -55,7 +55,6 @@ type Vista = 'dia' | 'semana' | 'mes';
 
 const VACIO = { titulo: 'No hay turnos este día', texto: 'Cuando Lucía o el equipo agenden uno, aparece en su probador.' };
 const SIN_FRANJAS = { titulo: 'Este día no se dan turnos', texto: 'Las franjas de turnos se cambian en Configuración › Agenda.' };
-const SIN_CONECTAR = 'Todavía no conectado';
 
 // Geometría del diseño: 80 px por hora desde las 9:30, la apertura más temprana.
 const INICIO = 9 * 60 + 30;
@@ -337,6 +336,36 @@ function AccionesTurno({ turno, compacto = false, onCambio }: { turno: FilaTurno
   );
 }
 
+// Con quién es el turno (pedido de Mateo, 9/10): teléfono y lo que Lucía fue guardando de la
+// charla. La misma caja en la tarjeta de escritorio y en la hoja del celular.
+function DatosCliente({ turno }: { turno: FilaTurno }) {
+  if (!turno.telefono && turno.ficha.length === 0) return null;
+  return (
+    <div className="mt-2.5 rounded-otto bg-hueso px-3 py-2 text-[14px] leading-[1.45] text-grafito md:text-[13px]">
+      {turno.telefono && <div className="font-medium text-tinta">{turno.telefono}</div>}
+      {turno.ficha.length > 0 ? turno.ficha.map((linea) => <div key={linea}>{linea}</div>) : <div className="text-[#8A8578]">Todavía no hay datos de la charla.</div>}
+    </div>
+  );
+}
+
+// La charla del cliente en la Bandeja. Un turno cargado a mano para alguien que nunca escribió
+// no tiene adónde ir: queda apagado, con el motivo.
+function BotonCharla({ turno, className, children }: { turno: FilaTurno; className: string; children: React.ReactNode }) {
+  const base = `block rounded-otto border border-cobre bg-lino text-center font-medium ${className}`;
+  if (!turno.conversacion_id) {
+    return (
+      <button type="button" disabled title="Este cliente todavía no escribió por WhatsApp" className={`${base} text-cobre/60`}>
+        {children}
+      </button>
+    );
+  }
+  return (
+    <Link href={`/bandeja/charla?id=${turno.conversacion_id}`} className={`${base} text-cobre hover:bg-cobre-claro`}>
+      {children}
+    </Link>
+  );
+}
+
 function Popover({ turno, probadores, onCerrar, onCambio }: { turno: FilaTurno; probadores: number; onCerrar: () => void; onCambio: () => void }) {
   const actual = PASOS.findIndex((p) => p.estado === turno.estado);
   // min(...): con 4 columnas o más el cálculo por fracción puede empujar los 300 px del
@@ -355,6 +384,7 @@ function Popover({ turno, probadores, onCerrar, onCambio }: { turno: FilaTurno; 
         <br />
         {turno.h} · {turno.p}
       </div>
+      <DatosCliente turno={turno} />
       <div className="my-3.5 flex flex-wrap items-center gap-1 text-[14px] font-medium md:text-[11.5px]">
         {PASOS.map((paso, i) => (
           <span key={paso.estado} className="contents">
@@ -364,9 +394,9 @@ function Popover({ turno, probadores, onCerrar, onCambio }: { turno: FilaTurno; 
         ))}
       </div>
       {turno.aviso && <div className="mb-2.5 text-[14px] font-medium text-ambar md:text-[13px]">↻ {turno.aviso}</div>}
-      <button type="button" disabled title={SIN_CONECTAR} className="mb-2 w-full rounded-otto border border-cobre bg-lino py-2.5 text-[14px] font-medium text-cobre/60 md:text-[13px]">
+      <BotonCharla turno={turno} className="mb-2 w-full py-2.5 text-[14px] md:text-[13px]">
         Abrir la charla de WhatsApp
-      </button>
+      </BotonCharla>
       <AccionesTurno turno={turno} onCambio={onCambio} />
     </div>
   );
@@ -483,11 +513,12 @@ function HojaTurno({ turno, onCerrar, onCambio }: { turno: FilaTurno; onCerrar: 
           <br />
           {turno.h} · {turno.p}
         </div>
+        <DatosCliente turno={turno} />
         {turno.aviso && <div className="mt-1 text-[14px] font-medium text-ambar">↻ {turno.aviso}</div>}
         <div className="mt-4.5 flex flex-col gap-2">
-          <button type="button" disabled title={SIN_CONECTAR} className="rounded-otto border border-cobre bg-lino py-3 text-sm font-medium text-cobre/60">
+          <BotonCharla turno={turno} className="py-3 text-sm">
             Abrir la charla
-          </button>
+          </BotonCharla>
           <AccionesTurno turno={turno} compacto onCambio={onCambio} />
         </div>
       </div>
