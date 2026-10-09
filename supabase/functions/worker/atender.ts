@@ -8,7 +8,7 @@
 // pruebas corren el worker entero adentro de una transacción con rollback.
 import type { Db } from "../_shared/db.ts";
 import type { Calendario } from "../_shared/herramientas/tipos.ts";
-import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts";
+import { LIMITE_TURNO_MS, type ParametrosTurno, type ResultadoTurno, ULTIMO_INTENTO_MS } from "../_shared/turno/turno.ts";
 import { botonDeTurno } from "../_shared/whatsapp/botones.ts";
 import { type ConfigWhatsapp, enviarImagen, enviarImagenPorId, enviarTexto, subirMedia } from "../_shared/whatsapp/enviar.ts";
 import { type Adjuntos, bajarAdjunto, nombreDeArchivo } from "./adjuntos.ts";
@@ -27,10 +27,14 @@ import { puedeTextoLibre } from "../_shared/whatsapp/ventana.ts";
 // contesta junta. Con tope, para que un cliente que no para de escribir igual tenga respuesta.
 export const QUIETUD_RAFAGA_MS = 4_000;
 export const ESPERA_MAXIMA_RAFAGA_MS = 12_000;
-// Una llamada atiende varios trabajos seguidos, pero cada turno puede llevar hasta 25 s: pasado
-// el presupuesto no toma otro, y lo levanta la próxima llamada (el trigger o el cron).
+// Una llamada atiende varios trabajos seguidos, pero solo toma uno nuevo si le alcanza el tiempo
+// para terminarlo entero antes del límite de una Edge Function (~150 s, STACK.md § 8): si la
+// cortan a la mitad, el trabajo queda trabado 5 minutos hasta que lo rescata el cron. Desde el 9/10
+// un turno puede pensar hasta LIMITE_TURNO_MS + ULTIMO_INTENTO_MS (gpt-6.1-sol, pedido de Mateo),
+// así que después de un turno largo no toma otro: lo levanta la llamada siguiente (el trigger al
+// encolar, o el cron de cada minuto).
 export const MAX_POR_LLAMADA = 10;
-export const PRESUPUESTO_LLAMADA_MS = 60_000;
+export const LIMITE_FUNCION_MS = 140_000;
 // Si Meta falla, un reintento; si vuelve a fallar, lo que no salió queda en la bitácora.
 export const PAUSA_REINTENTO_MS = 1_000;
 // Los teléfonos ficticios de las pruebas (5490000000…, no existen): Lucía les contesta, estén o no
@@ -70,12 +74,21 @@ export function esperaDeRafagaMs(ultimoMensajeAt: Date, ahora: Date): number {
   return Math.max(0, QUIETUD_RAFAGA_MS - (ahora.getTime() - ultimoMensajeAt.getTime()));
 }
 
-// Cuántos adjuntos se bajan antes de un turno, y cuánto tiempo se les da en total. El turno
-// entero tiene 25 s (LIMITE_TURNO_MS): si bajar los archivos se comiera ese presupuesto, el
-// cliente se quedaría sin respuesta, que es peor que quedarse sin el audio. Lo que no entra en
-// el presupuesto queda 'pendiente' y lo levanta el turno siguiente.
+// Cuántos adjuntos se bajan antes de un turno, y cuánto tiempo se les da en total. Si bajar los
+// archivos se comiera el tiempo del turno, el cliente esperaría de más, que es peor que quedarse
+// sin el audio. Lo que no entra en el presupuesto queda 'pendiente' y lo levanta el turno siguiente.
 export const MAX_ADJUNTOS_POR_TURNO = 4;
 export const PRESUPUESTO_ADJUNTOS_MS = 10_000;
+
+// Lo más que puede llevar UN trabajo de punta a punta: esperar que el cliente termine de escribir,
+// bajar los adjuntos, pensar, el último intento, y guardar/extraer/mandar.
+const MARGEN_FIN_DE_TRABAJO_MS = 10_000;
+export const DURACION_MAXIMA_TRABAJO_MS =
+  ESPERA_MAXIMA_RAFAGA_MS + PRESUPUESTO_ADJUNTOS_MS + LIMITE_TURNO_MS + ULTIMO_INTENTO_MS + MARGEN_FIN_DE_TRABAJO_MS;
+
+// ¿Puede tomar otro trabajo esta llamada? El primero siempre; los demás, solo si entran enteros.
+export const entraOtroTrabajo = (procesados: number, transcurridoMs: number) =>
+  procesados < MAX_POR_LLAMADA && (procesados === 0 || transcurridoMs + DURACION_MAXIMA_TRABAJO_MS <= LIMITE_FUNCION_MS);
 
 export type Dependencias = {
   wa: ConfigWhatsapp;
@@ -702,7 +715,7 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
 export async function atenderCola(db: Db, d: Dependencias, worker: string): Promise<number> {
   const inicio = d.ahora().getTime();
   let procesados = 0;
-  while (procesados < MAX_POR_LLAMADA && d.ahora().getTime() - inicio < PRESUPUESTO_LLAMADA_MS) {
+  while (entraOtroTrabajo(procesados, d.ahora().getTime() - inicio)) {
     // setof: la cola vacía (o solo con charlas que ya tienen un turno en curso) da cero filas.
     const [t] = await db.consulta<Trabajo>(
       "select id::text as id, conversacion_id::text as conversacion_id, payload from cola_tomar_uno($1)",

@@ -12,7 +12,10 @@ import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import { type ClienteSql, type Db, dbDesde, type Fila } from "../../supabase/functions/_shared/db.ts";
 import { calendarioDeEnsayo } from "../../supabase/functions/_shared/herramientas/tipos.ts";
 import { horaLocal } from "../../supabase/functions/_shared/tiempo.ts";
-import { correrTurno } from "../../supabase/functions/_shared/turno/turno.ts";
+import { correrTurno as correrTurnoReal, TEXTO_DEMORA_RESPALDO } from "../../supabase/functions/_shared/turno/turno.ts";
+import { comoChat } from "./_openai_simulado.ts";
+// El principal habla Responses desde el 9/10; los fetchers de acá, Chat Completions: comoChat traduce.
+const correrTurno: typeof correrTurnoReal = (db, p) => correrTurnoReal(db, { ...p, fetcher: p.fetcher ? comoChat(p.fetcher) : p.fetcher });
 import { sinSignosDeApertura } from "../../supabase/functions/_shared/whatsapp/preparar.ts";
 import { AHORA, conBase, contar, crearTurno, fila, prueba, TZ } from "./_arnes.ts";
 
@@ -236,25 +239,16 @@ prueba("supuesto #33, caso parecido: nada nuevo en la ráfaga sigue sin contesta
   assertEquals(resultado.derivo, false);
 });
 
-// Pedido de Mateo, 16/9: antes solo derivaba garantizado un cliente enojado si además calificaba
-// como "reclamo" (una queja puntual). Ahora el clasificador (paso 4b) lo detecta por el TONO,
-// sin depender de esa palabra — acá se fuerza esa clasificación de forma determinística (no se
-// puede pedir con confianza que el modelo real se ponga agresivo).
-// Pedido de Mateo, 19/9: toda derivación le deja algo al cliente. No se discute con alguien
-// caliente (cliente_enojado sigue en MOTIVOS_CON_TEXTO_RECLAMO de turno.ts), pero el silencio
-// total de antes ahora es el texto fijo texto_derivacion_reclamo.
-prueba("cliente_enojado: el clasificador lo detecta por tono, sin decir 'reclamo', y deriva con el texto fijo de reclamo", async ({ ctx, sql, conversacionId }) => {
-  await insertarEntrante(sql, conversacionId, "ESTO ES UNA VERGUENZA, son todos unos inutiles, denme la plata YA o hago un escandalo");
-  const fetcher = ((_url: string, init: RequestInit) => {
+// Pedido de Mateo, 9/10: ya no hay clasificador ni filtro por palabra clave que deriven antes que
+// Lucía. Un cliente enojado (por el TONO, sin decir "reclamo") o un reclamo llegan al principal, y es
+// Lucía la que llama a derivar_a_persona con el motivo. Lo que ve el cliente sigue igual: el texto
+// fijo de reclamo (pedido de Mateo, 19/9: no se discute con alguien caliente, pero no queda mudo).
+// Se fuerza la decisión del modelo con el fetcher (no se puede pedir con confianza que el modelo
+// real se ponga agresivo).
+function principalQueDeriva(motivo: string, llamadas: { principal: number }): typeof fetch {
+  return ((_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
-    const esClasificador = body.response_format?.json_schema?.name === "clasificacion";
-    const esExtractor = body.response_format?.json_schema?.name === "ficha";
-    if (esClasificador) {
-      return Promise.resolve(respuestaChat({
-        contenido: JSON.stringify({ intencion: "reclamo", urgencia: "alta", derivar_duro: true, motivo_derivacion: "cliente_enojado" }),
-      }));
-    }
-    if (esExtractor) {
+    if (body.response_format?.json_schema?.name === "ficha") {
       return Promise.resolve(respuestaChat({
         contenido: JSON.stringify({
           nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
@@ -262,95 +256,89 @@ prueba("cliente_enojado: el clasificador lo detecta por tono, sin decir 'reclamo
         }),
       }));
     }
-    throw new Error("el clasificador ya derivó duro: el turno no debería llegar al principal");
+    if (body.response_format) throw new Error(`no tendría que haber otra llamada con schema (${body.response_format?.json_schema?.name})`);
+    llamadas.principal++;
+    return Promise.resolve(respuestaChat({ toolCall: { nombre: "derivar_a_persona", argumentos: { motivo, mensaje_al_cliente: "Le paso tu consulta al equipo." } } }));
   }) as unknown as typeof fetch;
+}
 
+prueba("cliente_enojado: lo decide Lucía por el tono (sin clasificador) y sale el texto fijo de reclamo", async ({ ctx, sql, conversacionId }) => {
+  await insertarEntrante(sql, conversacionId, "ESTO ES UNA VERGUENZA, son todos unos inutiles, denme la plata YA o hago un escandalo");
+  const llamadas = { principal: 0 };
   const resultado = await correrTurno(ctx.db, {
     clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
-    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: principalQueDeriva("cliente_enojado", llamadas),
   });
-
+  assertEquals(llamadas.principal, 1, "el mensaje llega a Lucía: nadie deriva antes que ella");
   assertEquals(resultado.derivo, true);
   assertEquals(resultado.motivoDerivacion, "cliente_enojado");
-  // El dueño edita texto_derivacion_reclamo desde el panel (hallazgo de logica, 24/9): se compara
-  // contra el valor vigente, no una redacción congelada.
   const { valor: textoReclamo } = await fila(sql, "select valor from contexto_agente where clave = 'texto_derivacion_reclamo'");
-  assertEquals(
-    resultado.mensajesAlCliente,
-    [sinSignosDeApertura(textoReclamo)],
-    "no queda muda: el texto fijo de reclamo reemplaza cualquier despedida propia, no discute",
-  );
+  assertEquals(resultado.mensajesAlCliente, [sinSignosDeApertura(textoReclamo)]);
   const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
   assertEquals([der?.motivo, der?.estado], ["cliente_enojado", "pendiente"]);
 });
 
-// Mismo pedido de Mateo, 19/9, pero por el otro camino: reclamo detectado por PALABRA CLAVE
-// (paso 4a, derivacion_dura.ts), antes de gastar un solo token de LLM — no hace falta mockear
-// clasificador ni principal, el turno nunca los llama (el `throw` de acá abajo lo confirma).
-// El extractor (paso 10) SÍ corre igual, en el finally, para cualquier turno con mensaje de
-// texto — no depende de por qué camino terminó el turno — así que se le da una respuesta válida
-// como al resto de los tests, para no ensuciar la corrida con un error de bitácora de más.
-// Antes derivar() fetcheaba texto_derivacion_dura_generica y lo tiraba igual (reclamo estaba en
-// la vieja MOTIVOS_DERIVAN_EN_SILENCIO); ahora ese fetch de más se ignora y en su lugar usa
-// texto_derivacion_reclamo — mismo texto que por el clasificador, para que la charla se vea
-// igual sin importar quién detectó el motivo.
-prueba("reclamo por palabra clave (código, sin LLM) también deriva con el texto fijo de reclamo, no muda", async ({ ctx, sql, conversacionId }) => {
+prueba("reclamo: sin filtro por palabra clave, «reclamo» llega a Lucía y ella deriva con el texto fijo de reclamo", async ({ ctx, sql, conversacionId }) => {
   await insertarEntrante(sql, conversacionId, "quiero hacer un reclamo por el traje que me dieron");
-  const fetcher = ((_url: string, init: RequestInit) => {
-    const body = JSON.parse(String(init.body));
-    if (body.response_format?.json_schema?.name === "ficha") {
-      return Promise.resolve(respuestaChat({
-        contenido: JSON.stringify({
-          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
-          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
-        }),
-      }));
-    }
-    throw new Error("la derivación dura por palabra clave no debería llamar al clasificador ni al principal");
-  }) as unknown as typeof fetch;
-
+  const llamadas = { principal: 0 };
   const resultado = await correrTurno(ctx.db, {
     clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
-    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: principalQueDeriva("reclamo", llamadas),
   });
-
-  assertEquals(resultado.derivo, true);
-  assertEquals(resultado.motivoDerivacion, "reclamo");
-  // El dueño edita texto_derivacion_reclamo desde el panel (hallazgo de logica, 24/9): se compara
-  // contra el valor vigente, no una redacción congelada.
+  assertEquals(llamadas.principal, 1);
+  assertEquals([resultado.derivo, resultado.motivoDerivacion], [true, "reclamo"]);
   const { valor: textoReclamo } = await fila(sql, "select valor from contexto_agente where clave = 'texto_derivacion_reclamo'");
   assertEquals(resultado.mensajesAlCliente, [sinSignosDeApertura(textoReclamo)]);
-  const der = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
-  assertEquals([der?.motivo, der?.estado], ["reclamo", "pendiente"]);
 });
 
-// Mismo hallazgo de logica (19/9, auditando la entrega de arriba), pero por el camino de
-// derivar() en turno.ts (no derivar_a_persona.ts): si contexto_agente.texto_derivacion_reclamo
-// queda vacío, antes volvía el silencio que se acaba de cerrar. Se vacía la fila DENTRO de esta
-// transacción (rollback al final) para probar el respaldo sin pisar el texto real de nadie.
-prueba("reclamo por palabra clave con la fila de contexto_agente vacía también cae al respaldo, no muda", async ({ ctx, sql, conversacionId }) => {
+prueba("reclamo con la fila de contexto_agente vacía: cae al respaldo de código, no muda", async ({ ctx, sql, conversacionId }) => {
   await sql.query("update contexto_agente set valor = '' where clave = 'texto_derivacion_reclamo'");
   await insertarEntrante(sql, conversacionId, "quiero hacer un reclamo por el traje que me dieron");
-  const fetcher = ((_url: string, init: RequestInit) => {
-    const body = JSON.parse(String(init.body));
-    if (body.response_format?.json_schema?.name === "ficha") {
-      return Promise.resolve(respuestaChat({
-        contenido: JSON.stringify({
-          nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
-          talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
-        }),
-      }));
-    }
-    throw new Error("la derivación dura por palabra clave no debería llamar al clasificador ni al principal");
-  }) as unknown as typeof fetch;
-
   const resultado = await correrTurno(ctx.db, {
     clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
-    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: principalQueDeriva("reclamo", { principal: 0 }),
   });
-
   assertEquals(resultado.derivo, true);
   assertEquals(resultado.mensajesAlCliente, ["Te leo. Esto lo sigue alguien del local: en un rato te escriben."]);
+});
+
+
+// Pedido de Mateo, 9/10: «que Lucía siempre conteste por más que tarde». Si el principal no
+// contesta (acá: devuelve vacío), hay un último intento sin herramientas; no se deriva ni se apaga.
+function principalMudo(ultimoIntento: string | null): typeof fetch {
+  return ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    if (body.response_format?.json_schema?.name === "ficha") return Promise.resolve(respuestaChat({ contenido: "{}" }));
+    // tool_choice "none" es el último intento; "auto", la vuelta normal (que no contesta nada).
+    return Promise.resolve(respuestaChat({ contenido: body.tool_choice === "none" ? ultimoIntento : null }));
+  }) as unknown as typeof fetch;
+}
+
+prueba("sin respuesta del principal: el último intento contesta, sin derivar ni apagar a Lucía", async ({ ctx, sql, conversacionId }) => {
+  await insertarEntrante(sql, conversacionId, "hola, quiero alquilar un traje");
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: principalMudo("Contame para qué fecha es tu evento así te ayudo."),
+  });
+  assertEquals(resultado.derivo, false);
+  assertEquals(resultado.mensajesAlCliente, ["Contame para qué fecha es tu evento así te ayudo."]);
+  assertEquals(await contar(sql, "select count(*)::int as n from derivaciones where conversacion_id = $1", [conversacionId]), 0);
+  const conv = await fila(sql, "select estado, lucia_activa from conversaciones where id = $1", [conversacionId]);
+  assertEquals([conv.estado, conv.lucia_activa], ["activa", true]);
+});
+
+prueba("si ni el último intento contesta: sale el texto de demora, sin derivar ni apagar a Lucía", async ({ ctx, sql, conversacionId }) => {
+  await sql.query("delete from contexto_agente where clave = 'texto_demora'");
+  await insertarEntrante(sql, conversacionId, "hola, quiero alquilar un traje");
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: principalMudo(null),
+  });
+  assertEquals(resultado.derivo, false);
+  assertEquals(resultado.mensajesAlCliente, [sinSignosDeApertura(TEXTO_DEMORA_RESPALDO)]);
+  assertEquals(await contar(sql, "select count(*)::int as n from derivaciones where conversacion_id = $1", [conversacionId]), 0);
+  const conv = await fila(sql, "select estado, lucia_activa from conversaciones where id = $1", [conversacionId]);
+  assertEquals([conv.estado, conv.lucia_activa], ["activa", true]);
 });
 
 // Verificación pedida por logica, 16/9: cuando una barandilla de "rehacer" (acá,
@@ -442,8 +430,8 @@ prueba(
 );
 
 // venta_sin_resolver de punta a punta (pedido de logica, 20/9, segunda vuelta: el léxico de
-// anuncia_sin_derivar es un juego perdido, el modelo siempre tiene otra frase). Fuerza al
-// clasificador a decir intención "venta" y al principal a contestar SIEMPRE con una frase que no
+// anuncia_sin_derivar es un juego perdido, el modelo siempre tiene otra frase). El cliente pide
+// comprar (desde el 9/10 lo lee la barandilla en su mensaje, sin clasificador) y el principal contesta SIEMPRE con una frase que no
 // resuelve nada (ni enviar_link ni derivar_a_persona), en el primer intento y en el reintento —
 // el camino de aplicarBarandillas hacia barandilla_doble, igual que el de precio_sin_herramienta
 // más arriba. El cliente nunca se queda sin nada: si el modelo no resuelve, deriva de verdad.
@@ -584,7 +572,7 @@ prueba("charla ya derivada: un reclamo TRANQUILO no calla a Lucía, sigue contes
   assertEquals(resultado.mensajesAlCliente, ["Te leo, ya se lo paso al equipo para que lo vean con vos."], "sigue contestando: un reclamo tranquilo no es motivo de silencio");
 });
 
-Deno.test("charla ya derivada: si hay agresión (cliente_enojado, por tono), Lucía se calla y NO crea otra derivación", async () => {
+Deno.test("charla ya derivada: si hay agresión (cliente_enojado, por tono), Lucía deriva por enojo, se calla y NO crea otra derivación", async () => {
   await conBase(async (sql) => {
     await sql.query("begin");
     try {
@@ -598,13 +586,7 @@ Deno.test("charla ya derivada: si hay agresión (cliente_enojado, por tono), Luc
       const antes = await contar(sql, "select count(*)::int as n from derivaciones where conversacion_id = $1", [conversacionId]);
       const fetcher = ((_url: string, init: RequestInit) => {
         const body = JSON.parse(String(init.body));
-        const esClasificador = body.response_format?.json_schema?.name === "clasificacion";
         const esExtractor = body.response_format?.json_schema?.name === "ficha";
-        if (esClasificador) {
-          return Promise.resolve(respuestaChat({
-            contenido: JSON.stringify({ intencion: "reclamo", urgencia: "alta", derivar_duro: true, motivo_derivacion: "cliente_enojado" }),
-          }));
-        }
         if (esExtractor) {
           return Promise.resolve(respuestaChat({
             contenido: JSON.stringify({
@@ -613,7 +595,12 @@ Deno.test("charla ya derivada: si hay agresión (cliente_enojado, por tono), Luc
             }),
           }));
         }
-        throw new Error("el clasificador ya marcó agresión: el turno no debería llegar al principal");
+        // Sin clasificador (9/10): Lucía deriva por enojo y derivar_a_persona, al ver la charla ya
+        // derivada, pide callarse sin abrir otra derivación.
+        return Promise.resolve(respuestaChat({
+          contenido: "Te entiendo.",
+          toolCall: { nombre: "derivar_a_persona", argumentos: { motivo: "cliente_enojado", mensaje_al_cliente: "Le paso tu consulta al equipo." } },
+        }));
       }) as unknown as typeof fetch;
 
       const resultado = await correrTurno(dbDesde(sql as unknown as ClienteSql), {
@@ -755,7 +742,7 @@ prueba("charla con un hueco de más de 7 días: el contexto avisa, y Lucía se p
 // corporativo NO está en MOTIVOS_DE_SILENCIO_DERIVADA, así que Lucía sigue contestando.
 // Lo que esta prueba defiende: que el mensaje del traspaso sea el de corporativo (que pregunta) y
 // no el genérico (que no pregunta nada). Si vuelve el genérico, volvió el agujero.
-prueba("corporativo por palabra clave deriva con su propio texto, que además pregunta, no con el genérico", async ({ ctx, sql, conversacionId }) => {
+prueba("corporativo: lo deriva Lucía (sin filtro de palabras) y sale su propio texto, que además pregunta, no el genérico", async ({ ctx, sql, conversacionId }) => {
   await insertarEntrante(sql, conversacionId, "hola, necesito uniformes para mi empresa");
   const fetcher = ((_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
@@ -767,7 +754,7 @@ prueba("corporativo por palabra clave deriva con su propio texto, que además pr
         }),
       }));
     }
-    throw new Error("la derivación dura por palabra clave no debería llamar al clasificador ni al principal");
+    return Promise.resolve(respuestaChat({ toolCall: { nombre: "derivar_a_persona", argumentos: { motivo: "corporativo", mensaje_al_cliente: "Le paso tu consulta al equipo." } } }));
   }) as unknown as typeof fetch;
 
   const resultado = await correrTurno(ctx.db, {

@@ -1,4 +1,7 @@
-// consultar_catalogo(modelo?) — el precio del alquiler (AGENTE.md § 4). Consulta.
+// consultar_catalogo(modelo?, accesorios) — el precio del alquiler y, si se pide, los accesorios
+// (AGENTE.md § 4). Consulta. Desde el 9/10 absorbe a consultar_accesorios (pedido de Mateo: menos
+// herramientas, cada una con más información): con accesorios=true devuelve también camisa,
+// corbata, cinturón y zapatos con su precio de alquiler y de compra, y las condiciones.
 // Todo precio que diga Lucía sale de acá (regla 8) y va con lo que incluye, que también sale
 // de acá: la sección que-incluye de la base de conocimiento. Sin esa sección cargada no se da
 // ningún precio.
@@ -11,12 +14,12 @@
 // y talle se fueron con eso: eran filtros para recomendar. `modelo` queda para "¿cuánto sale el
 // smoking?".
 
-import { accesoriosEn } from "../barandillas/accesorio_sin_herramienta.ts";
+import { accesoriosEn } from "../barandillas/chequeos/accesorio_sin_herramienta.ts";
 import { textosDeSeccion } from "../conocimiento/busqueda.ts";
 import type { Db } from "../db.ts";
-import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
+import { type ContextoHerramienta, type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
-type Args = { modelo: string | null };
+type Args = { modelo: string | null; accesorios: boolean | null };
 
 const NOTA_MODELOS = "Solo para el precio. Los modelos no los recomendás ni los describís: se ven en el catálogo online " +
   "(enviar_link, tipo web), y la disponibilidad depende del talle y de la fecha del alquiler; en la visita el equipo le " +
@@ -42,6 +45,30 @@ async function preciosCargados(db: Db, modelo: string | null): Promise<{ filas: 
   return { filas: filas.length, precios };
 }
 
+// Lo que era consultar_accesorios: precios de alquiler y de compra de accesorios_alquiler, y las
+// condiciones (qué se alquila, que se pueden comprar con descuento) de la sección accesorios.
+async function datosDeAccesorios(ctx: ContextoHerramienta): Promise<Record<string, unknown>> {
+  const filas = await ctx.db.consulta(
+    `select nombre, precio::float8 as precio, precio_compra::float8 as precio_compra
+       from accesorios_alquiler where activo order by nombre, id`,
+  );
+  const accesorios = filas.map((f) => ({
+    nombre: String(f.nombre),
+    precio_alquiler: Number(f.precio),
+    precio_compra: f.precio_compra === null ? null : Number(f.precio_compra),
+  }));
+  const condiciones = await textosDeSeccion(ctx.db, "accesorios");
+  for (const a of accesorios) {
+    ctx.traza.preciosDevueltos.push(a.precio_alquiler);
+    if (a.precio_compra !== null) ctx.traza.preciosDevueltos.push(a.precio_compra);
+  }
+  // Los accesorios que salieron de acá los puede nombrar (accesorio_sin_herramienta mira esto).
+  ctx.traza.accesoriosDevueltos.push(...accesoriosEn([...accesorios.map((a) => a.nombre), condiciones ?? ""].join("\n")));
+  const datos: Record<string, unknown> = { accesorios, condiciones_accesorios: condiciones };
+  if (accesorios.length === 0) datos.nota_accesorios = "No hay accesorios cargados: no des precios de accesorios.";
+  return datos;
+}
+
 export const consultarCatalogo: Herramienta<Args> = {
   nombre: "consultar_catalogo",
   tipo: "consulta",
@@ -50,17 +77,28 @@ export const consultarCatalogo: Herramienta<Args> = {
     "palabras. No es para recomendar: no " +
     "describas, compares ni recomiendes modelos, colores o talles. Para ver los modelos mandá el catálogo online " +
     "(enviar_link, tipo web) y aclarale que la disponibilidad depende del talle y de la fecha del alquiler. Si " +
-    "pregunta el precio de un modelo puntual, mandá `modelo` con su nombre o como lo describió.",
+    "pregunta el precio de un modelo puntual, mandá `modelo` con su nombre o como lo describió. Con accesorios=true " +
+    "devuelve también los accesorios (camisa, corbata, cinturón, zapatos) con su precio de alquiler y de compra y sus " +
+    "condiciones: pedilos cuando el cliente pregunta por accesorios o al ofrecer el look completo, que se ofrece como " +
+    "look y no como una lista de precios. Si solo pregunta por accesorios, contestá solo eso.",
   parametros: objeto({
     modelo: {
       type: ["string", "null"],
       maxLength: 80,
       description: "Modelo por el que pregunta el precio, con sus palabras (varios, separados por coma), o null para el precio del alquiler en general.",
     },
+    accesorios: {
+      type: ["boolean", "null"],
+      description: "true si pregunta por camisa, corbata, cinturón o zapatos, o si estás ofreciendo el look completo; si no, null.",
+    },
   }),
   async ejecutar(args, ctx) {
+    const acc = args.accesorios ? await datosDeAccesorios(ctx) : {};
     const queIncluye = await textosDeSeccion(ctx.db, "que-incluye");
     if (!queIncluye) {
+      if (args.accesorios) {
+        return { ok: true, datos: { ...acc, nota_alquiler: "Falta cargar qué incluye el precio del alquiler: no des el precio del traje. Si lo pide, derivá con motivo dato_no_encontrado." } };
+      }
       return rechazo(
         "falta_que_incluye",
         "Falta cargar qué incluye el precio (sección que-incluye) y sin eso no se da un precio. Si el cliente pide precio, derivá con motivo dato_no_encontrado.",
@@ -71,6 +109,7 @@ export const consultarCatalogo: Herramienta<Args> = {
       return {
         ok: true,
         datos: {
+          ...acc,
           que_incluye: queIncluye,
           nota: "No hay ningún precio cargado todavía. No des precios: si el cliente pide el precio, derivá con motivo dato_no_encontrado.",
         },
@@ -90,7 +129,7 @@ export const consultarCatalogo: Herramienta<Args> = {
 
     // Mateo, 5/10: el precio se dice siempre "a partir de". El equipo le habló a un cliente de
     // precios más altos que los cargados y no hay respuesta todavía: el piso es lo único seguro.
-    const datos: Record<string, unknown> = { que_incluye: queIncluye, nota: NOTA_MODELOS };
+    const datos: Record<string, unknown> = { que_incluye: queIncluye, nota: NOTA_MODELOS, ...acc };
     if (precios.length) {
       datos.precio_desde = precios[0];
       datos.nota_precios = "Decí que el alquiler es a partir de ese precio («a partir de» o «desde»), nunca como un precio " +

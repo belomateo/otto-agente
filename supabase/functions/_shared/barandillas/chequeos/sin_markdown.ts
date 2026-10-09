@@ -10,7 +10,7 @@
 // prohibido "**doble**" (no es sintaxis de WhatsApp, sale literal) y las viñetas con guion o
 // bullet (Mateo pidió pasos numerados con emoji — 1️⃣2️⃣ — no una lista con "- ").
 
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
 const PATRONES: { que: string; re: RegExp }[] = [
   { que: "negrita **", re: /\*\*[^*\n]+\*\*/ },

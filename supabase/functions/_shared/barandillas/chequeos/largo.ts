@@ -1,7 +1,7 @@
 // largo (formato) — mensajes cortos, en burbujas (AGENTE.md § 1 y § 6). Un bloque de más de
 // 600 caracteres sin una línea en blanco se rehace pidiendo que lo parta.
 
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
 export const MAXIMO_POR_BLOQUE = 600;
 

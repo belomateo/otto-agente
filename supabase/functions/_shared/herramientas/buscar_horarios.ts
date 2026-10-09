@@ -44,7 +44,7 @@ export const buscarHorarios: Herramienta<Args> = {
   tipo: "consulta",
   descripcion: "Devuelve huecos reales para un turno en el local entre dos fechas, ya filtrados por las franjas " +
     "de turnos y los probadores libres, con los eventos más cercanos primero. Obligatoria antes de ofrecer un día " +
-    "u hora, y otra vez justo antes de agendar_turno o reprogramar_turno, en el mismo turno. De lo que devuelve " +
+    "u hora, y otra vez justo antes de agendar_turno o de mover un turno con cambiar_turno, en el mismo turno. De lo que devuelve " +
     "ofrecé dos, nunca más de tres. tipo_turno: graduado, novio o invitado según quién se viste. Dos personas que " +
     "se prueban entran en un mismo turno: usá ese tipo, no doble; triple solo si son tres. Para sumar a alguien a un " +
     "turno que ya tiene no hace falta buscar: viene en ese mismo turno. prueba_final solo para la prueba del día " +

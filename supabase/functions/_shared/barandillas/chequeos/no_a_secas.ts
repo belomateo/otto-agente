@@ -10,8 +10,8 @@
 //    (barandillas/tipos.ts) y la fila del "Revisor de salida" en AGENTE.md § 11, que documentaban
 //    algo que no existía.
 
-import { contieneFrase, normalizar } from "./texto.ts";
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { contieneFrase, normalizar } from "../texto.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
 const EXPRESIONES_QUE_NO_NIEGAN = [
   "no te preocupes",

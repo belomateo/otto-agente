@@ -3,23 +3,23 @@
 // AGENTE.md § 6 y que deje un motivo para la bitácora.
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
-import { accesorioSinHerramienta } from "../../supabase/functions/_shared/barandillas/accesorio_sin_herramienta.ts";
+import { accesorioSinHerramienta } from "../../supabase/functions/_shared/barandillas/chequeos/accesorio_sin_herramienta.ts";
 import { aplicarBarandillas } from "../../supabase/functions/_shared/barandillas/index.ts";
-import { anunciaSinDerivar } from "../../supabase/functions/_shared/barandillas/anuncia_sin_derivar.ts";
-import { confirmacionDoble } from "../../supabase/functions/_shared/barandillas/confirmacion_doble.ts";
-import { derivaYPregunta } from "../../supabase/functions/_shared/barandillas/deriva_y_pregunta.ts";
-import { fueraVentanaMeta } from "../../supabase/functions/_shared/barandillas/fuera_ventana_meta.ts";
-import { horarioSinHerramienta, horas } from "../../supabase/functions/_shared/barandillas/horario_sin_herramienta.ts";
-import { largo } from "../../supabase/functions/_shared/barandillas/largo.ts";
-import { mencionaIa } from "../../supabase/functions/_shared/barandillas/menciona_ia.ts";
-import { noASecas } from "../../supabase/functions/_shared/barandillas/no_a_secas.ts";
-import { montos, precioSinHerramienta } from "../../supabase/functions/_shared/barandillas/precio_sin_herramienta.ts";
-import { presentacionRepetida } from "../../supabase/functions/_shared/barandillas/presentacion_repetida.ts";
-import { sinMarkdown } from "../../supabase/functions/_shared/barandillas/sin_markdown.ts";
-import { sinRelleno } from "../../supabase/functions/_shared/barandillas/sin_relleno.ts";
+import { anunciaSinDerivar } from "../../supabase/functions/_shared/barandillas/chequeos/anuncia_sin_derivar.ts";
+import { confirmacionDoble } from "../../supabase/functions/_shared/barandillas/chequeos/confirmacion_doble.ts";
+import { derivaYPregunta } from "../../supabase/functions/_shared/barandillas/chequeos/deriva_y_pregunta.ts";
+import { fueraVentanaMeta } from "../../supabase/functions/_shared/barandillas/chequeos/fuera_ventana_meta.ts";
+import { horarioSinHerramienta, horas } from "../../supabase/functions/_shared/barandillas/chequeos/horario_sin_herramienta.ts";
+import { largo } from "../../supabase/functions/_shared/barandillas/chequeos/largo.ts";
+import { mencionaIa } from "../../supabase/functions/_shared/barandillas/chequeos/menciona_ia.ts";
+import { noASecas } from "../../supabase/functions/_shared/barandillas/chequeos/no_a_secas.ts";
+import { montos, precioSinHerramienta } from "../../supabase/functions/_shared/barandillas/chequeos/precio_sin_herramienta.ts";
+import { presentacionRepetida } from "../../supabase/functions/_shared/barandillas/chequeos/presentacion_repetida.ts";
+import { sinMarkdown } from "../../supabase/functions/_shared/barandillas/chequeos/sin_markdown.ts";
+import { sinRelleno } from "../../supabase/functions/_shared/barandillas/chequeos/sin_relleno.ts";
 import type { Barandilla, EntradaBarandilla, ResultadoBarandilla } from "../../supabase/functions/_shared/barandillas/tipos.ts";
-import { unaPregunta } from "../../supabase/functions/_shared/barandillas/una_pregunta.ts";
-import { ventaSinResolver } from "../../supabase/functions/_shared/barandillas/venta_sin_resolver.ts";
+import { unaPregunta } from "../../supabase/functions/_shared/barandillas/chequeos/una_pregunta.ts";
+import { ventaSinResolver } from "../../supabase/functions/_shared/barandillas/chequeos/venta_sin_resolver.ts";
 import { trazaNueva } from "../../supabase/functions/_shared/traza.ts";
 import { AHORA, entrada, HORA_MS, traza } from "./_ayuda.ts";
 
@@ -46,7 +46,7 @@ Deno.test("confirmacion_doble salta si agendar_turno o reprogramar_turno salió 
   assertEquals(r.texto, "");
   const r2 = await salta(
     confirmacionDoble,
-    entrada("¡Listo, Lucas! Te reprogramé el turno.", { traza: traza({ herramientas: ["reprogramar_turno"] }) }),
+    entrada("¡Listo, Lucas! Te reprogramé el turno.", { traza: traza({ herramientas: ["cambiar_turno:mover"] }) }),
   );
   assertEquals(r2.texto, "");
 });
@@ -89,7 +89,7 @@ Deno.test("confirmacion_doble corta la cláusula de confirmación aunque compart
 
   const r3 = await salta(
     confirmacionDoble,
-    entrada("Listo, te agendé el turno; traé el saco que querés combinar", { traza: conTraza("reprogramar_turno") }),
+    entrada("Listo, te agendé el turno; traé el saco que querés combinar", { traza: conTraza("cambiar_turno:mover") }),
   );
   assertEquals(r3.texto, "Traé el saco que querés combinar");
 
@@ -238,7 +238,7 @@ Deno.test("precio_sin_herramienta no salta con el mismo texto y la herramienta e
 // cambio (6/10: sin eso, el segundo intento volvía a sumar); si vuelve a sumar, el total se saca en
 // código en vez de derivar. Acá, al sacarlo, no queda nada: eso sí termina como antes.
 Deno.test("precio_sin_herramienta: un total armado sumando (regla 9) se rehace una vez y después se saca", async () => {
-  const conPrecios = traza({ herramientas: ["consultar_catalogo", "consultar_accesorios"], precios: [150000, 33500] });
+  const conPrecios = traza({ herramientas: ["consultar_catalogo:accesorios"], precios: [150000, 33500] });
   const texto = "Con camisa y corbata te queda en $183.500.";
   const r = await precioSinHerramienta.evaluar(entrada(texto, { traza: conPrecios }));
   assertEquals(r.salta && r.accion, "rehacer");
@@ -503,7 +503,7 @@ Deno.test("accesorio_sin_herramienta salta al mencionar zapatos, cinturón, corb
 Deno.test("accesorio_sin_herramienta no salta con la herramienta en la traza, ni si no menciona ningún accesorio (caso parecido)", async () => {
   await noSalta(
     accesorioSinHerramienta,
-    entrada("Sí, también alquilamos zapatos y cinturón.", { traza: traza({ herramientas: ["consultar_accesorios"] }) }),
+    entrada("Sí, también alquilamos zapatos y cinturón.", { traza: traza({ herramientas: ["consultar_catalogo:accesorios"] }) }),
   );
   await noSalta(accesorioSinHerramienta, entrada("¿Para qué evento necesitás el traje?"));
 });
@@ -569,18 +569,21 @@ function trazaConEnviarLink(tipo: string) {
   return t;
 }
 
-Deno.test("venta_sin_resolver salta si el clasificador dio 'venta' y no se mandó el link de venta", async () => {
-  await salta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.", { intencion: "venta" }));
-  await salta(ventaSinResolver, entrada("Mr Otto también vende trajes.", { intencion: "venta", traza: trazaConEnviarLink("mapa") }));
+// 9/10: sin clasificador, la intención de comprar sale del mensaje del cliente (mensajeCliente).
+Deno.test("venta_sin_resolver salta si el cliente pidió comprar un traje y no se mandó el link de venta", async () => {
+  await salta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.", { mensajeCliente: "hola, quiero comprar un traje" }));
+  await salta(ventaSinResolver, entrada("Mr Otto también vende trajes.", { mensajeCliente: "¿venden trajes?", traza: trazaConEnviarLink("mapa") }));
   // Derivar ya no cuenta como resolver la venta: si no salió el link, salta igual.
-  await salta(ventaSinResolver, entrada("Te leo. Esto lo sigue alguien del local.", { intencion: "venta", traza: traza({ herramientas: ["derivar_a_persona"] }) }));
+  await salta(ventaSinResolver, entrada("Te leo. Esto lo sigue alguien del local.", { mensajeCliente: "quisiera comprar", traza: traza({ herramientas: ["derivar_a_persona"] }) }));
 });
 
 Deno.test("venta_sin_resolver no salta si mandó el link de venta (con o sin derivar), o si la intención no es venta (caso parecido)", async () => {
   // Solo el link, sin derivar: es lo que Mateo quiere (29/9), así que NO salta.
-  await noSalta(ventaSinResolver, entrada("Te paso el link, ahí te asesoran con la compra.", { intencion: "venta", traza: trazaConEnviarLink("web-venta") }));
-  await noSalta(ventaSinResolver, entrada("Contale, ¿para qué evento es el traje?", { intencion: "alquiler" }));
-  await noSalta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.")); // sin clasificación, no se puede saber: no salta
+  await noSalta(ventaSinResolver, entrada("Te paso el link, ahí te asesoran con la compra.", { mensajeCliente: "quiero comprar un traje", traza: trazaConEnviarLink("web-venta") }));
+  await noSalta(ventaSinResolver, entrada("Contale, ¿para qué evento es el traje?", { mensajeCliente: "quiero alquilar un traje para un casamiento" }));
+  // Los accesorios se compran con descuento: eso no es comprar un traje.
+  await noSalta(ventaSinResolver, entrada("Sí, los zapatos también se pueden comprar.", { mensajeCliente: "¿los zapatos se pueden comprar?" }));
+  await noSalta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.")); // sin mensaje del cliente, no salta
 });
 
 Deno.test("no_a_secas salta con una negativa sola", async () => {

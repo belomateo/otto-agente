@@ -16,7 +16,7 @@
 // contestó «Pero el lunes / Es feriado» y se reservaba el lunes porque nombraba el día.
 // Un rechazo de acá no deriva: el modelo lee el mensaje y le pregunta al cliente si confirma.
 
-import { horas } from "../barandillas/horario_sin_herramienta.ts";
+import { horas } from "../barandillas/chequeos/horario_sin_herramienta.ts";
 import { normalizar } from "../barandillas/texto.ts";
 import { fechaLarga, horaLocal, nombreDia, partesLocales } from "../tiempo.ts";
 import type { ContextoHerramienta } from "./tipos.ts";

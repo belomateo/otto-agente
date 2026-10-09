@@ -28,11 +28,19 @@
 // también se usa para guardar una preferencia del cliente sin que sea una confirmación, "anoté
 // que preferís el miércoles"); con "turno" al lado sigue contando como antes.
 
-import { llamoA } from "../traza.ts";
-import { contieneFrase, normalizar, oraciones, rearmar, type Oracion } from "./texto.ts";
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { llamoA, type Traza } from "../../traza.ts";
+import { contieneFrase, normalizar, oraciones, rearmar, type Oracion } from "../texto.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
-const HERRAMIENTAS_CON_CONFIRMACION_PROPIA = ["agendar_turno", "reprogramar_turno", "confirmar_turno"];
+const HERRAMIENTAS_CON_CONFIRMACION_PROPIA = ["agendar_turno"];
+
+// Desde el 9/10 confirmar y mover un turno van por cambiar_turno (accion confirmar / mover), que
+// también mandan su confirmación propia; cancelar no manda ninguna.
+function confirmoOMovio(traza: Traza): boolean {
+  return traza.llamadas.some((l) =>
+    l.herramienta === "cambiar_turno" && l.ok && ["confirmar", "mover"].includes(String((l.argumentos as { accion?: string } | null)?.accion))
+  );
+}
 
 const MESES = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre";
 const DIAS_DE_LA_SEMANA = "lunes|martes|miercoles|jueves|viernes|sabado|domingo";
@@ -89,6 +97,7 @@ export const confirmacionDoble: Barandilla = {
   evaluar({ texto, traza }) {
     if (!texto) return NO_SALTA;
     const cual = HERRAMIENTAS_CON_CONFIRMACION_PROPIA.find((h) => llamoA(traza, h)) ??
+      (confirmoOMovio(traza) ? "cambiar_turno" : undefined) ??
       (traza.resumenTurnoEmitido ? "guardar_datos_cliente" : undefined);
     if (!cual) return NO_SALTA;
 

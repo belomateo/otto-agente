@@ -14,7 +14,11 @@ import { HASTA_UN_MENSAJE } from "../_shared/whatsapp/preparar.ts";
 import { procesarTrabajo,
   atenderCola,
   type Dependencias,
+  DURACION_MAXIMA_TRABAJO_MS,
+  entraOtroTrabajo,
   esperaDeRafagaMs,
+  LIMITE_FUNCION_MS,
+  MAX_POR_LLAMADA,
   leerListaTelefonos,
   PAUSA_REINTENTO_MS,
   QUIETUD_RAFAGA_MS,
@@ -721,4 +725,16 @@ prueba("el botón Confirmo sigue confirmando el turno en código, sin pasar por 
   const t = (await c.sql.query("select confirmado, confirmado_por from turnos where id = $1", [turnoId])).rows[0];
   assertEquals([t.confirmado, t.confirmado_por], [true, "cliente"]);
   assertEquals(meta.envios.length, 1); // el texto fijo texto_turno_confirmado
+});
+
+// Pedido de Mateo (9/10): Lucía puede tardar hasta un minuto y medio. Un trabajo entero tiene que
+// entrar en una llamada de la Edge Function (~150 s): si no, la cortan a la mitad y el cliente
+// espera 5 minutos a que el cron lo rescate.
+Deno.test("entraOtroTrabajo: el primero siempre; otro, solo si entra entero antes del límite de la función", () => {
+  assert(DURACION_MAXIMA_TRABAJO_MS <= LIMITE_FUNCION_MS, "un trabajo entero tiene que entrar en una llamada");
+  assertEquals(entraOtroTrabajo(0, 0), true);
+  assertEquals(entraOtroTrabajo(0, 500_000), true);
+  assertEquals(entraOtroTrabajo(1, 5_000), true);
+  assertEquals(entraOtroTrabajo(1, LIMITE_FUNCION_MS - DURACION_MAXIMA_TRABAJO_MS + 1), false);
+  assertEquals(entraOtroTrabajo(MAX_POR_LLAMADA, 0), false);
 });

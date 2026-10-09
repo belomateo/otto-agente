@@ -10,8 +10,9 @@
 // Uso (desde la raíz del repo):
 //   deno run --no-lock --node-modules-dir=none -A --env-file=.env scripts/repetir-charla.ts \
 //     <conversacion_id> <enviado_at del 1er mensaje a contestar> [<enviado_at del 2º> ...] \
-//     [--modelos ../otto-agente-ia/.env] [--ficha-vacia]
-// --modelos: un .env de donde tomar SOLO LLM_PRINCIPAL/CLASIFICADOR/EXTRACTOR si este no los tiene.
+//     [--modelos ../otto-agente-ia/.env] [--ficha-vacia] [--prompt-base]
+// --modelos: un .env de donde tomar SOLO LLM_PRINCIPAL/EXTRACTOR (y LLM_API_PRINCIPAL/
+// LLM_RAZONAMIENTO) si este no los tiene.
 // Más cómodo: node scripts/ejecutar-prueba-real.mjs --modelos ../otto-agente-ia/.env --repetir <args>.
 
 // @deno-types="npm:@types/pg@8.11.10"
@@ -25,7 +26,7 @@ const args = [...Deno.args];
 const iModelos = args.indexOf("--modelos");
 if (iModelos >= 0) {
   const modelos = parse(await Deno.readTextFile(args[iModelos + 1]));
-  for (const k of ["LLM_PRINCIPAL", "LLM_CLASIFICADOR", "LLM_EXTRACTOR"]) {
+  for (const k of ["LLM_PRINCIPAL", "LLM_EXTRACTOR", "LLM_API_PRINCIPAL", "LLM_RAZONAMIENTO"]) {
     if (!Deno.env.get(k) && modelos[k]) Deno.env.set(k, modelos[k]);
   }
   args.splice(iModelos, 2);
@@ -35,12 +36,15 @@ if (iModelos >= 0) {
 const iVacia = args.indexOf("--ficha-vacia");
 const fichaVacia = iVacia >= 0;
 if (fichaVacia) args.splice(iVacia, 1);
-// --prompt-repo: usa plantilla-agente/02-prompt.md tal cual está en el repo, sin cargarlo (dentro
-// de la transacción, que termina en rollback). Sirve para probar un cambio de prompt antes de
+// Prompt: el supabase/functions/_shared/prompt.md de este repo, igual que el worker desde el 9/10
+// (Lucía lee primero el archivo; la base es el respaldo). --prompt-base usa en cambio la copia
+// armada en la base (prompt_vigente()), como hacía producción hasta el 9/10. (El viejo
+// --prompt-repo, que cargaba plantilla-agente/02-prompt.md en la base, ya no hace falta.) Sirve
+// para comparar un cambio de prompt antes de
 // ponerlo en producción.
-const iPromptRepo = args.indexOf("--prompt-repo");
-const promptRepo = iPromptRepo >= 0;
-if (promptRepo) args.splice(iPromptRepo, 1);
+const iPromptBase = args.indexOf("--prompt-base");
+const promptBase = iPromptBase >= 0;
+if (promptBase) args.splice(iPromptBase, 1);
 // --antes <archivo.sql>: corre ese SQL adentro de la transacción antes de repetir (una migración
 // de datos todavía sin aplicar: fragmentos, textos fijos). Se puede repetir.
 const sqlAntes: string[] = [];
@@ -59,9 +63,6 @@ try {
   await sql.query("begin");
   await sql.query("set local otto.sin_disparo = 'on'"); // que ningún trigger encole ni dispare envíos
   for (const s of sqlAntes) await sql.query(s);
-  if (promptRepo) {
-    await sql.query("update prompt_base set texto = $1 where unica", [await Deno.readTextFile(new URL("../plantilla-agente/02-prompt.md", import.meta.url))]);
-  }
   const { rows: [real] } = await sql.query(
     `select cl.nombre, cl.evento, cl.fecha_evento, cl.rol, cl.dia_o_noche, cl.talle_aprox
        from conversaciones co join clientes cl on cl.id = co.cliente_id where co.id = $1`,
@@ -80,7 +81,9 @@ try {
     "insert into conversaciones (cliente_id, canal) values ($1, 'prueba') returning id::text as id",
     [clienteId],
   );
-  const { rows: [{ p: prompt }] } = await sql.query("select prompt_vigente() as p");
+  const prompt = promptBase
+    ? (await sql.query("select prompt_vigente() as p")).rows[0].p as string
+    : await Deno.readTextFile(new URL("../supabase/functions/_shared/prompt.md", import.meta.url));
   const copiar = (desde: string | null, hasta: string, soloCliente: boolean) =>
     sql.query(
       `insert into mensajes (conversacion_id, direccion, tipo, contenido, transcripcion, enviado_at)

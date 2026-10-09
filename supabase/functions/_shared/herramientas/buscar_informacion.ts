@@ -8,8 +8,8 @@
 // recitaba como si el local cortara. Las franjas son internas de la agenda (cuántos probadores
 // hay en cada tramo): los turnos libres los dice buscar_horarios.
 
-import { accesoriosEn } from "../barandillas/accesorio_sin_herramienta.ts";
-import { montos } from "../barandillas/precio_sin_herramienta.ts";
+import { accesoriosEn } from "../barandillas/chequeos/accesorio_sin_herramienta.ts";
+import { montos } from "../barandillas/chequeos/precio_sin_herramienta.ts";
 import { buscarFragmentos } from "../conocimiento/busqueda.ts";
 import { SECCIONES, type Seccion } from "../enums.ts";
 import { describirHorarios, leerHorarioDelLocal } from "./horario_laboral.ts";

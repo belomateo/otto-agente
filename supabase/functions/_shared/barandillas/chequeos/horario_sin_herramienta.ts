@@ -8,9 +8,9 @@
 // solo se leían dígitos. PALABRA_A_NUMERO cubre la una a las doce; "de la tarde"/"de la noche"
 // suma 12 (de la mañana no cambia nada), igual que se leería con el reloj de 24 hs.
 
-import { llamoA } from "../traza.ts";
-import { normalizar } from "./texto.ts";
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { llamoA } from "../../traza.ts";
+import { normalizar } from "../texto.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
 const dos = (n: number) => String(n).padStart(2, "0");
 const hora = (h: string | number, m = "00") => `${dos(Number(h))}:${m}`;

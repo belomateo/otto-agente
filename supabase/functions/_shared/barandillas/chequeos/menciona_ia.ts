@@ -10,8 +10,8 @@
 // palabra suelta cerca de una palabra de meta-funcionamiento (instrucciones, configuración,
 // protección, entrenamiento), en cualquier orden.
 
-import { contieneFrase, normalizar } from "./texto.ts";
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { contieneFrase, normalizar } from "../texto.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
 export const FRASES_QUE_DELATAN = [
   "soy una ia",

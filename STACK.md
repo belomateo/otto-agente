@@ -72,8 +72,9 @@ redeploy:
 
 | Variable | Uso | Criterio |
 | --- | --- | --- |
-| `LLM_PRINCIPAL` | Lucía: la respuesta al cliente, con tools | El mejor modelo disponible con tool calling y caché de prefijo |
-| `LLM_CLASIFICADOR` | Intención de entrada (alquiler / venta / corporativo / reclamo / urgente / otro) | Modelo chico y rápido; salida JSON estricta |
+| `LLM_PRINCIPAL` | Lucía: la respuesta al cliente, con tools | Desde el 9/10, gpt-6.1-sol por la API de Responses, pensando (`LLM_RAZONAMIENTO`, `low` si no se dice). `LLM_API_PRINCIPAL=chat` vuelve a Chat Completions sin razonamiento (el camino de gpt-5.6-luna) |
+| `LLM_RAZONAMIENTO` | Cuánto piensa el principal: minimal / low / medium / high | `low`: probado el 8/10 (0 invenciones en los casos que fallaban) |
+| `LLM_API_PRINCIPAL` | `responses` (por defecto) o `chat` | Solo para volver atrás |
 | `LLM_EXTRACTOR` | Arma la ficha del cliente a partir del mensaje | Modelo chico; salida JSON estricta contra un schema |
 | `LLM_ANALISTA` | Análisis nocturno de charlas | Modelo grande, corre una vez por día |
 
@@ -169,7 +170,8 @@ SUPABASE_SERVICE_ROLE_KEY          # solo servidor
 # OpenAI
 OPENAI_API_KEY
 LLM_PRINCIPAL
-LLM_CLASIFICADOR
+LLM_RAZONAMIENTO                   # low si no está
+LLM_API_PRINCIPAL                  # responses si no está; chat = volver atrás
 LLM_EXTRACTOR
 LLM_ANALISTA
 
@@ -194,8 +196,10 @@ DERIVACION_ALQUILER_TEL            # a quién se avisa cuando Lucía deriva
 
 ## 8. Límites y costos a vigilar
 
-- Edge Functions: timeout ~150 s; el turno del agente tiene que cerrar en < 25 s o
-  derivar. Máximo 6 iteraciones de tool calling por turno.
+- Edge Functions: timeout ~150 s. Desde el 9/10 el turno tiene hasta 75 s para pensar y consultar
+  (LIMITE_TURNO_MS) y 20 s más para un último intento sin herramientas; si ni así contesta, sale el
+  texto fijo de demora y Lucía sigue prendida (nunca deriva ni se calla por demora). El worker solo
+  toma un trabajo nuevo si le entra entero en la llamada (DURACION_MAXIMA_TRABAJO_MS). Máximo 6 iteraciones de tool calling por turno.
 - el worker se despierta por trigger al encolar, con un cron de contención cada minuto
   por si un trabajo queda trabado; alcanza de sobra para el volumen de un local; si crece,
   se pasa a Supabase Queues o a un webhook que dispare el worker al encolar.

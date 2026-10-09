@@ -4,9 +4,9 @@
 // las que prohíbe el prompt (tests/barandillas/consistencia.test.ts lo verifica). También se corta,
 // esté donde esté, un link anunciado que en el turno no se mandó (ver esLinkQueNoSale).
 
-import { llamoA } from "../traza.ts";
-import { contieneFrase, normalizar, oraciones, rearmar } from "./texto.ts";
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { llamoA } from "../../traza.ts";
+import { contieneFrase, normalizar, oraciones, rearmar } from "../texto.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
 export const FORMULAS_DE_RELLENO = [
   "cualquier duda consultame",

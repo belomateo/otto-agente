@@ -166,7 +166,7 @@ prueba("reprogramar_turno rechaza un turno de otro cliente", async ({ ctx, sql, 
   const turno = await crearTurno(sql, { clienteId: otro, inicio: local(SABADO, "10:00"), probador: 2 });
   agenda.lista = [hueco(JUEVES, "11:00", 45)];
   esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
-  const r = await ejecutarHerramienta("reprogramar_turno", { turno_id: turno, fecha_hora: iso(JUEVES, "11:00") }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "mover", turno_id: turno, fecha_hora: iso(JUEVES, "11:00"), motivo: null }, ctx);
   esRechazo(r, "turno_de_otro_cliente");
   const t = await fila(sql, "select inicio, probador from turnos where id = $1", [turno]);
   assertEquals(new Date(t.inicio).getTime(), local(SABADO, "10:00").getTime());
@@ -175,7 +175,7 @@ prueba("reprogramar_turno rechaza un turno de otro cliente", async ({ ctx, sql, 
 
 prueba("reprogramar_turno rechaza un hueco que no salió de buscar_horarios en este turno", async ({ ctx, sql, clienteId }) => {
   const turno = await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00") });
-  const r = await ejecutarHerramienta("reprogramar_turno", { turno_id: turno, fecha_hora: iso(JUEVES, "11:00") }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "mover", turno_id: turno, fecha_hora: iso(JUEVES, "11:00"), motivo: null }, ctx);
   esRechazo(r, "hueco_no_ofrecido");
   const t = await fila(sql, "select inicio from turnos where id = $1", [turno]);
   assertEquals(new Date(t.inicio).getTime(), local(SABADO, "10:00").getTime());
@@ -184,7 +184,7 @@ prueba("reprogramar_turno rechaza un hueco que no salió de buscar_horarios en e
 prueba("reprogramar_turno rechaza un hueco fuera de horario aunque esté en la traza", async ({ ctx, sql, clienteId }) => {
   const turno = await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00") });
   ctx.traza.huecosOfrecidos.push({ ...hueco(DOMINGO, "10:00", 45), tipo: "invitado" });
-  const r = await ejecutarHerramienta("reprogramar_turno", { turno_id: turno, fecha_hora: iso(DOMINGO, "10:00") }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "mover", turno_id: turno, fecha_hora: iso(DOMINGO, "10:00"), motivo: null }, ctx);
   esRechazo(r, "fuera_de_horario");
 });
 
@@ -192,7 +192,7 @@ prueba("reprogramar_turno rechaza un turno que ya no está activo", async ({ ctx
   const turno = await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00"), estado: "cancelado" });
   agenda.lista = [hueco(JUEVES, "11:00", 45)];
   esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
-  const r = await ejecutarHerramienta("reprogramar_turno", { turno_id: turno, fecha_hora: iso(JUEVES, "11:00") }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "mover", turno_id: turno, fecha_hora: iso(JUEVES, "11:00"), motivo: null }, ctx);
   esRechazo(r, "turno_no_activo");
 });
 
@@ -201,44 +201,14 @@ prueba("reprogramar_turno rechaza un turno que ya no está activo", async ({ ctx
 prueba("cancelar_turno rechaza un turno de otro cliente", async ({ ctx, sql }) => {
   const otro = await crearCliente(sql);
   const turno = await crearTurno(sql, { clienteId: otro, inicio: local(SABADO, "10:00") });
-  const r = await ejecutarHerramienta("cancelar_turno", { turno_id: turno, motivo: "no puede ir" }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "cancelar", turno_id: turno, fecha_hora: null, motivo: "no puede ir" }, ctx);
   esRechazo(r, "turno_de_otro_cliente");
   assertEquals((await fila(sql, "select estado from turnos where id = $1", [turno])).estado, "sin-confirmar");
 });
 
 prueba("cancelar_turno rechaza un id que no existe", async ({ ctx }) => {
-  const r = await ejecutarHerramienta("cancelar_turno", { turno_id: crypto.randomUUID(), motivo: "no puede ir" }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "cancelar", turno_id: crypto.randomUUID(), fecha_hora: null, motivo: "no puede ir" }, ctx);
   esRechazo(r, "turno_inexistente");
-});
-
-// ── enviar_fotos ─────────────────────────────────────────────────────────────────────────
-
-prueba("enviar_fotos rechaza más de tres modelos", async ({ ctx }) => {
-  const ids = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
-  const r = await ejecutarHerramienta("enviar_fotos", { modelo_ids: ids }, ctx);
-  esRechazo(r, "argumentos_invalidos");
-  assertMatch(r.mensaje, /como máximo 3/);
-});
-
-prueba("enviar_fotos rechaza un id que no existe en el catálogo", async ({ ctx, sql }) => {
-  const existe = await crearModelo(sql, { modelo: "Modelo de prueba", fotos: ["foto-de-prueba.jpg"] });
-  const noExiste = crypto.randomUUID();
-  const r = await ejecutarHerramienta("enviar_fotos", { modelo_ids: [existe, noExiste] }, ctx);
-  esRechazo(r, "modelo_inexistente");
-  assertMatch(r.mensaje, new RegExp(noExiste));
-});
-
-prueba("enviar_fotos manda la primera foto de cada modelo que existe (caso parecido)", async ({ ctx, sql }) => {
-  const a = await crearModelo(sql, { modelo: "Modelo A", fotos: ["a1.jpg", "a2.jpg"] });
-  const b = await crearModelo(sql, { modelo: "Modelo B", fotos: ["b1.jpg"] });
-  const r = await ejecutarHerramienta("enviar_fotos", { modelo_ids: [a, b] }, ctx);
-  esOk(r);
-  assertEquals(r.efectos?.imagenes, ["a1.jpg", "b1.jpg"]);
-});
-
-prueba("enviar_fotos rechaza un modelo sin fotos cargadas", async ({ ctx, sql }) => {
-  const sinFotos = await crearModelo(sql, { modelo: "Modelo sin fotos" });
-  esRechazo(await ejecutarHerramienta("enviar_fotos", { modelo_ids: [sinFotos] }, ctx), "modelo_sin_fotos");
 });
 
 // ── enviar_link ──────────────────────────────────────────────────────────────────────────
@@ -374,8 +344,26 @@ prueba("derivar_a_persona con devolucion_tardia manda el texto fijo con el telé
 
 prueba("una herramienta que no existe o un parámetro de más se rechazan sin tocar nada", async ({ ctx }) => {
   esRechazo(await ejecutarHerramienta("dar_descuento", { porcentaje: 10 }, ctx), "herramienta_desconocida");
-  esRechazo(await ejecutarHerramienta("anotar", { texto: "hola que tal", autor: "yo" }, ctx), "argumentos_invalidos");
-  esRechazo(await ejecutarHerramienta("anotar", "esto no es json", ctx), "argumentos_invalidos");
+  esRechazo(await ejecutarHerramienta("guardar_datos_cliente", { nota: "hola que tal", autor: "yo" }, ctx), "argumentos_invalidos");
+  esRechazo(await ejecutarHerramienta("guardar_datos_cliente", "esto no es json", ctx), "argumentos_invalidos");
   assertEquals(ctx.traza.llamadas.length, 3);
   assert(ctx.traza.llamadas.every((l) => !l.ok));
+});
+
+// ── cambiar_turno y guardar_datos_cliente (9/10: herramientas unificadas) ──────────────────
+
+prueba("cambiar_turno pide fecha_hora para mover y motivo para cancelar, sin tocar el turno", async ({ ctx, sql, clienteId }) => {
+  const turno = await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00") });
+  esRechazo(await ejecutarHerramienta("cambiar_turno", { accion: "mover", turno_id: turno, fecha_hora: null, motivo: null }, ctx), "falta_fecha_hora");
+  esRechazo(await ejecutarHerramienta("cambiar_turno", { accion: "cancelar", turno_id: turno, fecha_hora: null, motivo: null }, ctx), "falta_motivo");
+  esRechazo(await ejecutarHerramienta("cambiar_turno", { accion: "borrar", turno_id: turno, fecha_hora: null, motivo: null }, ctx), "argumentos_invalidos");
+  const { rows } = await sql.query("select estado from turnos where id = $1", [turno]);
+  assertEquals(rows[0].estado, "sin-confirmar");
+});
+
+prueba("guardar_datos_cliente con solo una nota la deja en la libreta (era anotar)", async ({ ctx, sql, clienteId }) => {
+  const r = await ejecutarHerramienta("guardar_datos_cliente", { nota: "Prefiere venir a la tarde." }, ctx);
+  esOk(r);
+  const { rows } = await sql.query("select autor, texto from notas where cliente_id = $1", [clienteId]);
+  assertEquals(rows.map((f) => [f.autor, f.texto]), [["lucia", "Prefiere venir a la tarde."]]);
 });

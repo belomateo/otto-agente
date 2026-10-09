@@ -1,37 +1,24 @@
-// Derivación dura por palabra clave (CLAUDE.md § 2, derivacion_dura.ts): código puro, sin base.
-// Hallazgo de la auditoría del 17/9: el patrón de prenda_danada tenía la ñ literal, pero corre
-// sobre normalizar(mensaje) (sin acentos ni ñ), así que nunca disparaba. No tenía ningún test.
+// Derivación dura por código (derivacion_dura.ts): código puro, sin base. Desde el 9/10 queda solo la
+// del evento inminente; el filtro por palabra clave se sacó (pedido de Mateo: lo decide Lucía).
 
 import { assertEquals } from "jsr:@std/assert@1.0.13";
-import { derivacionDuraPorPalabraClave } from "../../supabase/functions/_shared/turno/derivacion_dura.ts";
+import * as dura from "../../supabase/functions/_shared/turno/derivacion_dura.ts";
 
-Deno.test("prenda_danada dispara con dañado/dañada/dañó/daños, con o sin tilde/ñ", () => {
-  for (
-    const m of [
-      "les traigo el saco dañado",
-      "la prenda está dañada",
-      "se me dañó el pantalón",
-      "tengo daños en el traje",
-      "la prenda esta danada",
-      "se me dano el pantalon",
-    ]
-  ) {
-    assertEquals(derivacionDuraPorPalabraClave(m)?.motivo, "prenda_danada", `no disparó con: ${m}`);
-  }
+const TZ = "America/Argentina/Cordoba";
+// Viernes 9/10/2026, 15:00 en Rosario.
+const AHORA = new Date("2026-10-09T18:00:00Z");
+
+Deno.test("evento hoy o mañana: deriva al local", () => {
+  assertEquals(dura.derivacionDuraPorEventoInminente("2026-10-09", AHORA, TZ)?.motivo, "evento_inminente");
+  assertEquals(dura.derivacionDuraPorEventoInminente("2026-10-10", AHORA, TZ)?.motivo, "evento_inminente");
 });
 
-Deno.test("prenda_danada no confunde con el verbo dar (dan/dando), caso parecido", () => {
-  for (const m of ["me dan ganas de comprar", "me lo van dando de a poco", "cuántos turnos dan por día"]) {
-    assertEquals(derivacionDuraPorPalabraClave(m), null, `disparó de más con: ${m}`);
-  }
+Deno.test("evento pasado mañana, ya pasado o sin fecha: no deriva", () => {
+  assertEquals(dura.derivacionDuraPorEventoInminente("2026-10-11", AHORA, TZ), null);
+  assertEquals(dura.derivacionDuraPorEventoInminente("2026-10-08", AHORA, TZ), null);
+  assertEquals(dura.derivacionDuraPorEventoInminente(null, AHORA, TZ), null);
 });
 
-Deno.test("reclamo, corporativo y uniforme siguen disparando (caso parecido, no se rompieron con el arreglo)", () => {
-  assertEquals(derivacionDuraPorPalabraClave("quiero hacer un reclamo")?.motivo, "reclamo");
-  assertEquals(derivacionDuraPorPalabraClave("somos un evento corporativo")?.motivo, "corporativo");
-  assertEquals(derivacionDuraPorPalabraClave("necesitamos uniformes para el staff")?.motivo, "corporativo");
-});
-
-Deno.test("sin ninguna palabra clave, no dispara", () => {
-  assertEquals(derivacionDuraPorPalabraClave("hola, quiero ver trajes para un casamiento"), null);
+Deno.test("ya no hay filtro por palabra clave: «reclamo», «manchado» o «uniforme» los decide Lucía", () => {
+  assertEquals("derivacionDuraPorPalabraClave" in dura, false);
 });

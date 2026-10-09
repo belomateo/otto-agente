@@ -22,8 +22,8 @@
 // siempre, en el primerísimo mensaje. Ahora se enmascara el nombre del cliente antes de buscar
 // montos (ver enmascararNombre).
 
-import { normalizar } from "./texto.ts";
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { normalizar } from "../texto.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
 const aNumero = (s: string) => Number(s.replace(/[.\s]/g, ""));
 

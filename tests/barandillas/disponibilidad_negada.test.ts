@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.13";
 import { aplicarBarandillas } from "../../supabase/functions/_shared/barandillas/index.ts";
-import { disponibilidadNegada } from "../../supabase/functions/_shared/barandillas/disponibilidad_negada.ts";
+import { disponibilidadNegada } from "../../supabase/functions/_shared/barandillas/chequeos/disponibilidad_negada.ts";
 import { esCierreCortes } from "../../supabase/functions/_shared/turno/cierre_cortes.ts";
 import { entrada } from "./_ayuda.ts";
 Deno.test("negativas comerciales se rehacen en el primer intento", async () => {

@@ -1,5 +1,5 @@
-import { normalizar } from "./texto.ts";
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { normalizar } from "../texto.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 // "No hacemos envíos" ya no cuenta como negativa (caso real del 4/10): no es falta de stock sino
 // una política confirmada — está en el prompt («No hay envíos») y en que-no-hacemos. Con la frase
 // en la lista, toda pregunta por envíos terminaba derivada aunque Lucía contestara lo correcto

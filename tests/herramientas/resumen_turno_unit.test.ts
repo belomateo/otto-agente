@@ -1,7 +1,7 @@
 import { assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { resumenTurno } from "../../supabase/functions/_shared/herramientas/confirmacion.ts";
 import { mensajesDeEfectos } from "../../supabase/functions/_shared/herramientas/efectos.ts";
-import { confirmacionDoble } from "../../supabase/functions/_shared/barandillas/confirmacion_doble.ts";
+import { confirmacionDoble } from "../../supabase/functions/_shared/barandillas/chequeos/confirmacion_doble.ts";
 import { entrada } from "../barandillas/_ayuda.ts";
 import { trazaNueva } from "../../supabase/functions/_shared/traza.ts";
 import { prepararParaEnviar } from "../../supabase/functions/_shared/whatsapp/preparar.ts";

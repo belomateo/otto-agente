@@ -157,18 +157,18 @@ prueba("consultar_catalogo sin qué incluye cargado no da precios", async ({ ctx
   assertEquals(ctx.traza.preciosDevueltos, []);
 });
 
-prueba("consultar_accesorios devuelve alquiler y compra desde la tabla y las condiciones", async ({ ctx, sql }) => {
+prueba("consultar_catalogo con accesorios=true devuelve alquiler y compra desde la tabla y las condiciones (era consultar_accesorios, 9/10)", async ({ ctx, sql }) => {
   await sql.query("update accesorios_alquiler set activo = false where activo");
   await sql.query("insert into accesorios_alquiler (nombre, precio, precio_compra) values ('Camisa de prueba', 10, 8), ('Zapato de prueba', 20, null)");
   await soloEstosFragmentos(sql, [{ tema: "accesorios", titulo: "Accesorios", texto: "También se pueden comprar con descuento." }]);
-  const r = await ejecutarHerramienta("consultar_accesorios", {}, ctx);
+  const r = await ejecutarHerramienta("consultar_catalogo", { modelo: null, accesorios: true }, ctx);
   esOk(r);
   assertEquals(r.datos.accesorios, [
     { nombre: "Camisa de prueba", precio_alquiler: 10, precio_compra: 8 },
     { nombre: "Zapato de prueba", precio_alquiler: 20, precio_compra: null },
   ]);
-  assertEquals(r.datos.condiciones, "También se pueden comprar con descuento.");
-  assertEquals(ctx.traza.preciosDevueltos.sort((a, b) => a - b), [8, 10, 20]);
+  assertEquals(r.datos.condiciones_accesorios, "También se pueden comprar con descuento.");
+  assert([8, 10, 20].every((p) => ctx.traza.preciosDevueltos.includes(p)), "los precios de los accesorios quedan en la traza");
 });
 
 prueba("buscar_horarios descarta lo que ya pasó o queda fuera de horario y deja en la traza lo que mostró", async ({ ctx, agenda }) => {
@@ -257,12 +257,3 @@ prueba("buscar_horarios no vuelve a pedir el mail en esta charla, ni en el mismo
   assertEquals(eventos, undefined, "no se marca un pedido de correo antes de reservar");
 });
 
-prueba("ver_turnos_cliente devuelve los que vienen y no los cancelados ni los que pasaron", async ({ ctx, sql, clienteId }) => {
-  await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00"), probador: 1 });
-  await crearTurno(sql, { clienteId, inicio: local(JUEVES, "11:00"), probador: 2, estado: "cancelado" });
-  await crearTurno(sql, { clienteId, inicio: new Date(AHORA.getTime() - 86400000), probador: 3, estado: "devolvio" });
-  const r = await ejecutarHerramienta("ver_turnos_cliente", {}, ctx);
-  esOk(r);
-  const turnos = r.datos.turnos as { dia: string; hora: string; estado: string }[];
-  assertEquals(turnos.map((t) => [t.dia, t.hora, t.estado]), [["sábado 8 de junio", "10:00", "sin-confirmar"]]);
-});

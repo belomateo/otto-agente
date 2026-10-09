@@ -7,7 +7,10 @@
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { calendarioDeEnsayo } from "../../supabase/functions/_shared/herramientas/tipos.ts";
-import { correrTurno } from "../../supabase/functions/_shared/turno/turno.ts";
+import { correrTurno as correrTurnoReal } from "../../supabase/functions/_shared/turno/turno.ts";
+import { comoChat } from "./_openai_simulado.ts";
+// El principal habla Responses desde el 9/10; los fetchers de acá, Chat Completions: comoChat traduce.
+const correrTurno: typeof correrTurnoReal = (db, p) => correrTurnoReal(db, { ...p, fetcher: p.fetcher ? comoChat(p.fetcher) : p.fetcher });
 import { AHORA, contar, prueba, TZ } from "./_arnes.ts";
 
 function respuestaChat(contenido: string) {

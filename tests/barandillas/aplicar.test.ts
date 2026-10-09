@@ -3,14 +3,21 @@
 // llaman a ningún LLM.
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
-import { aplicarBarandillas, BARANDILLAS } from "../../supabase/functions/_shared/barandillas/index.ts";
+import { aplicarBarandillas, BARANDILLAS, CHEQUEOS_EN_ORDEN } from "../../supabase/functions/_shared/barandillas/index.ts";
 import { AHORA, entrada, HORA_MS, traza } from "./_ayuda.ts";
 
-Deno.test("son 16 y van en orden formato → contenido → reglas", () => {
-  assertEquals(BARANDILLAS.length, 16);
+Deno.test("son 7 controles con 16 revisiones, que corren en orden formato → contenido → reglas", () => {
+  assertEquals(BARANDILLAS.length, 7);
+  assertEquals(CHEQUEOS_EN_ORDEN.length, 16);
   const orden = { formato: 0, contenido: 1, reglas: 2 } as const;
-  const etapas = BARANDILLAS.map((b) => orden[b.etapa]);
+  const etapas = CHEQUEOS_EN_ORDEN.map((b) => orden[b.etapa]);
   assertEquals(etapas, [...etapas].sort((a, b) => a - b));
+});
+
+Deno.test("cada revisión está en un solo control, y todas las de los controles corren", () => {
+  const enControles = BARANDILLAS.flatMap((c) => c.chequeos.map((ch) => ch.nombre));
+  assertEquals(new Set(enControles).size, enControles.length, "una revisión no puede estar en dos controles");
+  assertEquals([...enControles].sort(), CHEQUEOS_EN_ORDEN.map((b) => b.nombre).sort());
 });
 
 Deno.test("un mensaje que cumple todo sale tal cual", async () => {
@@ -25,7 +32,7 @@ Deno.test("las que arreglan en código no piden rehacer: limpian, cortan y el me
   const r = await aplicarBarandillas(entrada("**¡Hola!** Te espero el jueves. Quedo atenta."));
   assertEquals(r.decision, "enviar");
   assertEquals(r.texto, "¡Hola! Te espero el jueves.");
-  assertEquals(r.saltos.map((s) => [s.barandilla, s.accion]), [["sin_markdown", "limpiar"], ["sin_relleno", "cortar"]]);
+  assertEquals(r.saltos.map((s) => [s.chequeo, s.accion]), [["sin_markdown", "limpiar"], ["sin_relleno", "cortar"]]);
 });
 
 Deno.test("una que pide rehacer vuelve al modelo con qué corregir", async () => {
@@ -43,7 +50,7 @@ Deno.test("dos saltos en el mismo turno: ya se rehizo una vez y vuelve a saltar,
 Deno.test("en el primer intento, dos barandillas que piden rehacer se rehacen una sola vez con los dos motivos", async () => {
   const r = await aplicarBarandillas(entrada("Sale $150.000. ¿Te sirve? ¿Venís esta semana?"));
   assertEquals(r.decision, "rehacer");
-  assertEquals(r.saltos.map((s) => s.barandilla).sort(), ["precio_sin_herramienta", "una_pregunta"]);
+  assertEquals(r.saltos.map((s) => s.chequeo).sort(), ["precio_sin_herramienta", "una_pregunta"]);
   assertMatch(r.instruccion ?? "", /consultar_catalogo/);
 });
 
@@ -72,14 +79,14 @@ Deno.test("un corte que vacía el mensaje entero no sale como 'enviar' vacío: p
 // confirma un turno por texto. Reproducido de punta a punta contra la base real y OpenAI real
 // antes de este fix: 22/9.
 Deno.test("un corte de confirmacion_doble que vacía el mensaje SÍ sale como 'enviar': ya hay una confirmación aparte, no hay nada más que agregar", async () => {
-  const r = await aplicarBarandillas(entrada("Listo, tu turno quedó confirmado.", { traza: traza({ herramientas: ["confirmar_turno"] }) }));
+  const r = await aplicarBarandillas(entrada("Listo, tu turno quedó confirmado.", { traza: traza({ herramientas: ["cambiar_turno:confirmar"] }) }));
   assertEquals(r.decision, "enviar");
   assertEquals(r.texto, "");
-  assertEquals(r.saltos.map((s) => s.barandilla), ["confirmacion_doble"]);
+  assertEquals(r.saltos.map((s) => s.chequeo), ["confirmacion_doble"]);
 });
 
 Deno.test("un corte que vacía el mensaje por OTRA barandilla sigue pidiendo rehacer, aunque haya una confirmación en la traza (caso parecido)", async () => {
-  const r = await aplicarBarandillas(entrada("Quedo atenta.", { traza: traza({ herramientas: ["confirmar_turno"] }) }));
+  const r = await aplicarBarandillas(entrada("Quedo atenta.", { traza: traza({ herramientas: ["cambiar_turno:confirmar"] }) }));
   assertEquals(r.decision, "rehacer");
   assertMatch(r.instruccion ?? "", /vacío/);
 });
@@ -122,13 +129,13 @@ Deno.test("cada salto deja barandilla, acción y motivo para la bitácora", asyn
   const r = await aplicarBarandillas(entrada("**Soy una IA.** ¿a? ¿b?"));
   assert(r.saltos.length >= 3);
   for (const s of r.saltos) {
-    assert(BARANDILLAS.some((b) => b.nombre === s.barandilla));
+    assert(BARANDILLAS.some((b) => b.nombre === s.barandilla && b.chequeos.some((ch) => ch.nombre === s.chequeo)));
     assert(s.motivo.trim().length > 10);
   }
 });
 
 Deno.test("las de formato no llaman a ningún LLM: son funciones sincrónicas de código", () => {
-  for (const b of BARANDILLAS.filter((x) => x.etapa === "formato")) {
+  for (const b of CHEQUEOS_EN_ORDEN.filter((x) => x.etapa === "formato")) {
     const r = b.evaluar(entrada("**hola** ¿a? ¿b? Quedo atenta."));
     assert(!(r instanceof Promise), `${b.nombre} es asincrónica: una de formato no puede esperar a un LLM`);
   }

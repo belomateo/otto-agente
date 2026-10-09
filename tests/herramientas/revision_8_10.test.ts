@@ -117,7 +117,7 @@ prueba("reprogramar_turno no mueve el turno por un comentario (8/10), sí con «
   await mensaje(sql, conversacionId, "entrante", "Llegaron a instalar una máquina en el galpón y tienen para todo el día", 1);
   agenda.lista = [hueco(JUEVES, "11:00", 45), hueco(JUEVES, "17:00", 45)];
   esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
-  const mover = (hm: string) => ejecutarHerramienta("reprogramar_turno", { turno_id: turnoId, fecha_hora: iso(JUEVES, hm) }, ctx);
+  const mover = (hm: string) => ejecutarHerramienta("cambiar_turno", { accion: "mover", turno_id: turnoId, fecha_hora: iso(JUEVES, hm), motivo: null }, ctx);
   esRechazo(await mover("11:00"), "horario_no_elegido");
   await mensaje(sql, conversacionId, "entrante", "¿Lo podemos pasar a mañana a la misma hora?", 0);
   esOk(await mover("17:00"));

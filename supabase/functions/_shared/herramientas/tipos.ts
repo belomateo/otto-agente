@@ -79,6 +79,9 @@ export type Efectos = {
   imagenes?: string[];
   cortaTurno?: boolean;
   avisoEquipo?: { motivo: string; derivacionId: string };
+  // El turno termina sin mandarle nada al cliente (ni lo que Lucía ya hubiera escrito). Lo usa
+  // derivar_a_persona con un cliente enojado en una charla que ya tiene una persona (Mateo, 21/9).
+  callarse?: boolean;
 };
 
 export type Resultado =

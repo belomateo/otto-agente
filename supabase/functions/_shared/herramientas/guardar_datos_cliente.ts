@@ -1,23 +1,30 @@
 // guardar_datos_cliente({...}) — la ficha del cliente (AGENTE.md § 4 y § 7). Toca el mundo.
 // Solo los campos de la ficha que dice el cliente; los de código (turno, recordatorio,
-// confirmado) no están en el schema. Las notas libres van por anotar. Los enums se validan
-// contra el schema, que es el mismo de los checks de clientes (logica 0023).
+// confirmado) no están en el schema. Los enums se validan contra el schema, que es el mismo de los
+// checks de clientes (logica 0023).
+//
+// Desde el 9/10 (pedido de Mateo: menos herramientas) también la nota libre de la libreta, que era
+// la herramienta anotar (26 usos en 30 días): `nota` va a la tabla notas con autor 'lucia', al lado
+// de las que escribe el equipo.
 
-import { DIA_O_NOCHE, ESTADOS_TURNO_ACTIVO, EVENTOS, ROLES_CLIENTE } from "../enums.ts";
+import { AUTOR_LUCIA, DIA_O_NOCHE, ESTADOS_TURNO_ACTIVO, EVENTOS, ROLES_CLIENTE } from "../enums.ts";
 import { fechaLocal, horaLocal } from "../tiempo.ts";
 import { resumenTurno } from "./confirmacion.ts";
 import { actualizarFicha, CAMPOS_FICHA, formatoDeEmailValido, leerFicha, type Ficha } from "./ficha.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
-export const guardarDatosCliente: Herramienta<Ficha> = {
+type Args = Ficha & { nota: string | null };
+
+export const guardarDatosCliente: Herramienta<Args> = {
   nombre: "guardar_datos_cliente",
   tipo: "accion",
   descripcion: "Guarda en la ficha del cliente lo que te dijo, en el mismo turno en que te lo dice: nombre, " +
     "evento, fecha del evento, si es novio, invitado, graduado o padre, si es de día o de noche, talle " +
     "aproximado, ciudad, color preferido, lo que dijo del presupuesto y su mail. Mandá solo lo que dijo; lo " +
-    "demás, null. Nunca lo que suponés. Si ya reservó y ahora da nombre o correo, usá esta herramienta: " +
-    "actualiza el cliente vinculado a la misma reserva y manda su resumen actualizado. No crees otro turno " +
-    "ni repitas la lista o la pregunta que manda el sistema.",
+    "demás, null. Nunca lo que suponés. En `nota`, algo que conviene recordar y no entra en la ficha (una " +
+    "preferencia, una duda, algo que contó del evento). Si ya reservó y ahora da nombre o correo, usá esta " +
+    "herramienta: actualiza el cliente vinculado a la misma reserva y manda su resumen actualizado. No crees " +
+    "otro turno ni repitas la lista o la pregunta que manda el sistema.",
   parametros: objeto({
     nombre: { type: ["string", "null"], maxLength: 80, description: "Nombre, como lo dijo." },
     evento: { type: ["string", "null"], enum: [...EVENTOS, null], description: "Para qué evento es." },
@@ -35,10 +42,27 @@ export const guardarDatosCliente: Herramienta<Ficha> = {
     color_preferido: { type: ["string", "null"], maxLength: 40, description: "Color que prefiere." },
     presupuesto_mencionado: { type: ["string", "null"], maxLength: 80, description: "Lo que dijo del presupuesto, con sus palabras." },
     email: { type: ["string", "null"], maxLength: 120, description: "Mail que dio, como lo escribió." },
+    nota: {
+      type: ["string", "null"],
+      maxLength: 500,
+      description: "Una nota corta para la libreta del cliente, con algo que no entra en la ficha. Si no hay, null.",
+    },
   }),
   async ejecutar(args, ctx) {
-    if (!CAMPOS_FICHA.some((c) => limpio(args[c]))) {
+    const nota = limpio(args.nota);
+    if (!CAMPOS_FICHA.some((c) => limpio(args[c])) && !nota) {
       return rechazo("sin_datos", "No mandaste ningún dato para guardar.");
+    }
+    let notaId: string | null = null;
+    if (nota) {
+      const [f] = await ctx.db.consulta<{ id: string }>(
+        "insert into notas (cliente_id, autor, texto) values ($1::uuid, $2, $3) returning id::text as id",
+        [ctx.cliente.id, AUTOR_LUCIA, nota],
+      );
+      notaId = f ? String(f.id) : null;
+    }
+    if (!CAMPOS_FICHA.some((c) => limpio(args[c]))) {
+      return { ok: true, datos: { nota_id: notaId, nota: "Anotado en la libreta." } };
     }
     if (args.fecha_evento && args.fecha_evento < fechaLocal(ctx.ahora, ctx.tz)) {
       return rechazo("fecha_evento_pasada", `La fecha del evento (${args.fecha_evento}) ya pasó. Confirmala con el cliente antes de guardarla.`);

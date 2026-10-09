@@ -38,12 +38,12 @@ export const TIPOS_QUE_SON_TEXTO = ["texto", "button"];
 export const TIPOS_CON_ADJUNTO_LEGIBLE = ["audio", "image"];
 
 // Hallazgo de Mateo, 16/9: sin tope, una ráfaga larga (un cliente que pega un texto gigante, o
-// que no para de escribir) se mandaba entera al clasificador y al principal — costo y riesgo de
+// que no para de escribir) se mandaba entera al principal (y al clasificador, hasta el 9/10) — costo y riesgo de
 // pasarse del contexto del modelo sin ningún límite. 2500 caracteres alcanza de sobra para
 // cualquier mensaje real (el propio prompt, con todo lo que dice Lucía, entra en 300 líneas).
 // Decisión (hallazgo de logica, 16/9): 2500 es MENOS que los 4096 que permite un mensaje de
 // WhatsApp, así que esto SÍ puede recortar un único mensaje legítimo si es lo bastante largo, no
-// solo una ráfaga de varios — el costo de mandarlo entero al clasificador y al principal es el
+// solo una ráfaga de varios — el costo de mandarlo entero al principal es el
 // mismo, venga de uno o de varios mensajes, y es justo lo que este tope existe para evitar.
 export const MAXIMO_CARACTERES_RAFAGA = 2500;
 

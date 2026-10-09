@@ -44,6 +44,7 @@ import { hastaMasLejanoBuscado, llamoA } from "../traza.ts";
 import { diasEntre, fechaLocal, sumarDias } from "../tiempo.ts";
 import {
   type ClaveDerivacion,
+  CLAVE_TEXTO_DERIVACION_CORPORATIVO,
   CLAVE_TEXTO_DERIVACION_DURA_GENERICA,
   CLAVE_TEXTO_DERIVACION_RECLAMO,
   CLAVE_TEXTO_DEVOLUCION_TARDIA,
@@ -61,8 +62,12 @@ const RANGO_MAXIMO_DIAS = 13;
 
 // Motivos con un texto fijo propio, que reemplaza la despedida del modelo (5/10): el de
 // devolucion_tardia le pasa al cliente el teléfono del local, que Lucía nunca escribe.
+// corporativo (9/10): hasta que se sacó el filtro por palabra clave, este texto —que hace la primera
+// pregunta para el equipo, «¿para cuántas personas sería?» (red-team 24/9)— salía solo por ese
+// filtro. Ahora que deriva Lucía, sale por acá.
 const TEXTO_FIJO_DEL_MOTIVO: Partial<Record<MotivoDerivacion, ClaveDerivacion>> = {
   devolucion_tardia: CLAVE_TEXTO_DEVOLUCION_TARDIA,
+  corporativo: CLAVE_TEXTO_DERIVACION_CORPORATIVO,
 };
 
 // Palabras de una consulta por modelos (5/10). Sin "traje" ni "ambo" a secas: "¿cuánto sale un
@@ -146,6 +151,19 @@ export const derivarAPersona: Herramienta<Args> = {
         `El motivo ${args.motivo} lo decide el código, no vos. Si es porque el evento es hoy o mañana, llamá a ` +
           "buscar_horarios con la fecha del evento: el código deriva solo, con el dato guardado y el texto correcto.",
       );
+    }
+    // Pedido de Mateo, 21/9: con la charla ya en manos del equipo, a un cliente enojado no se le
+    // contesta ni se abre otra derivación (la persona que la tiene la sigue viendo). Hasta el 9/10 lo
+    // resolvía el clasificador antes del turno; desde que deriva Lucía, llega acá.
+    if (args.motivo === "cliente_enojado") {
+      const [c] = await ctx.db.consulta<{ estado: string }>("select estado from conversaciones where id = $1::uuid", [ctx.conversacionId]);
+      if (c?.estado === "derivada") {
+        return {
+          ok: true,
+          datos: { nota: "La charla ya la tiene una persona del equipo: no se le manda nada. No escribas nada más." },
+          efectos: { cortaTurno: true, callarse: true },
+        };
+      }
     }
     if (args.motivo === "turno_urgente_sin_hueco" && !llamoA(ctx.traza, "buscar_horarios")) {
       return rechazo(

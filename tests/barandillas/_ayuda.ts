@@ -11,7 +11,12 @@ const HACE_UN_MINUTO = new Date(AHORA.getTime() - 60 * 1000);
 // Una traza con las herramientas que se llamaron bien y lo que devolvieron.
 export function traza(p: { herramientas?: string[]; precios?: number[]; horas?: string[]; accesorios?: string[] } = {}): Traza {
   const t = trazaNueva();
-  for (const h of p.herramientas ?? []) t.llamadas.push({ herramienta: h, argumentos: {}, ok: true });
+  // "cambiar_turno:mover" o "consultar_catalogo:accesorios": la herramienta con su acción (9/10).
+  for (const h of p.herramientas ?? []) {
+    const [herramienta, opcion] = h.split(":");
+    const argumentos = herramienta === "cambiar_turno" && opcion ? { accion: opcion } : herramienta === "consultar_catalogo" && opcion === "accesorios" ? { accesorios: true } : {};
+    t.llamadas.push({ herramienta, argumentos, ok: true });
+  }
   t.preciosDevueltos.push(...(p.precios ?? []));
   t.horasDevueltas.push(...(p.horas ?? []));
   t.accesoriosDevueltos.push(...(p.accesorios ?? []));

@@ -2,7 +2,7 @@
 // cliente, no se puede mandar texto libre, solo una plantilla aprobada (STACK.md § 5). Se
 // bloquea en código; el que decide qué plantilla va es el turno o el cron.
 
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
 const VENTANA_DE_META_MS = 24 * 60 * 60 * 1000;
 

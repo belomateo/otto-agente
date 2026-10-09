@@ -21,8 +21,24 @@
 // web de venta —ahí asesoran al cliente—, así que no tiene sentido ocupar a una persona del local
 // por una venta. Hoy alcanza con mandoElLinkDeVenta(traza); la derivación quedó fuera.
 
-import { type Traza } from "../traza.ts";
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { type Traza } from "../../traza.ts";
+import { mencionaAccesorio } from "./accesorio_sin_herramienta.ts";
+import { normalizar } from "../texto.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
+
+// 9/10: sin clasificador, la intención de COMPRAR un traje sale del mensaje del cliente. A
+// propósito conservador —solo frases claras—: si salta de más, obliga a mandar un link que no
+// pidió. Los accesorios sí se compran (con descuento por alquilar) y no son esto.
+const COMPRA = /\b(comprar|comprarlo|comprarla|comprarme|comprarmelo|compro|venden|vendes|en venta|a la venta)\b/;
+const PRENDA = /\b(traje|trajes|ambo|ambos|saco|sacos|smoking|smokings|esmoquin)\b/;
+const QUIERE_COMPRAR = /\b(quiero|quisiera|queria|busco|necesito|me gustaria)\s+(comprar|comprarme)\b/;
+
+export function pideComprarTraje(mensaje: string | null | undefined): boolean {
+  const n = normalizar(mensaje ?? "");
+  if (!COMPRA.test(n)) return false;
+  if (PRENDA.test(n)) return true;
+  return QUIERE_COMPRAR.test(n) && !mencionaAccesorio(n);
+}
 
 // 8/10: también cuenta el link de venta que ya le llegó antes en la charla. Sin esto, cada vez que
 // el cliente volvía a hablar de comprar, la barandilla obligaba a "mandar" de nuevo el link (que
@@ -38,8 +54,8 @@ export const ventaSinResolver: Barandilla = {
   nombre: "venta_sin_resolver",
   etapa: "reglas",
   accion: "rehacer",
-  evaluar({ traza, intencion }) {
-    if (intencion !== "venta") return NO_SALTA;
+  evaluar({ traza, mensajeCliente }) {
+    if (!pideComprarTraje(mensajeCliente)) return NO_SALTA;
     // Pedido de Mateo, 29/9: la venta ya NO se deriva a una persona. Alcanza con mandar el link de
     // la web de venta (donde al cliente lo asesoran con la compra), en el mismo turno. Antes se
     // exigían las dos cosas —link Y derivación—; ahora sobra la derivación: la compra la resuelve
@@ -48,7 +64,7 @@ export const ventaSinResolver: Barandilla = {
     return {
       salta: true,
       accion: "rehacer",
-      motivo: "el clasificador entendió que la consulta es de venta y el turno no mandó el link de venta: " +
+      motivo: "el cliente pidió comprar un traje y el turno no mandó el link de venta: " +
         "mandá enviar_link con tipo web-venta y decile que ahí lo asesoran con la compra de su traje. No hace falta derivar.",
     };
   },

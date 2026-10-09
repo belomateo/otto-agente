@@ -13,9 +13,9 @@
 // disparar esto — por eso las frases de acá apuntan al verbo de derivar/orientar, no a
 // "el equipo del local" a secas.
 
-import { llamoA } from "../traza.ts";
-import { contieneFrase, normalizar, sacarPreguntas } from "./texto.ts";
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { llamoA } from "../../traza.ts";
+import { contieneFrase, normalizar, sacarPreguntas } from "../texto.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
 export const ANUNCIOS_DE_PASE = [
   "te paso con",

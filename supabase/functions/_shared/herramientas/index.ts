@@ -9,36 +9,29 @@
 
 import type { Db } from "../db.ts";
 import { agendarTurno } from "./agendar_turno.ts";
-import { anotar } from "./anotar.ts";
 import { buscarHorarios } from "./buscar_horarios.ts";
 import { buscarInformacion } from "./buscar_informacion.ts";
-import { cancelarTurno } from "./cancelar_turno.ts";
-import { confirmarTurno } from "./confirmar_turno.ts";
-import { consultarAccesorios } from "./consultar_accesorios.ts";
+import { cambiarTurno } from "./cambiar_turno.ts";
 import { consultarCatalogo } from "./consultar_catalogo.ts";
 import { derivarAPersona } from "./derivar_a_persona.ts";
-import { enviarFotos } from "./enviar_fotos.ts";
 import { enviarLink } from "./enviar_link.ts";
 import { guardarDatosCliente } from "./guardar_datos_cliente.ts";
-import { reprogramarTurno } from "./reprogramar_turno.ts";
 import type { ContextoHerramienta, EsquemaJson, Herramienta, Resultado } from "./tipos.ts";
 import { rechazo } from "./tipos.ts";
 import { completarNulos, validarContraEsquema } from "./validar.ts";
-import { verTurnosCliente } from "./ver_turnos_cliente.ts";
 
+// Pedido de Mateo (9/10): 8 herramientas en vez de 14. consultar_accesorios entró en
+// consultar_catalogo (accesorios=true); confirmar/reprogramar/cancelar_turno, en cambiar_turno (sus
+// archivos quedan como la implementación de cada acción); anotar, en guardar_datos_cliente (nota);
+// ver_turnos_cliente se fue (los turnos del cliente ya llegan en el contexto) y enviar_fotos también
+// (estaba apagada: los modelos se ven en el catálogo online, enviar_link).
 export const HERRAMIENTAS: readonly Herramienta[] = [
   buscarInformacion,
   consultarCatalogo,
-  consultarAccesorios,
   buscarHorarios,
-  verTurnosCliente,
   agendarTurno,
-  reprogramarTurno,
-  cancelarTurno,
-  confirmarTurno,
+  cambiarTurno,
   guardarDatosCliente,
-  anotar,
-  enviarFotos,
   enviarLink,
   derivarAPersona,
 ] as readonly Herramienta[];

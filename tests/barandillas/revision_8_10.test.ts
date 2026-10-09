@@ -2,9 +2,9 @@
 // real que lo disparó y el caso parecido que NO tiene que cambiar.
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { aplicarBarandillas } from "../../supabase/functions/_shared/barandillas/index.ts";
-import { montos, precioSinHerramienta } from "../../supabase/functions/_shared/barandillas/precio_sin_herramienta.ts";
-import { sinRelleno } from "../../supabase/functions/_shared/barandillas/sin_relleno.ts";
-import { ventaSinResolver } from "../../supabase/functions/_shared/barandillas/venta_sin_resolver.ts";
+import { montos, precioSinHerramienta } from "../../supabase/functions/_shared/barandillas/chequeos/precio_sin_herramienta.ts";
+import { sinRelleno } from "../../supabase/functions/_shared/barandillas/chequeos/sin_relleno.ts";
+import { ventaSinResolver } from "../../supabase/functions/_shared/barandillas/chequeos/venta_sin_resolver.ts";
 import { horasNombradas, ofertasEn } from "../../supabase/functions/_shared/herramientas/eleccion.ts";
 import { esSoloCierreOAsentimiento } from "../../supabase/functions/_shared/turno/cierre_cortes.ts";
 import { entrada, traza } from "./_ayuda.ts";
@@ -12,7 +12,7 @@ import { entrada, traza } from "./_ayuda.ts";
 const conPrecios = (texto: string, precios: number[]) => {
   const e = entrada(texto);
   e.traza.preciosDevueltos.push(...precios);
-  e.traza.llamadas.push({ herramienta: "consultar_accesorios", argumentos: {}, ok: true });
+  e.traza.llamadas.push({ herramienta: "consultar_catalogo", argumentos: { accesorios: true }, ok: true });
   return e;
 };
 
@@ -107,7 +107,7 @@ Deno.test("talles de saco en número no son precios («hasta el 68», «el 62 en
 });
 
 Deno.test("venta_sin_resolver no obliga a repetir el link de venta si ya le llegó antes en la charla", async () => {
-  const e = { ...entrada("Los trajes para compra arrancan desde $540.000."), intencion: "venta" };
+  const e = { ...entrada("Los trajes para compra arrancan desde $540.000."), mensajeCliente: "quiero comprar un traje" };
   assertEquals((await ventaSinResolver.evaluar(e)).salta, true); // sin link en ningún lado: salta
   e.traza.linksPrevios = ["web-venta"];
   assertEquals((await ventaSinResolver.evaluar(e)).salta, false);

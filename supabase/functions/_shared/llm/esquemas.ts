@@ -1,32 +1,8 @@
-// Los dos schemas JSON estrictos de STACK.md § 3: lo que devuelven el clasificador y el
-// extractor. Los enums salen de enums.ts y de ficha.ts: un solo lugar los define.
+// El schema JSON estricto de STACK.md § 3 que devuelve el extractor (el del clasificador se fue
+// con él, 9/10). Los enums salen de enums.ts y de ficha.ts: un solo lugar los define.
 
 import { DIA_O_NOCHE, EVENTOS, ROLES_CLIENTE } from "../enums.ts";
 import { CAMPOS_FICHA, type Ficha } from "../herramientas/ficha.ts";
-
-// AGENTE.md § 3 paso 4: { intencion, urgencia, derivar_duro }. motivo_derivacion se agregó acá
-// (H1.7, 14/9): sin decir CUÁL de las categorías duras es, el código no puede escribir
-// `derivaciones.motivo` sin adivinar. Cubre las que sí se pueden saber ANTES de hablar con
-// Lucía; turno_urgente_sin_hueco se descubre recién adentro del turno, cuando buscar_horarios
-// no encuentra nada (ver AGENTE.md § 3 y § 10).
-export const ESQUEMA_CLASIFICACION = {
-  type: "object",
-  properties: {
-    intencion: { type: "string", enum: ["alquiler", "venta", "corporativo", "reclamo", "urgente", "otro"] },
-    urgencia: { type: "string", enum: ["baja", "media", "alta"] },
-    derivar_duro: { type: "boolean" },
-    motivo_derivacion: { type: ["string", "null"], enum: ["reclamo", "cliente_enojado", "prenda_danada", "corporativo", null] },
-  },
-  required: ["intencion", "urgencia", "derivar_duro", "motivo_derivacion"],
-  additionalProperties: false,
-} as const;
-
-export type Clasificacion = {
-  intencion: "alquiler" | "venta" | "corporativo" | "reclamo" | "urgente" | "otro";
-  urgencia: "baja" | "media" | "alta";
-  derivar_duro: boolean;
-  motivo_derivacion: "reclamo" | "cliente_enojado" | "prenda_danada" | "corporativo" | null;
-};
 
 // AGENTE.md § 7: la ficha del cliente, todos los campos opcionales (el extractor solo escribe
 // lo que el cliente dijo de verdad). Mismos enums que guardar_datos_cliente.

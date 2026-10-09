@@ -8,13 +8,13 @@ const env = { ...process.env, ...dotenv.parse(readFileSync(new URL('../.env', im
 const pos = process.argv.indexOf('--modelos');
 if (pos !== -1) {
   const modelos = dotenv.parse(readFileSync(process.argv[pos + 1]));
-  for (const k of ['LLM_PRINCIPAL', 'LLM_CLASIFICADOR', 'LLM_EXTRACTOR']) if (!env[k]) env[k] = modelos[k];
+  for (const k of ['LLM_PRINCIPAL', 'LLM_EXTRACTOR', 'LLM_API_PRINCIPAL', 'LLM_RAZONAMIENTO']) if (!env[k] && modelos[k]) env[k] = modelos[k];
 }
-for (const k of ['OPENAI_API_KEY', 'SUPABASE_DB_URL', 'LLM_PRINCIPAL', 'LLM_CLASIFICADOR', 'LLM_EXTRACTOR']) {
+for (const k of ['OPENAI_API_KEY', 'SUPABASE_DB_URL', 'LLM_PRINCIPAL', 'LLM_EXTRACTOR']) {
   if (!env[k]?.trim()) throw new Error(`Falta configurar ${k}; no se inició la prueba.`);
 }
 if (!env.OPENAI_API_KEY.startsWith('sk-')) throw new Error('La clave local no corresponde al proveedor de Lucía.');
-console.log(`Modelos del ensayo: ${env.LLM_PRINCIPAL}, ${env.LLM_CLASIFICADOR}, ${env.LLM_EXTRACTOR}`);
+console.log(`Modelos del ensayo: ${env.LLM_PRINCIPAL} (${env.LLM_API_PRINCIPAL || "responses"}, razonamiento ${env.LLM_RAZONAMIENTO || "low"}), ${env.LLM_EXTRACTOR}`);
 const filtro = process.argv.indexOf('--filtro');
 // --repetir <conversacion_id> <enviado_at> [...]: en vez de la prueba, repite una charla real con
 // scripts/repetir-charla.ts (mismo entorno: la clave del .env del proyecto, nunca una ajena).

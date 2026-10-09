@@ -100,7 +100,7 @@ prueba("reprogramar_turno con el evento hoy deriva en vez de mover", async ({ ct
   await sql.query("update clientes set fecha_evento = $2 where id = $1", [clienteId, LUNES]);
   const turno = await crearTurno(sql, { clienteId, inicio: local(LUNES, "16:00") });
   ctx.traza.huecosOfrecidos.push({ ...hueco(LUNES, "17:00", 45), tipo: "invitado" });
-  const r = await ejecutarHerramienta("reprogramar_turno", { turno_id: turno, fecha_hora: iso(LUNES, "17:00") }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "mover", turno_id: turno, fecha_hora: iso(LUNES, "17:00"), motivo: null }, ctx);
   await quedoDerivado(sql, conversacionId, r);
   const t = await fila(sql, "select inicio from turnos where id = $1", [turno]);
   assertEquals(new Date(t.inicio).getTime(), local(LUNES, "16:00").getTime());
@@ -123,7 +123,7 @@ Deno.test({
         const traza = trazaNueva();
         traza.llamadas.push({ herramienta, argumentos: {}, ok: true });
         const b = await aplicarBarandillas({
-          texto: String(f.valor), traza, ahora: AHORA, ultimoMensajeClienteAt: AHORA, esPrimerMensaje: false, intencion: "otro", nombreCliente: null,
+          texto: String(f.valor), traza, ahora: AHORA, ultimoMensajeClienteAt: AHORA, esPrimerMensaje: false, nombreCliente: null,
         });
         assertEquals(b.decision, "enviar", `${clave}: ${JSON.stringify(b.saltos)}`);
         assertEquals(b.texto, String(f.valor), clave);

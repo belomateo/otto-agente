@@ -47,13 +47,6 @@ function comoTexto(f: { tipo: string; contenido: string | null; transcripcion: s
   return String(f.contenido);
 }
 
-// Las últimas líneas para el clasificador (AGENTE.md § 11: "Mensaje + últimas 3 líneas"): el
-// mensaje de este turno con hasta 2 líneas de contexto antes, en un texto plano corto.
-export function ultimasLineasParaClasificar(historial: MensajeChat[], mensajeActual: string): string {
-  const previas = historial.slice(-2).map((m) => `${m.role === "user" ? "Cliente" : "Lucía"}: ${m.content}`);
-  return [...previas, `Cliente: ${mensajeActual}`].join("\n");
-}
-
 // Cuándo fue el mensaje justo ANTES de esta ráfaga (mismo corte `hasta` que leerHistorial, ver
 // arriba) — para saber si pasó un hueco largo desde la última vez que se hablaron. null si nunca
 // hablaron antes de esta ráfaga. Pedido de Mateo, 21/9: se presenta de nuevo si pasaron más de 7

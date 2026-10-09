@@ -21,12 +21,9 @@ export type EntradaBarandilla = {
   ahora: Date;
   ultimoMensajeClienteAt: Date | null;
   esPrimerMensaje: boolean;
-  // La intención que dio el clasificador en este turno (paso 4b), si corrió y contestó. Es lo
-  // único de acá que no sale del texto ni de la traza de herramientas: venta_sin_resolver.ts la
-  // necesita para una barandilla ESTRUCTURAL (mira si se resolvió, no cómo se dijo — pedido de
-  // logica, 20/9, después de que el léxico de anuncia_sin_derivar se volviera un juego del
-  // gato y el ratón). null si el clasificador no corrió o no contestó.
-  intencion?: string | null;
+  // Lo que escribió el cliente en esta ráfaga. venta_sin_resolver.ts lo lee para saber si pidió
+  // comprar un traje: hasta el 9/10 se lo decía el clasificador (intencion "venta"), que se sacó.
+  mensajeCliente?: string | null;
   // El nombre del cliente (ficha.nombre, de la libreta al empezar el turno). precio_sin_
   // herramienta.ts lo necesita para no leer como precio un número que viene del NOMBRE DE
   // PERFIL de WhatsApp ("Martin 23", hallazgo de logica probando en vivo, 20/9: sin esto, ese
@@ -51,3 +48,12 @@ export interface Barandilla {
 }
 
 export const NO_SALTA: ResultadoBarandilla = { salta: false };
+
+// Un control (pedido de Mateo, 9/10: 7 en vez de 16 barandillas sueltas) junta las revisiones que
+// cuidan lo mismo. Cada revisión —un chequeo— es una Barandilla de las de antes, en chequeos/, y
+// sigue corriendo igual y en el mismo orden de siempre (CHEQUEOS_EN_ORDEN, en index.ts).
+export interface Control {
+  nombre: string;
+  descripcion: string;
+  chequeos: readonly Barandilla[];
+}

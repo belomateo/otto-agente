@@ -13,8 +13,8 @@
 // "¡Hola!" suelto antes, si lo hay— y sale el resto tal cual, igual que sin_relleno corta un
 // cierre de relleno.
 
-import { contieneFrase, normalizar, oraciones, rearmar } from "./texto.ts";
-import { type Barandilla, NO_SALTA } from "./tipos.ts";
+import { contieneFrase, normalizar, oraciones, rearmar } from "../texto.ts";
+import { type Barandilla, NO_SALTA } from "../tipos.ts";
 
 // "¡Hola!" + "Soy Lucía, asistente de Mr Otto." + la pregunta de cierre: como mucho 3 oraciones
 // de apertura real. Más allá de eso, "Otto" es del resto del mensaje, no de una presentación.

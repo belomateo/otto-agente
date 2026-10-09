@@ -98,7 +98,7 @@ prueba("reprogramar_turno mueve la misma fila, vuelve a sin confirmar y mueve el
   });
   agenda.lista = [hueco(JUEVES, "16:00", 45, 3)];
   esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
-  const r = await ejecutarHerramienta("reprogramar_turno", { turno_id: turno, fecha_hora: iso(JUEVES, "16:00") }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "mover", turno_id: turno, fecha_hora: iso(JUEVES, "16:00"), motivo: null }, ctx);
   esOk(r);
   const t = await fila(
     sql,
@@ -119,7 +119,7 @@ prueba("reprogramar_turno mueve la misma fila, vuelve a sin confirmar y mueve el
 
 prueba("confirmar_turno marca confirmado y arma el mensaje fijo, aparte del texto del modelo (decisión de Mateo, 16/9: sin botón)", async ({ ctx, sql, clienteId }) => {
   const turno = await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00"), probador: 1 });
-  const r = await ejecutarHerramienta("confirmar_turno", { turno_id: turno }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "confirmar", turno_id: turno, fecha_hora: null, motivo: null }, ctx);
   esOk(r);
   const t = await fila(sql, "select estado, confirmado, confirmado_at, confirmado_por from turnos where id = $1", [turno]);
   assertEquals([t.estado, t.confirmado, t.confirmado_por], ["confirmado", true, "cliente"]);
@@ -129,7 +129,7 @@ prueba("confirmar_turno marca confirmado y arma el mensaje fijo, aparte del text
 
 prueba("confirmar_turno es idempotente: confirmar de nuevo no rompe, y sigue mandando el mensaje (caso parecido)", async ({ ctx, sql, clienteId }) => {
   const turno = await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00"), probador: 1, estado: "confirmado", confirmado: true });
-  const r = await ejecutarHerramienta("confirmar_turno", { turno_id: turno }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "confirmar", turno_id: turno, fecha_hora: null, motivo: null }, ctx);
   esOk(r);
   assertEquals(r.datos.nota, "Ya estaba confirmado; igual sale el mensaje de siempre.");
   assertEquals(r.efectos?.mensajesAlCliente, ["¡Gracias por confirmar! Te esperamos en el local."]);
@@ -137,19 +137,19 @@ prueba("confirmar_turno es idempotente: confirmar de nuevo no rompe, y sigue man
 
 prueba("confirmar_turno rechaza un turno de otro cliente, uno inexistente y uno vencido", async ({ ctx, sql, clienteId }) => {
   const deOtro = await crearTurno(sql, { clienteId: await crearCliente(sql), inicio: local(SABADO, "10:00"), probador: 1 });
-  esRechazo(await ejecutarHerramienta("confirmar_turno", { turno_id: deOtro }, ctx), "turno_de_otro_cliente");
+  esRechazo(await ejecutarHerramienta("cambiar_turno", { accion: "confirmar", turno_id: deOtro, fecha_hora: null, motivo: null }, ctx), "turno_de_otro_cliente");
 
-  esRechazo(await ejecutarHerramienta("confirmar_turno", { turno_id: "00000000-0000-0000-0000-000000000000" }, ctx), "turno_inexistente");
+  esRechazo(await ejecutarHerramienta("cambiar_turno", { accion: "confirmar", turno_id: "00000000-0000-0000-0000-000000000000", fecha_hora: null, motivo: null }, ctx), "turno_inexistente");
 
   // turno_confirmar_por_boton (0021) usa el now() real de la base, no el "ahora" simulado de la
   // prueba (2030): tiene que ser una fecha vencida de verdad, no solo anterior a ctx.ahora.
   const vencido = await crearTurno(sql, { clienteId, inicio: new Date("2020-01-01T10:00:00-03:00"), probador: 2 });
-  esRechazo(await ejecutarHerramienta("confirmar_turno", { turno_id: vencido }, ctx), "turno_no_confirmable");
+  esRechazo(await ejecutarHerramienta("cambiar_turno", { accion: "confirmar", turno_id: vencido, fecha_hora: null, motivo: null }, ctx), "turno_no_confirmable");
 });
 
 prueba("cancelar_turno marca cancelado con motivo, no borra, libera el hueco y saca el evento", async ({ ctx, sql, clienteId, calendario }) => {
   const turno = await crearTurno(sql, { clienteId, inicio: local(SABADO, "10:00"), probador: 1, googleEventId: "evento-a-cancelar" });
-  const r = await ejecutarHerramienta("cancelar_turno", { turno_id: turno, motivo: "se postergó el casamiento" }, ctx);
+  const r = await ejecutarHerramienta("cambiar_turno", { accion: "cancelar", turno_id: turno, fecha_hora: null, motivo: "se postergó el casamiento" }, ctx);
   esOk(r);
   const t = await fila(sql, "select estado, motivo_cancelacion, cancelado_at, editado_por from turnos where id = $1", [turno]);
   assertEquals([t.estado, t.motivo_cancelacion, t.editado_por], ["cancelado", "se postergó el casamiento", "lucia"]);
@@ -216,7 +216,7 @@ prueba("guardar_datos_cliente rechaza un mail sin forma de mail y no toca la fic
 });
 
 prueba("anotar deja la nota en la libreta del cliente", async ({ ctx, sql, clienteId }) => {
-  esOk(await ejecutarHerramienta("anotar", { texto: "Quiere algo azul para un casamiento de día." }, ctx));
+  esOk(await ejecutarHerramienta("guardar_datos_cliente", { nota: "Quiere algo azul para un casamiento de día." }, ctx));
   const n = await fila(sql, "select autor, texto from notas where cliente_id = $1", [clienteId]);
   assertEquals([n.autor, n.texto], ["lucia", "Quiere algo azul para un casamiento de día."]);
 });

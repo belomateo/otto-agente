@@ -4,7 +4,7 @@
 
 import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import { BARANDILLAS } from "../../supabase/functions/_shared/barandillas/index.ts";
-import { FORMULAS_DE_RELLENO } from "../../supabase/functions/_shared/barandillas/sin_relleno.ts";
+import { FORMULAS_DE_RELLENO } from "../../supabase/functions/_shared/barandillas/chequeos/sin_relleno.ts";
 import { normalizar } from "../../supabase/functions/_shared/barandillas/texto.ts";
 
 const leer = (ruta: string) => Deno.readTextFileSync(new URL(ruta, import.meta.url)).replace(/\r\n?/g, "\n");
