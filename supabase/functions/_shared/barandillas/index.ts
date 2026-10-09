@@ -68,7 +68,7 @@ export async function aplicarBarandillas(
   let texto = entrada.texto;
   const saltos: Salto[] = [];
   for (const b of BARANDILLAS) {
-    const r = await b.evaluar({ ...entrada, texto });
+    const r = await b.evaluar({ ...entrada, texto, saltosPrevios: opciones.saltosPrevios ?? 0 });
     if (!r.salta) continue;
     saltos.push({ barandilla: b.nombre, accion: r.accion, motivo: r.motivo });
     if (r.texto !== undefined) texto = r.texto;

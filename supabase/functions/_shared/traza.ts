@@ -43,6 +43,10 @@ export type Traza = {
   horasDevueltas: string[]; // "HH:MM"
   accesoriosDevueltos: string[]; // en singular y sin tilde: "zapato", "cinturon"
   rangosBuscados: RangoBuscado[];
+  // Los tipos de link (web, web-venta, mapa, resena) que ya le llegaron al cliente ANTES de este
+  // turno (turno.ts los saca del historial). enviar_link no los reenvía; venta_sin_resolver y
+  // derivar_a_persona los cuentan como mandados, para no obligar a repetirlos (8/10).
+  linksPrevios?: string[];
 };
 
 export function trazaNueva(): Traza {

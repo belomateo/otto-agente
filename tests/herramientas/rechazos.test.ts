@@ -323,7 +323,7 @@ prueba("derivar_a_persona rechaza dato_no_encontrado si el cliente pregunta por 
   assertEquals(await contar(sql, derivacionesDe, [conversacionId]), 0);
 });
 
-prueba("derivar_a_persona deja derivar por un modelo si ya mandó el catálogo, o si la consulta es de otra cosa (caso parecido)", async ({ ctx, sql, conversacionId }) => {
+prueba("derivar_a_persona deja derivar si la consulta es de otra cosa, aunque ya haya mandado el catálogo (caso parecido)", async ({ ctx, sql, conversacionId }) => {
   const derivaCon = async (pregunta: string) => {
     await sql.query("delete from mensajes where conversacion_id = $1", [conversacionId]);
     await sql.query("delete from derivaciones where conversacion_id = $1", [conversacionId]);
@@ -333,9 +333,19 @@ prueba("derivar_a_persona deja derivar por un modelo si ya mandó el catálogo, 
   await derivaCon("¿Tienen estacionamiento cerca?");
   // Un accesorio no es del catálogo de modelos: "zapatos negros" sigue su camino.
   await derivaCon("¿Tienen zapatos negros en 46?");
-  // Ya mandó el catálogo en este turno: si igual deriva, es por otra cosa.
   ctx.traza.llamadas.push({ herramienta: "enviar_link", argumentos: { tipo: "web" }, ok: true });
-  await derivaCon("¿Y en verde oscuro?");
+  await derivaCon("¿Tienen estacionamiento cerca?");
+});
+
+// Desde el 7/10: con el catálogo ya mandado, un color o modelo tampoco deriva — antes pasaba
+// ("si igual deriva, es por otra cosa") y era la derivación más común de la semana.
+prueba("derivar_a_persona rechaza un modelo o color aunque ya haya mandado el catálogo (7/10)", async ({ ctx, sql, conversacionId }) => {
+  ctx.traza.llamadas.push({ herramienta: "enviar_link", argumentos: { tipo: "web" }, ok: true });
+  await entrante(sql, conversacionId, "¿Y en verde oscuro?");
+  const r = await ejecutarHerramienta("derivar_a_persona", { motivo: "dato_no_encontrado", mensaje_al_cliente: "Te lo confirma el equipo." }, ctx);
+  esRechazo(r, "modelo_ya_resuelto");
+  assertMatch(r.mensaje, /se confirma en el turno/);
+  assertEquals(await contar(sql, derivacionesDe, [conversacionId]), 0);
 });
 
 prueba("derivar_a_persona: el freno de modelos es solo para dato_no_encontrado (caso parecido)", async ({ ctx, sql, conversacionId }) => {

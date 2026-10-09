@@ -22,6 +22,7 @@ import { EVENTOS, type Evento, TIPOS_TURNO, type TipoTurno } from "../enums.ts";
 import { fechaLarga, fechaLocal, horaLocal } from "../tiempo.ts";
 import { armarConfirmacion } from "./confirmacion.ts";
 import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
+import { eligioElHorario } from "./eleccion.ts";
 import { actualizarFicha, leerFicha } from "./ficha.ts";
 import { dentroDeFranja, leerFranjas } from "./horario_laboral.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
@@ -46,8 +47,9 @@ export const agendarTurno: Herramienta<Args> = {
   nombre: "agendar_turno",
   tipo: "accion",
   descripcion: "Agenda un turno en el local para este cliente. Antes, en este mismo turno, llamá a " +
-    "buscar_horarios con el mismo tipo y fecha_hora elegida por el cliente. Reservá con teléfono de la charla " +
-    "y fecha y hora elegidas, aunque falten nombre o correo, sin pedir otra confirmación. " +
+    "buscar_horarios con el mismo tipo y fecha_hora elegida por el cliente. Reservá apenas el cliente eligió " +
+    "(nombró la hora o aceptó la que le ofreciste), con el teléfono de la charla, aunque falten nombre o correo, " +
+    "sin pedir otra confirmación. Si solo preguntó algo o no dijo cuál, preguntale antes de reservar. " +
     "tipo puede ser null: usa la duración de invitado sin atribuirle ese rol al cliente. El turno es siempre de la " +
     "persona con la que hablás. El sistema manda una lista con nombre, número, día y hora y Gmail, y pide los " +
     "datos opcionales que falten después de reservar. No repitas la lista ni la pregunta.",
@@ -82,6 +84,11 @@ export const agendarTurno: Herramienta<Args> = {
       });
       return await derivarPorEventoInminente(ctx);
     }
+
+    // 8/10: el horario lo elige el cliente (eleccion.ts). Va antes de mirar la traza: si no lo
+    // eligió, no tiene sentido que el modelo vuelva a buscar huecos.
+    const eleccion = await eligioElHorario(ctx, inicio);
+    if (!eleccion.ok) return rechazo("horario_no_elegido", eleccion.motivo);
 
     const activo = await turnoActivoDelCliente(ctx.db, ctx.cliente.id, ctx.ahora);
 

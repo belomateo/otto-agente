@@ -10,6 +10,7 @@ import { esEstadoActivo } from "../enums.ts";
 import { fechaLarga, fechaLocal, horaLocal } from "../tiempo.ts";
 import { armarConfirmacion } from "./confirmacion.ts";
 import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
+import { eligioElHorario } from "./eleccion.ts";
 import { leerFicha } from "./ficha.ts";
 import { dentroDeFranja, leerFranjas } from "./horario_laboral.ts";
 import { type Herramienta, objeto, rechazo } from "./tipos.ts";
@@ -50,6 +51,9 @@ export const reprogramarTurno: Herramienta<Args> = {
     if (!(inicio > ctx.ahora)) {
       return rechazo("hueco_en_el_pasado", "Esa fecha y hora ya pasó. Llamá a buscar_horarios y ofrecé un hueco que venga.");
     }
+    // 8/10: el horario nuevo lo elige el cliente (eleccion.ts); «a la misma hora» cuenta.
+    const eleccion = await eligioElHorario(ctx, inicio, t.inicio);
+    if (!eleccion.ok) return rechazo("horario_no_elegido", eleccion.motivo);
     const candidatos = huecosDeLaTraza(ctx.traza, t.tipo, inicio);
     if (candidatos.length === 0) {
       return rechazo(

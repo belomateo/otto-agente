@@ -4,6 +4,7 @@
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { accesorioSinHerramienta } from "../../supabase/functions/_shared/barandillas/accesorio_sin_herramienta.ts";
+import { aplicarBarandillas } from "../../supabase/functions/_shared/barandillas/index.ts";
 import { anunciaSinDerivar } from "../../supabase/functions/_shared/barandillas/anuncia_sin_derivar.ts";
 import { confirmacionDoble } from "../../supabase/functions/_shared/barandillas/confirmacion_doble.ts";
 import { derivaYPregunta } from "../../supabase/functions/_shared/barandillas/deriva_y_pregunta.ts";
@@ -233,12 +234,21 @@ Deno.test("precio_sin_herramienta no salta con el mismo texto y la herramienta e
   await noSalta(precioSinHerramienta, entrada("Estamos en España 764, Rosario."));
 });
 
-Deno.test("precio_sin_herramienta salta con un total que no devolvió ninguna herramienta (regla 9)", async () => {
+// 8/10: un total armado sumando precios respaldados se rehace UNA vez, diciéndole qué hacer en
+// cambio (6/10: sin eso, el segundo intento volvía a sumar); si vuelve a sumar, el total se saca en
+// código en vez de derivar. Acá, al sacarlo, no queda nada: eso sí termina como antes.
+Deno.test("precio_sin_herramienta: un total armado sumando (regla 9) se rehace una vez y después se saca", async () => {
   const conPrecios = traza({ herramientas: ["consultar_catalogo", "consultar_accesorios"], precios: [150000, 33500] });
-  const r = await salta(precioSinHerramienta, entrada("Con camisa y corbata te queda en $183.500.", { traza: conPrecios }));
-  assertMatch(r.motivo, /no sumes/);
-  // Y le dice qué hacer en cambio (6/10: sin esto, el segundo intento volvía a sumar y derivaba).
-  assertMatch(r.motivo, /cada precio por separado/);
+  const texto = "Con camisa y corbata te queda en $183.500.";
+  const r = await precioSinHerramienta.evaluar(entrada(texto, { traza: conPrecios }));
+  assertEquals(r.salta && r.accion, "rehacer");
+  assertMatch((r.salta && r.motivo) || "", /cada precio por separado/);
+  const todo = await aplicarBarandillas(entrada(texto, { traza: conPrecios }));
+  assertEquals(todo.decision, "rehacer");
+  assertMatch(todo.instruccion ?? "", /totales no se dicen/);
+  const segundo = await precioSinHerramienta.evaluar({ ...entrada(texto, { traza: conPrecios }), saltosPrevios: 1 });
+  assertEquals(segundo.salta && segundo.accion, "cortar");
+  assertEquals(segundo.salta && segundo.texto, "");
 });
 
 Deno.test("precio_sin_herramienta lee bien un precio seguido de una coma (6/10: $33.500, se leía $33)", () => {

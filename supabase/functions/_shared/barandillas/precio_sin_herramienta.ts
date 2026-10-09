@@ -48,6 +48,9 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   /\b(?:chicos?|chicas?|nenes?|nenas?|ninos?|ninas?|hijos?|hijas?|pibes?)\s+de\s+\d{1,2}(?:\s+a\s+\d{1,2})?\b/g,
   /\b(?:usa|usaria|calza|ir|va|iria|queda|quedaria)\s+(?:un|el)\s+\d{1,2}(?:\s+o\s+(?:un\s+|el\s+)?\d{1,2})?\b/g,
   /\btalle\s+\d{1,3}\b/g, // "talle 4" o "talle 48"
+  // Talles de saco en número (8/10, el fragmento de talles dice "hasta el 68"): "el 62 entra",
+  // "un 56", "hasta el 68". Del 44 al 68, que no es un precio que se diga así.
+  /\b(?:el|un|tu|su|hasta\s+el)\s+(?:4[4-9]|5\d|6[0-8])\b(?!\s*(?:mil|lucas|k|%|pesos))/g,
   /\bdel?\s+\d{1,3}\s+al?\s+\d{1,3}\b/g, // "del 4 al 16" y "del 44 al 68"
   /\b(?:mide|mido|medis|medimos|altura)\s+\d{2,3}\b/g, // "mide/medís 170", "altura 170"
   /\b\d{2,3}\s+de\s+altura\b/g, // "170 de altura"
@@ -61,7 +64,9 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   /\bespana\s+\d{2,4}\b/g, // la dirección del local (España 764)
   // Fechas y horarios de turno (hallazgo de Mateo, 16/9, URGENTE: rompía agendar_turno — "te
   // agendo el martes 23" leía 23 como precio, la barandilla no dejaba salir la confirmación).
-  /\b(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+\d{1,2}\b/g, // "el martes 23"
+  // "el martes 23" y "Sábado 10/10" (8/10: el día de la semana se comía el "10" de adelante, el
+  // "/10" que quedaba se leía como un precio de $10 y la lista de turnos terminaba derivada).
+  /\b(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+\d{1,2}(?:\/\d{1,2}(?:\/\d{2,4})?)?\b/g,
   /\b\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/g, // "23 de septiembre"
   /\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, // "23/9", "23/09/2026"
   // "el 23" a secas (sin día de la semana ni mes al lado, o con "de" seguido de algo que no es
@@ -145,16 +150,70 @@ export function montos(t: string, nombreCliente?: string | null): number[] {
   return [...res].filter((n) => Number.isFinite(n) && n > 0);
 }
 
+// Las sumas de 2 a 4 precios respaldados (con repetición: dos trajes son 2 × $150.000). Un total
+// así no es un precio inventado, es una cuenta que la regla 9 no deja hacer.
+const MAXIMO_SUMANDOS = 4;
+function sumasDe(precios: number[]): Set<number> {
+  const base = [...new Set(precios)].filter((p) => p > 0).slice(0, 12);
+  const sumas = new Set<number>();
+  const recorrer = (desde: number, cuantos: number, acumulado: number) => {
+    if (cuantos >= 2) sumas.add(acumulado);
+    if (cuantos === MAXIMO_SUMANDOS) return;
+    for (let i = desde; i < base.length; i++) recorrer(i, cuantos + 1, acumulado + base[i]);
+  };
+  recorrer(0, 0, 0);
+  return sumas;
+}
+
+// Saca el total en código (segundo intento: ya se le pidió una vez que no sume y volvió a sumar). Se
+// va la oración entera que lo dice, salvo cuando el total es un agregado al final de una oración que
+// ya dio los precios («…y los zapatos $55.000, en total $205.000» → «…y los zapatos $55.000.»). Caso
+// real (8/10, repitiendo la charla): cortar en cualquier coma o antes de «sería» dejaba frases como
+// «Sí, tomando esos valores de referencia, el total.». Si del mensaje no queda nada, devuelve "".
+const letras = (s: string) => (s.match(/\p{L}/gu) ?? []).length;
+// Una oración que arranca con «Sí», «Exacto»… está confirmando la cuenta del cliente: se va entera.
+const CONFIRMA = /^(?:si|exacto|exactamente|correcto|asi es|tal cual|claro)\b/;
+function sinElTotal(texto: string, totales: number[], respaldados: Set<number>, nombreCliente?: string | null): string {
+  const dice = (s: string, lista: (m: number) => boolean) => montos(s, nombreCliente).some(lista);
+  const esTotal = (m: number) => totales.includes(m);
+  const linea = (l: string) =>
+    l.split(/(?<=[.!?…])\s+/).flatMap((oracion) => {
+      if (!dice(oracion, esTotal)) return [oracion];
+      const partes = oracion.split(/(?<=[,;:])\s+/);
+      const i = partes.findIndex((p) => dice(p, esTotal));
+      const antes = partes.slice(0, i).join(" ").replace(/[\s,;:]+$/, "");
+      const quedaUnPrecio = dice(antes, (m) => respaldados.has(m));
+      return i > 0 && quedaUnPrecio && !CONFIRMA.test(normalizar(antes)) ? [`${antes}.`] : [];
+    }).join(" ").trim();
+  // Los saltos de línea separan burbujas: se respetan.
+  const resultado = texto.split(/(\n+)/).map((b) => (/^\n+$/.test(b) ? b : linea(b))).join("")
+    .replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
+  return letras(resultado) < 15 ? "" : resultado;
+}
+
 export const precioSinHerramienta: Barandilla = {
   nombre: "precio_sin_herramienta",
   etapa: "contenido",
   accion: "rehacer",
-  evaluar({ texto, traza, nombreCliente }) {
+  evaluar({ texto, traza, nombreCliente, saltosPrevios }) {
     const encontrados = montos(texto, nombreCliente);
     if (encontrados.length === 0) return NO_SALTA;
     const devueltos = new Set(traza.preciosDevueltos.map((p) => Math.round(p)));
     const fuera = encontrados.filter((m) => !devueltos.has(m));
     if (fuera.length === 0) return NO_SALTA;
+    // 8/10: si lo único sin respaldo es un TOTAL armado con precios que sí salieron de las
+    // herramientas («serían $238.500 en total»), la primera vez se rehace —el modelo lo reescribe
+    // natural, con cada precio por separado— y si vuelve a sumar, el total se saca en código y sale
+    // el resto. Antes el segundo intento derivaba (barandilla_doble) por una pregunta que tiene
+    // respuesta. Si al sacarlo no queda nada, el texto vacío lo trata index.ts como cualquier corte.
+    const sumas = sumasDe([...devueltos]);
+    if (fuera.every((m) => sumas.has(m))) {
+      const lista = fuera.map((m) => `$${m.toLocaleString("es-AR")}`).join(", ");
+      const motivo = `sumó precios (${lista}): los totales no se dicen, ni se confirma la cuenta que hizo el cliente. ` +
+        "Decí cada precio por separado, tal como te lo dieron las herramientas";
+      if (!saltosPrevios) return { salta: true, accion: "rehacer", motivo };
+      return { salta: true, accion: "cortar", motivo: `${motivo} (se sacó el total en código)`, texto: sinElTotal(texto, fuera, devueltos, nombreCliente) };
+    }
     const lista = fuera.map((m) => `$${m.toLocaleString("es-AR")}`).join(", ");
     // "Decí cada precio por separado" (6/10: "¿y sumándole camisa, corbata y
     // zapatos?"): sin esa salida, el segundo intento volvía a sumar o escondía los precios de los

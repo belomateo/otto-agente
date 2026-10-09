@@ -33,6 +33,10 @@ export type EntradaBarandilla = {
   // cliente queda en un bucle garantizado de barandilla_doble en su primer mensaje, porque
   // Lucía no puede saludarlo sin repetir el número que la barandilla le pide sacar).
   nombreCliente?: string | null;
+  // Cuántas veces ya se rehízo este turno (0 en el primer intento). precio_sin_herramienta.ts lo
+  // usa para un total sumado: la primera vez lo reescribe el modelo; si vuelve a sumar, el total se
+  // saca en código en vez de derivar (8/10).
+  saltosPrevios?: number;
 };
 
 export type ResultadoBarandilla =

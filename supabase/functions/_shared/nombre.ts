@@ -14,16 +14,32 @@ const NO_SON_NOMBRE = new Set([
 
 const sinTildes = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
+// 8/10: Lucía saludó a una clienta con el nombre estirado y en minúscula, y otra ficha quedó toda
+// en mayúscula. Una letra repetida tres veces o más se junta («lauraaaa» → «laura»; «Aaron» queda
+// igual), y una palabra toda en minúscula o toda en mayúscula se escribe con mayúscula inicial.
+// Las que ya traen mayúsculas y minúsculas mezcladas («McLovin», «María de los Ángeles») quedan
+// como vinieron.
+const PARTICULAS = new Set(["de", "del", "la", "las", "los", "y"]);
+const juntarRepetidas = (p: string) => p.replace(/(\p{L})\1{2,}/giu, "$1");
+function conMayuscula(palabra: string, esLaPrimera: boolean): string {
+  const minuscula = palabra.toLocaleLowerCase("es");
+  const mayuscula = palabra.toLocaleUpperCase("es");
+  const iniciales = (palabra.match(/\p{L}/gu) ?? []).length <= 2;
+  if (palabra !== minuscula && (palabra !== mayuscula || iniciales)) return palabra;
+  if (!esLaPrimera && PARTICULAS.has(sinTildes(minuscula))) return minuscula;
+  return minuscula.charAt(0).toLocaleUpperCase("es") + minuscula.slice(1);
+}
+
 export function nombreUsable(crudo: string | null | undefined): string | null {
   // Fuera emojis y símbolos: «Solci🩷» es «Solci».
   const limpio = String(crudo ?? "").normalize("NFC").replace(/[^\p{L}\p{N}\s'.-]/gu, " ");
   const palabras = limpio.split(/\s+/)
-    .map((p) => p.replace(/^[.'-]+|[.'-]+$/g, ""))
+    .map((p) => juntarRepetidas(p.replace(/^[.'-]+|[.'-]+$/g, "")))
     .filter((p) => p && !/^\d+$/.test(p)); // «Juan 10» es «Juan»
   if (palabras.length === 0 || palabras.length > 4) return null;
   if (palabras.some((p) => /\d/.test(p))) return null; // un usuario: «pichigodoy916»
   if (palabras.some((p) => NO_SON_NOMBRE.has(sinTildes(p)))) return null;
   const conLetras = palabras.filter((p) => (p.match(/\p{L}/gu) ?? []).length >= 2);
   if (conLetras.length === 0) return null; // «.», «C.», «🤍♥️🤍»
-  return conLetras.join(" ");
+  return conLetras.map((p, i) => conMayuscula(p, i === 0)).join(" ");
 }

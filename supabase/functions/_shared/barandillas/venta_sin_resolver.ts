@@ -24,8 +24,12 @@
 import { type Traza } from "../traza.ts";
 import { type Barandilla, NO_SALTA } from "./tipos.ts";
 
+// 8/10: también cuenta el link de venta que ya le llegó antes en la charla. Sin esto, cada vez que
+// el cliente volvía a hablar de comprar, la barandilla obligaba a "mandar" de nuevo el link (que
+// enviar_link ya no reenvía) y a repetir «ahí te asesoran con la compra» (caso real, 8/10: tres
+// veces en cuatro minutos, sin contestarle nunca cuánto salía).
 function mandoElLinkDeVenta(traza: Traza): boolean {
-  return traza.llamadas.some(
+  return (traza.linksPrevios ?? []).includes("web-venta") || traza.llamadas.some(
     (l) => l.herramienta === "enviar_link" && l.ok && (l.argumentos as { tipo?: string } | null)?.tipo === "web-venta",
   );
 }

@@ -95,7 +95,7 @@ const CLAVE_MODELO_TRANSCRIPCION = () => Deno.env.get("LLM_TRANSCRIPCION") ?? ""
 // Etiquetada como lo que es (pedido de logica, 19/9: "cliente, modelo y equipo ven la misma
 // advertencia"), para que el modelo la trate con el escepticismo que corresponde por diseño de
 // prompt, no por lógica frágil tratando de detectar una transcripción "dudosa".
-const etiquetaDeAudio = (texto: string) => `Cliente (audio, transcripción automática, puede tener errores): ${texto}`;
+export const etiquetaDeAudio = (texto: string) => `Cliente (audio, transcripción automática, puede tener errores): ${texto}`;
 
 async function resolverAdjunto(
   db: Db,

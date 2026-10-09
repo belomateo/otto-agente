@@ -12,10 +12,12 @@
 // cercano a "alguien va a hablar con una persona". Dos saltos del mismo turno → 'barandilla_doble'.
 
 import { aplicarBarandillas } from "../barandillas/index.ts";
+import { accesoriosEn } from "../barandillas/accesorio_sin_herramienta.ts";
 import { horas } from "../barandillas/horario_sin_herramienta.ts";
 import { montos } from "../barandillas/precio_sin_herramienta.ts";
 import type { Db } from "../db.ts";
-import type { MotivoDerivacion } from "../enums.ts";
+import { type MotivoDerivacion, TIPOS_LINK } from "../enums.ts";
+import { type Enlace, enlacesActivos, enlacesDeTipo } from "../herramientas/enlaces.ts";
 import { actualizarFicha, leerFicha } from "../herramientas/ficha.ts";
 import { mensajesDeEfectos } from "../herramientas/efectos.ts";
 import { esCierreCortes } from "./cierre_cortes.ts";
@@ -169,12 +171,22 @@ function quedarseCalladaDerivada(): ResultadoTurno {
 // la charla terminó derivada: tres horas esperando para reservar lo que ya tenía elegido.
 // Solo los últimos mensajes propios: un precio o una hora de hace semanas ya no se da por vigente.
 const ULTIMOS_MENSAJES_PROPIOS = 8;
-function loQueYaDijo(historial: MensajeChat[], nombreCliente: string | null): { horas: string[]; precios: number[] } {
+// Los accesorios entran por lo mismo (8/10): si Lucía ya dio el precio de los zapatos, repetirlo
+// cuando el cliente pregunta «¿serían 240 en total?» no es nombrarlos de memoria. Sin esto, el
+// segundo intento caía en accesorio_sin_herramienta y la charla terminaba derivada.
+function loQueYaDijo(historial: MensajeChat[], nombreCliente: string | null): { horas: string[]; precios: number[]; accesorios: string[] } {
   const propios = historial.filter((m) => m.role === "assistant").slice(-ULTIMOS_MENSAJES_PROPIOS);
   return {
     horas: propios.flatMap((m) => horas(m.content)),
     precios: propios.flatMap((m) => montos(m.content, nombreCliente)),
+    accesorios: [...new Set(propios.flatMap((m) => accesoriosEn(m.content)))],
   };
+}
+
+// Los links de la casa que ya le llegaron al cliente en esta charla (traza.linksPrevios).
+function linksYaEnviados(historial: MensajeChat[], enlaces: Enlace[]): string[] {
+  const propio = historial.filter((m) => m.role === "assistant").map((m) => m.content).join("\n");
+  return TIPOS_LINK.filter((t) => enlacesDeTipo(enlaces, t).some((e) => e.url && propio.includes(e.url)));
 }
 
 // Lo que Lucía quiso mandar cuando una barandilla la frenó: sin esto, la bitácora decía "un precio
@@ -369,10 +381,11 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     const intencion = clasificacion?.clasificacion.intencion ?? null;
 
     // Paso 5 — armar contexto, y paso 6 — el principal con herramientas.
-    const [contexto, prompt, herramientas] = await Promise.all([
+    const [contexto, prompt, herramientas, enlaces] = await Promise.all([
       armarContextoDelTurno(db, { clienteId: p.clienteId, ahora: p.ahora, tz: p.tz, diasDesdeUltimoMensaje }),
       p.prompt ?? leerPrompt(),
       definicionesParaElModelo(db),
+      enlacesActivos(db),
     ]);
     // Pedido de Mateo, 19/9: que Lucía vea las fotos que manda el cliente. Con imágenes, el
     // mensaje del cliente pasa de string a un array de bloques (formato de visión de Chat
@@ -402,7 +415,13 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     // que ya leyó ahí (p.ej. contestando "¿a qué hora era mi turno?"), no es un horario inventado.
     // Y con lo que Lucía misma ya dijo en la charla (loQueYaDijo, arriba).
     const yaDicho = loQueYaDijo(historial, ficha.nombre);
-    const traza = { ...trazaNueva(), horasDevueltas: [...contexto.horas, ...yaDicho.horas], preciosDevueltos: yaDicho.precios };
+    const traza = {
+      ...trazaNueva(),
+      horasDevueltas: [...contexto.horas, ...yaDicho.horas],
+      preciosDevueltos: yaDicho.precios,
+      accesoriosDevueltos: yaDicho.accesorios,
+      linksPrevios: linksYaEnviados(historial, enlaces),
+    };
     const ctxHerramientas = contextoDeHerramientas({
       db, tz: p.tz, cliente: { id: p.clienteId, telefono: p.telefono }, conversacionId: p.conversacionId,
       ahora: p.ahora, calendario: p.calendario, derivacionTel: p.derivacionTel, traza,

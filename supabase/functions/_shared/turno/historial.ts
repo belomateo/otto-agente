@@ -6,7 +6,7 @@
 // así lo tiene que ver el modelo para poder reconocerlo.
 
 import type { Db } from "../db.ts";
-import { TIPOS_QUE_SON_TEXTO } from "./rafaga.ts";
+import { etiquetaDeAudio, TIPOS_QUE_SON_TEXTO } from "./rafaga.ts";
 
 export type MensajeChat = { role: "user" | "assistant"; content: string };
 
@@ -17,16 +17,34 @@ const MAXIMO_MENSAJES = 40;
 // mensaje actual (si no se cortara acá, aparecería dos veces). Mismos tipos que agrupar_rafaga
 // (TIPOS_QUE_SON_TEXTO): un botón que el cliente tocó en una charla anterior tiene que seguir
 // viéndose en su historial, igual que si lo hubiera escrito.
+//
+// 8/10: también los audios y las fotos que mandó el CLIENTE en mensajes anteriores. Antes solo
+// entraban texto y botones: en una charla por audios, Lucía leía el audio de este turno y en el
+// siguiente ya no sabía qué le habían dicho (el audio vive en `transcripcion`, no en
+// `contenido`). Van con la misma etiqueta que en la ráfaga (rafaga.ts), y la foto como una línea
+// que dice que la mandó, con su comentario si tenía: la imagen en sí no se vuelve a mandar.
 export async function leerHistorial(db: Db, conversacionId: string, hasta: Date): Promise<MensajeChat[]> {
-  const filas = await db.consulta<{ direccion: string; contenido: string | null }>(
-    `select direccion, contenido from mensajes
-      where conversacion_id = $1 and tipo = any($2::text[]) and contenido is not null and enviado_at <= $3::timestamptz
+  const filas = await db.consulta<{ direccion: string; tipo: string; contenido: string | null; transcripcion: string | null }>(
+    `select direccion, tipo, contenido, transcripcion from mensajes
+      where conversacion_id = $1 and enviado_at <= $3::timestamptz
+        and ((tipo = any($2::text[]) and contenido is not null)
+          or (direccion = 'entrante' and tipo = 'audio' and transcripcion is not null)
+          or (direccion = 'entrante' and tipo = 'image'))
       order by enviado_at desc, id desc limit $4`,
     [conversacionId, TIPOS_QUE_SON_TEXTO, hasta.toISOString(), MAXIMO_MENSAJES],
   );
   return filas
     .reverse()
-    .map((f) => ({ role: f.direccion === "entrante" ? "user" : "assistant", content: String(f.contenido) }));
+    .map((f) => ({ role: f.direccion === "entrante" ? "user" : "assistant", content: comoTexto(f) }));
+}
+
+function comoTexto(f: { tipo: string; contenido: string | null; transcripcion: string | null }): string {
+  if (f.tipo === "audio") return etiquetaDeAudio(String(f.transcripcion));
+  if (f.tipo === "image") {
+    const epigrafe = (f.contenido ?? "").trim();
+    return epigrafe ? `(el cliente mandó una foto con el comentario: "${epigrafe}")` : "(el cliente mandó una foto)";
+  }
+  return String(f.contenido);
 }
 
 // Las últimas líneas para el clasificador (AGENTE.md § 11: "Mensaje + últimas 3 líneas"): el

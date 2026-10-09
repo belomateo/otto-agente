@@ -9,6 +9,7 @@
 // hay en cada tramo): los turnos libres los dice buscar_horarios.
 
 import { accesoriosEn } from "../barandillas/accesorio_sin_herramienta.ts";
+import { montos } from "../barandillas/precio_sin_herramienta.ts";
 import { buscarFragmentos } from "../conocimiento/busqueda.ts";
 import { SECCIONES, type Seccion } from "../enums.ts";
 import { describirHorarios, leerHorarioDelLocal } from "./horario_laboral.ts";
@@ -42,6 +43,10 @@ export const buscarInformacion: Herramienta<Args> = {
       fragmentos: encontrados.map(({ tema, titulo, texto }) => ({ tema, titulo, texto })),
     };
     ctx.traza.accesoriosDevueltos.push(...encontrados.flatMap((f) => accesoriosEn(f.texto)));
+    // Un precio escrito en un fragmento de la casa está respaldado igual que uno del catálogo (8/10:
+    // el precio de venta de los trajes está cargado en que-no-hacemos, pero precio_sin_herramienta
+    // no lo dejaba decir y el cliente se quedaba sin la respuesta).
+    ctx.traza.preciosDevueltos.push(...encontrados.flatMap((f) => montos(f.texto)));
     if (args.seccion === "ubicacion-horarios" || encontrados.some((f) => f.tema === "ubicacion-horarios")) {
       const h = describirHorarios(await leerHorarioDelLocal(ctx.db), []);
       datos.horario_del_local = h.local;

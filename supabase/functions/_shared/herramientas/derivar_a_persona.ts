@@ -51,6 +51,7 @@ import {
   textoDeDerivacion,
 } from "./derivacion.ts";
 import { normalizar } from "../barandillas/texto.ts";
+import { esSoloCierreOAsentimiento } from "../turno/cierre_cortes.ts";
 import { leerFicha } from "./ficha.ts";
 import { type ContextoHerramienta, type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
@@ -73,10 +74,12 @@ const PALABRAS_DE_MODELO = new RegExp(
 );
 const PALABRAS_DE_ACCESORIO = /\b(?:zapat\w*|camisa\w*|corbata\w*|cintur\w*|cinto\w*|mono|monos)\b/;
 
-const DESPEDIDA = /^(?:(?:(?:muchas?|mil)\s+)?gracias?\b|ok(?:ay)?\b|bueno\b|dale\b|perfect[oa]?\b|buenisim[oa]?\b|list[oa]?\b|genial\b|bien\b|(?:de\s+)?acuerdo\b|clar[oa]?\b|(?:muy\s+)?amable\b|okok\b|eso\s+era\b|nada\s+mas\b|ya\s+(?:esta|fue)\b)/;
-
+// El catálogo cuenta como mandado si salió en este turno o antes en la charla (traza.linksPrevios,
+// sembrada en turno.ts): enviar_link no lo reenvía, así que pedirle "mandá el catálogo" a un
+// modelo que ya lo mandó solo le hace gastar una vuelta.
 function mandoElCatalogo(ctx: ContextoHerramienta): boolean {
-  return ctx.traza.llamadas.some((l) => l.ok && l.herramienta === "enviar_link" && (l.argumentos as { tipo?: string } | null)?.tipo === "web");
+  return (ctx.traza.linksPrevios ?? []).includes("web") ||
+    ctx.traza.llamadas.some((l) => l.ok && l.herramienta === "enviar_link" && (l.argumentos as { tipo?: string } | null)?.tipo === "web");
 }
 
 // Lo que escribió el cliente en esta ráfaga (todo lo entrante desde la última respuesta).
@@ -91,6 +94,9 @@ async function preguntaPorModelos(ctx: ContextoHerramienta): Promise<boolean> {
   return PALABRAS_DE_MODELO.test(texto) && !PALABRAS_DE_ACCESORIO.test(texto);
 }
 
+// 8/10: antes miraba solo la PRIMERA palabra, así que «Dale, el martes a las 15» contaba como
+// despedida. Ahora usa la misma definición que el resto del sistema (cierre_cortes.ts): el
+// mensaje entero tiene que ser cierre o asentimiento.
 async function esDespedida(ctx: ContextoHerramienta): Promise<boolean> {
   const filas = await ctx.db.consulta<{ texto: string | null }>(
     `select string_agg(concat_ws(' ', contenido, transcripcion), ' ' order by enviado_at) as texto from mensajes
@@ -98,9 +104,7 @@ async function esDespedida(ctx: ContextoHerramienta): Promise<boolean> {
         and enviado_at > coalesce((select max(enviado_at) from mensajes where conversacion_id = $1::uuid and direccion = 'saliente'), '-infinity'::timestamptz)`,
     [ctx.conversacionId],
   );
-  const texto = normalizar(filas[0]?.texto ?? "").trim();
-  if (!texto || texto.length > 80 || /[?¿]/.test(texto)) return false;
-  return DESPEDIDA.test(texto);
+  return esSoloCierreOAsentimiento(filas[0]?.texto ?? "");
 }
 
 function despedidaMencionaModelo(mensaje: string | null): boolean {
@@ -193,8 +197,8 @@ export const derivarAPersona: Herramienta<Args> = {
     if (args.motivo === "dato_no_encontrado" && await esDespedida(ctx)) {
       return rechazo(
         "despedida_no_es_derivacion",
-        "El cliente se está despidiendo o agradeciendo, no falta un dato. No derives: cerrá la charla " +
-          "con algo como «De nada, cualquier cosa me escribís por acá» y listo.",
+        "El cliente solo agradeció, se despidió o dijo que sí: no falta ningún dato, no derives. Si contestaba " +
+          "una pregunta tuya, seguí con eso; si se despide, cerrá en una frase corta, sin frases de relleno.",
       );
     }
     // Pedido de Mateo, 5/10: por un modelo, un color, un estilo o una foto no se deriva. Lucía ya
