@@ -39,6 +39,7 @@ import { useDatos } from '@/components/api/useDatos';
 import { useEstadoTurno } from '@/components/api/useEstadoTurno';
 import type { AgendaDelDia, FilaTurno } from '@/lib/queries/turnos';
 import { aHora, aMinutos, describirFranjas, horaCorta } from '../configuracion/agenda/franjas';
+import { CierreDelDia } from './CierreDelDia';
 import { MoverTurnoModal } from './MoverTurno';
 import { NuevoTurnoModal } from './NuevoTurno';
 
@@ -49,7 +50,8 @@ type AgendaSemana = { semana: { desde: string; hasta: string }; dias: AgendaDelD
 // GET /api/turnos/mes?desde=AAAA-MM (paneles): un conteo por día, no las fichas completas —
 // alcanza para pintar la grilla sin traer 30 días de detalle (decisión de Mateo, 22/9,
 // "importante que se haga").
-type DiaMes = { fecha: string; total: number; sin_confirmar: number };
+// cierre (0061): el día está cerrado —feriado o cierre puntual—; lo manda /api/turnos/mes (turnosDelMes).
+type DiaMes = { fecha: string; total: number; sin_confirmar: number; cierre?: { motivo: string | null } | null };
 type AgendaMes = { mes: string; dias: DiaMes[] };
 type Vista = 'dia' | 'semana' | 'mes';
 
@@ -707,11 +709,15 @@ function VistaMes({ mes, onNuevoTurno, onCambio }: { mes: AgendaMes; onNuevoTurn
             <Link
               key={c.fecha}
               href={`/turnos?dia=${c.fecha}`}
+              title={c.esDelMes && c.dato?.cierre ? `Cerrado${c.dato.cierre.motivo ? ` · ${c.dato.cierre.motivo}` : ''}` : undefined}
               className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-otto border ${
-                c.esDelMes ? 'border-borde bg-lino' : 'border-transparent text-[#C9C4B9]'
+                !c.esDelMes ? 'border-transparent text-[#C9C4B9]' : c.dato?.cierre ? 'border-ladrillo/30 bg-ladrillo-suave' : 'border-borde bg-lino'
               }`}
             >
               <span className={`font-serif text-[14px] font-semibold md:text-[13px] ${c.esDelMes ? '' : 'text-[#C9C4B9]'}`}>{Number(c.fecha.slice(8, 10))}</span>
+              {c.esDelMes && c.dato?.cierre && (
+                <span className="max-w-full truncate px-1 text-[12px] font-medium text-ladrillo md:text-[11px]">{c.dato.cierre.motivo || 'Cerrado'}</span>
+              )}
               {c.dato && c.dato.total > 0 && (
                 <span className="flex items-center gap-1">
                   <span className="rounded-pill bg-cobre-claro px-[7px] py-px text-[14px] font-medium text-cobre md:text-[11px]">{c.dato.total}</span>
@@ -776,7 +782,7 @@ export default function TurnosPage() {
   if (error) return <EstadoError mensaje={error} onReintentar={recargar} />;
   if (!agenda) return null;
 
-  const resumen = agenda.franjas.length ? `Turnos ${describirFranjas(agenda.franjas)}` : 'Sin turnos';
+  const resumen = agenda.cierre ? 'Día cerrado' : agenda.franjas.length ? `Turnos ${describirFranjas(agenda.franjas)}` : 'Sin turnos';
   const vacio = agenda.franjas.length === 0 ? SIN_FRANJAS : agenda.turnos.length === 0 ? VACIO : null;
   const turnos = [...agenda.turnos].sort((a, b) => inicioMin(a) - inicioMin(b));
   const abierto = agenda.turnos.find((t) => t.id === abiertoId) ?? null;
@@ -803,6 +809,7 @@ export default function TurnosPage() {
           </button>
         </div>
         <div className="mb-4 text-[14px] text-grafito md:text-[13px]">{resumen}</div>
+        <CierreDelDia fecha={agenda.fecha} cierre={agenda.cierre} onCambio={recargar} />
 
         {vacio ? (
           <div className="rounded-otto border border-borde bg-lino">
@@ -828,6 +835,9 @@ export default function TurnosPage() {
             </Flechas>
           </div>
           <div className="mt-2 text-[14px] leading-[1.45] text-grafito">{resumen}</div>
+          <div className="mt-2">
+            <CierreDelDia fecha={agenda.fecha} cierre={agenda.cierre} onCambio={recargar} />
+          </div>
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             {!vacio && agenda.sin_confirmar_manana > 0 && (
               <span className="rounded-pill border border-[#EEDFC0] bg-ambar-suave px-3 py-1.5 text-[14px] font-medium text-ambar">Sin confirmar mañana · {agenda.sin_confirmar_manana}</span>

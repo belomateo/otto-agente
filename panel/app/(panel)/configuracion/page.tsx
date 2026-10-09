@@ -57,6 +57,21 @@ const ORDEN_CONTEXTO = [
 ];
 const posicion = (clave: string) => (ORDEN_CONTEXTO.includes(clave) ? ORDEN_CONTEXTO.indexOf(clave) : ORDEN_CONTEXTO.length);
 
+// Pedido de Mateo (9/10): Lucía lee sus instrucciones del archivo que se publica con ella
+// (supabase/functions/_shared/prompt.md), no de esta pantalla. Presentación, tono, reglas y prompt
+// base de acá ya no le llegan; los textos fijos (turno confirmado, derivaciones, demora) sí, porque
+// esos los lee el turno directo de la base.
+function AvisoArchivo() {
+  return (
+    <div role="note" className="rounded-otto border border-ambar/40 bg-ambar-suave px-3.5 py-3 text-[14px] leading-[1.5] text-tinta md:px-4.5 md:text-[13px]">
+      <div className="mb-0.5 font-medium text-ambar">Lucía ya no lee sus instrucciones de esta pantalla</div>
+      Desde el 9 de octubre salen de un archivo fijo que se publica con ella. Lo que cambies acá en Presentación, Tono,
+      Reglas o Prompt base no le llega: pedí el cambio y se publica. Los textos fijos (turno confirmado, derivaciones,
+      demora) sí los sigue usando al instante.
+    </div>
+  );
+}
+
 function TarjetaLucia() {
   return (
     <div className={`flex items-center gap-3 md:gap-4 ${TARJETA}`}>
@@ -211,7 +226,7 @@ function PromptBase() {
     setGuardando(true);
     try {
       await enviar('/api/configuracion/prompt-base', 'PUT', { version: datos?.prompt?.version ?? 1, texto });
-      mostrar('Prompt validado y guardado · Lucía lo usa en menos de un minuto', false);
+      mostrar('Prompt guardado · ojo: Lucía no lee esta copia, lee el archivo publicado', false);
       recargar();
     } catch (e) {
       mostrar(e instanceof ErrorApi ? e.message : 'No se pudo guardar', true);
@@ -270,6 +285,7 @@ export default function ConfiguracionLuciaPage() {
   return (
     <>
       <TarjetaLucia />
+      <AvisoArchivo />
 
       {contextoOrdenado.map((c) => (
         <ContextoEditable key={`${c.id}-${c.version}`} fila={c} onCambio={recargar} />
