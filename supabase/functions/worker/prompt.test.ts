@@ -1,11 +1,11 @@
-// El prompt de Lucía sale de la base y, si la base no puede darlo, del archivo que viene en la
-// función. Acá se prueba esa elección y la caché; que lo que devuelve la base sea el prompt
-// correcto lo prueba tests/sql/prompt-vigente.mjs contra la base de verdad.
-import { assertEquals } from "jsr:@std/assert@1";
+// El prompt de Lucía sale del prompt.md que viene en la función y, solo si el archivo no se puede
+// leer, de la base (pedido de Mateo, 9/10). Acá se prueba esa elección y la caché del respaldo; que
+// lo que devuelve la base sea un prompt correcto lo prueba tests/sql/prompt-vigente.mjs.
+import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import type { Db } from "../_shared/db.ts";
 import { olvidarPrompt, promptDeLucia, VIGENCIA_MS } from "./prompt.ts";
 
-const DE_LA_BASE = "Sos Lucía, y atendés lo que la dueña acaba de escribir.\n";
+const DE_LA_BASE = "Sos Lucía, y atendés lo que alguien escribió en el panel.\n";
 
 function baseDoble(respuestas: (string | null | Error)[]): { db: Db; pedidos: number } {
   const estado = { pedidos: 0 };
@@ -22,56 +22,62 @@ function baseDoble(respuestas: (string | null | Error)[]): { db: Db; pedidos: nu
   return { db, get pedidos() { return estado.pedidos; } } as { db: Db; pedidos: number };
 }
 
-const EN = (seg: number) => new Date(Date.UTC(2026, 8, 16, 12, 0, seg));
+const EN = (seg: number) => new Date(Date.UTC(2026, 9, 9, 12, 0, seg));
+const sinArchivo = () => Promise.reject(new Error("no existe"));
 
-Deno.test("usa lo que hay en la base", async () => {
+Deno.test("usa el prompt.md de la función aunque la base tenga otro, y ni le pregunta a la base", async () => {
   olvidarPrompt();
   const b = baseDoble([DE_LA_BASE]);
   const r = await promptDeLucia(b.db, EN(0));
+  assertEquals(r.origen, "archivo");
+  // Es el prompt de verdad, el que se publica con la función.
+  assertEquals(r.texto.startsWith("Sos Lucía,"), true);
+  assertEquals(r.texto.length > 1000, true);
+  assertEquals(b.pedidos, 0);
+});
+
+Deno.test("el archivo se lee una sola vez", async () => {
+  olvidarPrompt();
+  let lecturas = 0;
+  const leer = () => {
+    lecturas++;
+    return Promise.resolve("Sos Lucía, del archivo.\n");
+  };
+  const b = baseDoble([DE_LA_BASE]);
+  await promptDeLucia(b.db, EN(0), leer);
+  await promptDeLucia(b.db, EN(30), leer);
+  assertEquals([lecturas, b.pedidos], [1, 0]);
+});
+
+Deno.test("sin archivo, usa la copia de la base", async () => {
+  olvidarPrompt();
+  const b = baseDoble([DE_LA_BASE]);
+  const r = await promptDeLucia(b.db, EN(0), sinArchivo);
   assertEquals([r.origen, r.texto], ["base", DE_LA_BASE]);
 });
 
-Deno.test("no le pregunta a la base en cada turno: la caché dura un minuto", async () => {
+Deno.test("un archivo vacío cuenta como que no está", async () => {
   olvidarPrompt();
   const b = baseDoble([DE_LA_BASE]);
-  await promptDeLucia(b.db, EN(0));
-  await promptDeLucia(b.db, EN(30));
+  const r = await promptDeLucia(b.db, EN(0), () => Promise.resolve("  \n"));
+  assertEquals(r.origen, "base");
+});
+
+Deno.test("el respaldo de la base se cachea un minuto", async () => {
+  olvidarPrompt();
+  const b = baseDoble([DE_LA_BASE, "Sos Lucía, cambiada.\n"]);
+  await promptDeLucia(b.db, EN(0), sinArchivo);
+  await promptDeLucia(b.db, EN(30), sinArchivo);
   assertEquals(b.pedidos, 1);
+  const r = await promptDeLucia(b.db, new Date(EN(0).getTime() + VIGENCIA_MS + 1), sinArchivo);
+  assertEquals([b.pedidos, r.texto], [2, "Sos Lucía, cambiada.\n"]);
 });
 
-Deno.test("pasado el minuto vuelve a preguntar, y un cambio de la dueña entra", async () => {
+Deno.test("sin archivo y sin base, falla (la cola reintenta) en vez de contestar sin instrucciones", async () => {
   olvidarPrompt();
-  const cambiado = "Sos Lucía, y ahora hablás distinto.\n";
-  const b = baseDoble([DE_LA_BASE, cambiado]);
-  await promptDeLucia(b.db, EN(0));
-  const r = await promptDeLucia(b.db, new Date(EN(0).getTime() + VIGENCIA_MS + 1));
-  assertEquals([b.pedidos, r.texto], [2, cambiado]);
-});
-
-Deno.test("si la base no puede armar uno bueno, usa el prompt.md de la función", async () => {
+  const caida = baseDoble([new Error("se cortó la conexión")]);
+  await assertRejects(() => promptDeLucia(caida.db, EN(0), sinArchivo));
   olvidarPrompt();
-  const b = baseDoble([null]);
-  const r = await promptDeLucia(b.db, EN(0));
-  assertEquals(r.origen, "archivo");
-  // Es el prompt de verdad, el que se publicó con la función.
-  assertEquals(r.texto.startsWith("Sos Lucía,"), true);
-  assertEquals(r.texto.length > 1000, true);
-});
-
-Deno.test("si la base se cae, tampoco se queda muda", async () => {
-  olvidarPrompt();
-  const b = baseDoble([new Error("se cortó la conexión")]);
-  const r = await promptDeLucia(b.db, EN(0));
-  assertEquals(r.origen, "archivo");
-  assertEquals(r.texto.startsWith("Sos Lucía,"), true);
-});
-
-Deno.test("con la base caída no le pregunta en cada turno; al minuto reintenta y se recupera", async () => {
-  olvidarPrompt();
-  const b = baseDoble([new Error("caída"), DE_LA_BASE]);
-  assertEquals((await promptDeLucia(b.db, EN(0))).origen, "archivo");
-  assertEquals((await promptDeLucia(b.db, EN(30))).origen, "archivo");
-  assertEquals(b.pedidos, 1);
-  const r = await promptDeLucia(b.db, new Date(EN(0).getTime() + VIGENCIA_MS + 1));
-  assertEquals([b.pedidos, r.origen], [2, "base"]);
+  const vacia = baseDoble([null]);
+  await assertRejects(() => promptDeLucia(vacia.db, EN(0), sinArchivo));
 });

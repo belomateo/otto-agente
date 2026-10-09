@@ -659,8 +659,8 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   await bajarMediosPendientes(db, d, t.conversacion_id);
 
   const ahora = d.ahora();
-  // De la base, no del archivo que se publicó: lo que la dueña cambia en el panel tiene que estar
-  // en boca de Lucía en menos de un minuto (0050).
+  // Del prompt.md que se publicó con la función; la base es solo el respaldo (Mateo, 9/10: ver
+  // prompt.ts).
   const prompt = await promptDeLucia(db, ahora);
   const resultado = await d.turno(db, {
     clienteId: conv.cliente_id,
