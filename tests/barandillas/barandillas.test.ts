@@ -575,6 +575,8 @@ Deno.test("venta_sin_resolver salta si el cliente pidió comprar un traje y no s
   await salta(ventaSinResolver, entrada("Mr Otto también vende trajes.", { mensajeCliente: "¿venden trajes?", traza: trazaConEnviarLink("mapa") }));
   // Derivar ya no cuenta como resolver la venta: si no salió el link, salta igual.
   await salta(ventaSinResolver, entrada("Te leo. Esto lo sigue alguien del local.", { mensajeCliente: "quisiera comprar", traza: traza({ herramientas: ["derivar_a_persona"] }) }));
+  // Caso real del 8/10: después de preguntar por el precio de los trajes, «Y comprarlos?».
+  await salta(ventaSinResolver, entrada("Los trajes arrancan a partir de $540.000.", { mensajeCliente: "Y comprarlos ?" }));
 });
 
 Deno.test("venta_sin_resolver no salta si mandó el link de venta (con o sin derivar), o si la intención no es venta (caso parecido)", async () => {

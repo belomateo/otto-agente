@@ -29,15 +29,14 @@ import { type Barandilla, NO_SALTA } from "../tipos.ts";
 // 9/10: sin clasificador, la intención de COMPRAR un traje sale del mensaje del cliente. A
 // propósito conservador —solo frases claras—: si salta de más, obliga a mandar un link que no
 // pidió. Los accesorios sí se compran (con descuento por alquilar) y no son esto.
-const COMPRA = /\b(comprar|comprarlo|comprarla|comprarme|comprarmelo|compro|venden|vendes|en venta|a la venta)\b/;
-const PRENDA = /\b(traje|trajes|ambo|ambos|saco|sacos|smoking|smokings|esmoquin)\b/;
-const QUIERE_COMPRAR = /\b(quiero|quisiera|queria|busco|necesito|me gustaria)\s+(comprar|comprarme)\b/;
+// Cualquier forma de comprar («comprar», «comprarlos», «comprármelo», «compro»), o «venden».
+// Caso real del 8/10 que se escapaba con la lista cerrada: «Y comprarlos?», después de preguntar por
+// el precio de los trajes. Si nombra un accesorio, no cuenta: esos se compran con descuento aparte.
+const COMPRA = /\b(comprar\w*|compro|venden|vendes|en venta|a la venta)\b/;
 
 export function pideComprarTraje(mensaje: string | null | undefined): boolean {
   const n = normalizar(mensaje ?? "");
-  if (!COMPRA.test(n)) return false;
-  if (PRENDA.test(n)) return true;
-  return QUIERE_COMPRAR.test(n) && !mencionaAccesorio(n);
+  return COMPRA.test(n) && !mencionaAccesorio(n);
 }
 
 // 8/10: también cuenta el link de venta que ya le llegó antes en la charla. Sin esto, cada vez que
