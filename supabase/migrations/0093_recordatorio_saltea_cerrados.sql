@@ -1,16 +1,14 @@
--- Dos correcciones de la revisión del 8/10 (charlas desde la actualización del 7/10).
+-- 0093_recordatorio_saltea_cerrados.sql — pedido de Mateo (9/10): «el lunes no abre» (feriado del
+-- 12/10, cargado en cierres_agenda) y ya había 6 turnos reservados ese día. El recordatorio de 18 hs
+-- no miraba los cierres: el domingo a la tarde esos clientes iban a recibir «te esperamos mañana»
+-- para un día con el local cerrado. Ahora un turno en un día cerrado no entra en la lista del
+-- recordatorio. El turno NO se cancela solo (mismo criterio que crearCierre() del panel): queda en
+-- la agenda para que el equipo llame al cliente y lo pase a otro día.
 --
--- 1. Recontacto: no a quien dijo que escribió por error o que no le interesa. Caso real (8/10):
---    alguien que había escrito «FUE SIN QUERER» recibió al día siguiente «¿todavía estás buscando
---    traje para tu evento?». El momento del recontacto NO se toca: los datos del 8/10 dicen que el
---    del día siguiente funciona (respondieron 4 de 11; los de tres días, 0 de 16), y a quien cierra
---    con «ok, gracias» tampoco se lo excluye (uno de ellos volvió a preguntar el precio). Igual a
---    0088 salvo la condición nueva, marcada con 8/10, y la de días cerrados de 0093 (9/10).
--- 2. Talles: la ficha del negocio dice «del XS al 68 de saco», pero el fragmento solo decía «del XS
---    al 4XL, por letra»: a «¿tenés talle 62?» Lucía contestó que «no equivale a nuestra
---    numeración». Idempotente: solo cambia el texto si todavía no lo dice.
+-- La función es la de 0092 (recontacto 8/10) más la condición nueva, marcada con 9/10. 0092 también
+-- la trae, así el orden en que se apliquen no importa: las dos dejan la misma función.
+-- Idempotente.
 
--- 1. Recontacto.
 create or replace function public.envios_pendientes(p_tipo text, p_tz text, p_ahora timestamp with time zone default now())
  returns table(referencia uuid, cliente_id uuid, telefono text, nombre text, inicio timestamp with time zone)
  language sql
@@ -90,13 +88,3 @@ as $function$
               '(sin querer|por error|me equivoqu|equivocad|no era (para|a) (vos|ustedes|este|esta|aca|acá)|no me interesa|ya no (lo |la )?necesito|ya (consegu|alquil|compr)|^\s*no,? gracias)')
      and envio_disponible(p_tipo, co.id);
 $function$;
-
--- 2. Talles.
-update fragmentos
-   set texto = replace(texto, 'Los talles de adultos van por letra.',
-                 'Los talles de adultos van por letra; en número de saco llegan hasta el 68, así que un talle dicho en número (50, 56, 62) también se trabaja.'),
-       version = version + 1,
-       editado_por = 'claude-code 8/10: talles en número hasta el 68'
- where tema = 'talles' and titulo = 'Talles'
-   and texto like '%Los talles de adultos van por letra.%'
-   and texto not like '%hasta el 68%';
