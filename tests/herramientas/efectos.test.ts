@@ -224,19 +224,19 @@ prueba("anotar deja la nota en la libreta del cliente", async ({ ctx, sql, clien
 prueba("derivar_a_persona escribe la derivación, pausa la charla y corta el turno", async ({ ctx, sql, conversacionId }) => {
   const r = await ejecutarHerramienta(
     "derivar_a_persona",
-    { motivo: "corporativo", mensaje_al_cliente: "Le paso tu consulta a alguien del equipo y te escriben en un rato." },
+    { motivo: "pide_persona", mensaje_al_cliente: "Le paso tu consulta a alguien del equipo y te escriben en un rato." },
     ctx,
   );
   esOk(r);
   const d = await fila(sql, "select id::text as id, motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
-  assertEquals([d.motivo, d.estado], ["corporativo", "pendiente"]);
+  assertEquals([d.motivo, d.estado], ["pide_persona", "pendiente"]);
   assertEquals((await fila(sql, "select estado from conversaciones where id = $1", [conversacionId])).estado, "derivada");
   assertEquals(r.efectos?.cortaTurno, true);
   assertEquals(r.efectos?.mensajesAlCliente, ["Le paso tu consulta a alguien del equipo y te escriben en un rato."]);
-  assertEquals(r.efectos?.avisoEquipo, { motivo: "corporativo", derivacionId: d.id });
+  assertEquals(r.efectos?.avisoEquipo, { motivo: "pide_persona", derivacionId: d.id });
 
   // Derivar otra vez en la misma charla no crea otra fila.
-  esOk(await ejecutarHerramienta("derivar_a_persona", { motivo: "pide_persona", mensaje_al_cliente: null }, ctx));
+  esOk(await ejecutarHerramienta("derivar_a_persona", { motivo: "corporativo", mensaje_al_cliente: null }, ctx));
   assertEquals(await contar(sql, "select count(*)::int as n from derivaciones where conversacion_id = $1", [conversacionId]), 1);
 });
 

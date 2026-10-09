@@ -98,7 +98,7 @@ prueba("C1 resuelto: una despedida de derivar_a_persona que menciona \"el sistem
   // Quedó registrado que la barandilla saltó, para que se pueda auditar.
   const saltoRegistrado = await contar(
     sql,
-    "select count(*)::int as n from eventos_agente where conversacion_id = $1 and tipo = 'error' and detalle->>'barandilla' = 'menciona_ia'",
+    "select count(*)::int as n from eventos_agente where conversacion_id = $1 and tipo = 'error' and detalle->>'chequeo' = 'menciona_ia' and detalle->>'barandilla' = 'forma_y_tono'",
     [conversacionId],
   );
   assert(saltoRegistrado > 0, "quedó un evento de bitácora de que menciona_ia saltó en la derivación");

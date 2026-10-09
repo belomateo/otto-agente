@@ -186,17 +186,25 @@ Deno.test({
 });
 
 Deno.test({
-  name: "herramientas: las 14 de AGENTE.md § 4 = las del código = herramientas_agente, con el mismo tipo",
+  name: "herramientas: las 8 de AGENTE.md § 4 = las del código = herramientas_agente (con 0094), con el mismo tipo",
   sanitizeOps: false,
   sanitizeResources: false,
   fn: () =>
     conBase(async (sql) => {
       const doc = [...seccionMd(AGENTE, 4).matchAll(/^\| `([a-z_]+)\(/gm)].map((m) => m[1]);
       const codigo = HERRAMIENTAS.map((h) => h.nombre);
-      const base = (await sql.query("select nombre, tipo from herramientas_agente order by orden")).rows;
-      assertEquals(codigo.length, 14);
+      assertEquals(codigo.length, 8);
       assertEquals(ordenado(doc), ordenado(codigo), "AGENTE.md § 4");
-      assertEquals(ordenado(base.map((r) => String(r.nombre))), ordenado(codigo), "herramientas_agente");
-      for (const r of base) assertEquals(buscarHerramienta(String(r.nombre))?.tipo, r.tipo, `tipo de ${r.nombre}`);
+      // 9/10: la tabla queda como el código cuando se aplica 0094 (al publicar). Se prueba la base como
+      // va a quedar, adentro de una transacción que se deshace: no cambia nada de verdad.
+      await sql.query("begin");
+      try {
+        await sql.query(Deno.readTextFileSync(new URL("../../supabase/migrations/0094_herramientas_unificadas_y_texto_demora.sql", import.meta.url)));
+        const base = (await sql.query("select nombre, tipo from herramientas_agente order by orden")).rows;
+        assertEquals(base.map((r) => String(r.nombre)), codigo, "herramientas_agente, en el orden del código");
+        for (const r of base) assertEquals(buscarHerramienta(String(r.nombre))?.tipo, r.tipo, `tipo de ${r.nombre}`);
+      } finally {
+        await sql.query("rollback");
+      }
     }),
 });
