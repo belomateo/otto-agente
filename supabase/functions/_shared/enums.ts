@@ -30,6 +30,12 @@ export type Seccion = typeof SECCIONES[number];
 // devolucion_tardia (0085, Mateo 5/10): quiere devolver el traje después del día hábil siguiente
 // al evento (de un evento de fin de semana, después del lunes). Lo confirma el local: el texto fijo
 // le pasa el teléfono, en vez de que Lucía le diga que no hay problema.
+// Con el evento dentro de estos días (hoy, mañana o pasado mañana) ya no se agenda: lo resuelve el
+// equipo (evento_inminente). Hasta el 10/10 era hoy o mañana (decisión #8, 14/9); Mateo lo llevó a 2
+// días cuando sacó la reserva de días para eventos cercanos (0098): «que agende, y si es de acá a 2
+// días del evento, que lo derive».
+export const DIAS_EVENTO_INMINENTE = 2;
+
 export const MOTIVOS_DERIVACION = [
   "reclamo",
   "cliente_enojado",

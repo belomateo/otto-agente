@@ -71,6 +71,17 @@ function esSaludoDeApertura(clausula: string): boolean {
   return n.length <= 40 && /^(listo|perfecto|genial|excelente|dale)\b/.test(n);
 }
 
+// Una cortesía suelta («¡Te esperamos, Jaz!», «Nos vemos», «Gracias, Walter») cuando el mensaje de
+// código ya cierra igual: quedaba repetida justo antes de «¡Listo! Tu turno ya quedó agendado…» o
+// de «¡Gracias por confirmar! Te esperamos en el local» (ensayo del 10/10, Mateo: «sin el saludo
+// repetido adelante»). Solo si es corta y no dice nada más.
+function esCortesiaSuelta(clausula: string): boolean {
+  const n = normalizar(clausula).replace(/^[¡!¿\s]+/, "").replace(/[^\p{L}]+$/u, "");
+  return n.length <= 40 &&
+    /^(?:te esperamos|los esperamos|las esperamos|nos vemos|gracias(?: por (?:confirmar|avisar|escribir))?|muchas gracias|listo|perfecto|genial|excelente|dale)(?:,?\s+[a-zñ]+){0,4}$/
+      .test(n);
+}
+
 const SEPARADOR_CLAUSULA = /(;\s*| y | pero | aparte )/;
 
 type Clausula = { oracionIdx: number; texto: string; separadorPrevio: string };
@@ -112,7 +123,9 @@ export const confirmacionDoble: Barandilla = {
     const clausulas = partirEnClausulas(os);
     const esConfirmacion = clausulas.map((c) => esConfirmacionDeReserva(c.texto) ||
       (traza.resumenTurnoEmitido && /\b(actualic|actualiz|resumen)/.test(normalizar(c.texto))));
-    const mantener = clausulas.map((c, i) => !esConfirmacion[i] && !(esSaludoDeApertura(c.texto) && esConfirmacion[i + 1] === true));
+    const mantener = clausulas.map((c, i) =>
+      !esConfirmacion[i] && !(esSaludoDeApertura(c.texto) && esConfirmacion[i + 1] === true) && !esCortesiaSuelta(c.texto)
+    );
     if (mantener.every(Boolean) && sinLista === texto) return NO_SALTA;
 
     const cortadas = clausulas.filter((_, i) => !mantener[i]).map((c) => c.texto).join(" ");

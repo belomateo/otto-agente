@@ -128,7 +128,7 @@ export const derivarAPersona: Herramienta<Args> = {
     "motivo: por qué derivás. mensaje_al_cliente: SIEMPRE escribí una " +
     "despedida corta y sin ninguna pregunta, nunca null — con reclamo o descuento el sistema la reemplaza por un " +
     "texto fijo, así que no te esfuerces con esas dos, pero escribí algo igual. Nunca anuncies un pase sin llamar " +
-    "a esta herramienta. Si el evento del cliente es hoy o mañana, NO uses esta herramienta: llamá a " +
+    "a esta herramienta. Si el evento del cliente es hoy, mañana o pasado mañana, NO uses esta herramienta: llamá a " +
     "buscar_horarios (con la fecha del evento) y el código se encarga solo: guarda el dato y le pasa el teléfono " +
     "del local. Por un modelo, color o estilo no derives: mandá el catálogo online (enviar_link, tipo web). " +
     "devolucion_tardia: quiere devolver el traje después del día hábil siguiente al evento (de un evento de fin de " +
@@ -148,7 +148,7 @@ export const derivarAPersona: Herramienta<Args> = {
     if ((MOTIVOS_SOLO_CODIGO as readonly string[]).includes(args.motivo)) {
       return rechazo(
         "motivo_solo_codigo",
-        `El motivo ${args.motivo} lo decide el código, no vos. Si es porque el evento es hoy o mañana, llamá a ` +
+        `El motivo ${args.motivo} lo decide el código, no vos. Si es porque el evento es hoy, mañana o pasado mañana, llamá a ` +
           "buscar_horarios con la fecha del evento: el código deriva solo, con el dato guardado y el texto correcto.",
       );
     }
@@ -169,7 +169,7 @@ export const derivarAPersona: Herramienta<Args> = {
       return rechazo(
         "sin_buscar_horarios",
         "Para derivar por falta de hueco, primero llamá a buscar_horarios en este mismo turno con la fecha del " +
-          "evento: si el evento termina siendo hoy o mañana, el código deriva solo con el dato guardado y el " +
+          "evento: si el evento termina siendo hoy, mañana o pasado mañana, el código deriva solo con el dato guardado y el " +
           "texto correcto; si no, confirmás de verdad que no hay hueco antes de derivar por esto.",
       );
     }

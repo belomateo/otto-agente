@@ -34,11 +34,12 @@ import {
 // @deno-types="npm:@types/pg@8.11.10"
 import type pg from "npm:pg@8.13.1";
 
-Deno.test("hoy o mañana se cuenta con la fecha de Argentina, no con la de UTC (supuesto #23)", () => {
+Deno.test("hoy, mañana o pasado mañana se cuenta con la fecha de Argentina, no con la de UTC (supuesto #23)", () => {
   const casiMedianoche = new Date("2030-06-03T23:30:00-03:00"); // en UTC ya es martes
   assertEquals(esEventoInminente("2030-06-03", casiMedianoche, TZ), true); // hoy
   assertEquals(esEventoInminente("2030-06-04", casiMedianoche, TZ), true); // mañana
-  assertEquals(esEventoInminente("2030-06-05", casiMedianoche, TZ), false); // pasado mañana (en UTC sería mañana)
+  assertEquals(esEventoInminente("2030-06-05", casiMedianoche, TZ), true); // pasado mañana (2 días, desde el 10/10)
+  assertEquals(esEventoInminente("2030-06-06", casiMedianoche, TZ), false); // en 3 días (en UTC serían 2)
   assertEquals(esEventoInminente("2030-06-02", casiMedianoche, TZ), false); // ya pasó: eso es otro rechazo
   assertEquals(esEventoInminente(null, casiMedianoche, TZ), false);
 });
@@ -70,12 +71,19 @@ prueba("buscar_horarios con el evento hoy (lo manda el modelo) deriva y deja la 
   assertEquals((await fila(sql, "select fecha_evento::text as f from clientes where id = $1", [clienteId])).f, LUNES);
 });
 
-prueba("buscar_horarios con el evento pasado mañana sigue el camino normal (caso parecido)", async ({ ctx, sql, conversacionId, agenda }) => {
+prueba("buscar_horarios con el evento pasado mañana también deriva (2 días desde el 10/10)", async ({ ctx, sql, conversacionId, agenda }) => {
   agenda.lista = [hueco(MARTES, "16:00", 45)];
   const r = await buscar(ctx, LUNES, MARTES, "invitado", MIERCOLES);
+  await quedoDerivado(sql, conversacionId, r);
+  assertEquals(agenda.pedidos.length, 0, "ni siquiera le pide huecos a la agenda");
+});
+
+prueba("buscar_horarios con el evento en 3 días sigue el camino normal (caso parecido)", async ({ ctx, sql, conversacionId, agenda }) => {
+  agenda.lista = [hueco(MARTES, "16:00", 45)];
+  const r = await buscar(ctx, LUNES, MARTES, "invitado", JUEVES);
   esOk(r);
   assertEquals((r.datos.huecos as unknown[]).length, 1);
-  assertEquals(agenda.pedidos[0].fechaEvento, MIERCOLES, "la agenda recibe la fecha para el orden de urgencia");
+  assertEquals(agenda.pedidos[0].fechaEvento, JUEVES, "la agenda recibe la fecha para el orden de urgencia");
   assertEquals(await contar(sql, "select count(*)::int as n from derivaciones where conversacion_id = $1", [conversacionId]), 0);
 });
 

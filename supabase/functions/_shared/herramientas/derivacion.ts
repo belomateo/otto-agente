@@ -1,16 +1,16 @@
 // Derivar a una persona, en código. Lo usan derivar_a_persona (cuando decide el modelo) y las
 // derivaciones duras que decide el código sin preguntarle al modelo (AGENTE.md § 2 y § 10).
 //
-// Evento hoy o mañana (decisión #8 de Mateo, 14/9): un alquiler con el evento hoy o mañana lo
-// resuelve una persona. Se cuenta con la fecha de Argentina (NEGOCIO_TZ, supuesto #23): hoy o
-// el día siguiente derivan siempre; desde pasado mañana sigue el camino normal. Se deriva con
+// Evento muy cercano (decisión #8 de Mateo, 14/9; desde el 10/10 hasta 2 días): un alquiler con el
+// evento hoy, mañana o pasado mañana lo resuelve una persona. Se cuenta con la fecha de Argentina
+// (NEGOCIO_TZ, supuesto #23): esos días derivan siempre; desde el tercero sigue el camino normal. Se deriva con
 // motivo evento_inminente y un texto fijo que nunca dice que no, guardado en contexto_agente
 // (clave texto_evento_inminente) para que el dueño lo edite en Configuración › Lucía.
 // Desde el 5/10 (Mateo) ese texto le pasa al cliente el teléfono del local, para que lo resuelva
 // directo: es el único caso en que Lucía da otro contacto. El número vive en la base, no acá.
 
 import type { Db } from "../db.ts";
-import type { MotivoDerivacion } from "../enums.ts";
+import { DIAS_EVENTO_INMINENTE, type MotivoDerivacion } from "../enums.ts";
 import { fechaLocal, sumarDias } from "../tiempo.ts";
 import type { ContextoHerramienta, Efectos } from "./tipos.ts";
 
@@ -100,7 +100,7 @@ export async function registrarDerivacion(
 export function esEventoInminente(fechaEvento: string | null, ahora: Date, tz: string): boolean {
   if (!fechaEvento) return false;
   const hoy = fechaLocal(ahora, tz);
-  return fechaEvento >= hoy && fechaEvento <= sumarDias(hoy, 1);
+  return fechaEvento >= hoy && fechaEvento <= sumarDias(hoy, DIAS_EVENTO_INMINENTE);
 }
 
 export async function textoDeContexto(db: Db, clave: string): Promise<string | null> {
@@ -119,7 +119,7 @@ export async function derivarPorEventoInminente(
   const datos: Record<string, unknown> = {
     derivar: "evento_inminente",
     derivacion_id: id,
-    nota: "El evento es hoy o mañana: el sistema ya le pasa el teléfono del local para que lo resuelva directo. No ofrezcas turnos ni escribas nada más.",
+    nota: "El evento es dentro de los próximos 2 días: el sistema ya le pasa el teléfono del local para que lo resuelva directo. No ofrezcas turnos ni escribas nada más.",
   };
   if (yaEstaba) datos.ya_estaba_derivada = true;
   if (usoRespaldo) datos.falta = `la fila de contexto_agente de esta derivación (${CLAVE_TEXTO_EVENTO_INMINENTE}) está vacía: se usó el respaldo de código`;

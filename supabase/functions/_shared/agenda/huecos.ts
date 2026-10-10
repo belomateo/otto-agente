@@ -20,7 +20,7 @@
 //    fecha tapado para un probador o para todos. Ese probador no toma un turno que lo pise, y
 //    a esa hora se ofrece el siguiente libre; si el bloqueo es de todos, esa hora no se ofrece.
 //  · mismo día: solo huecos que arrancan después de `ahora`.
-//  · evento hoy o mañana (decisión #8): ningún hueco y `derivar: evento_inminente`.
+//  · evento hoy, mañana o pasado mañana (decisión #8, 2 días desde el 10/10): ningún hueco y `derivar: evento_inminente`.
 //  · con la fecha del evento, nada el día del evento ni después (supuesto #24).
 //  · orden de urgencia (decisión #9, supuesto #21): con dias_reserva_urgencia = N, los N días
 //    que empiezan hoy quedan para los eventos que caen hasta hoy + N; a un evento más lejano,
@@ -30,7 +30,7 @@
 // llama. Las fechas van en la zona del negocio (NEGOCIO_TZ).
 
 import type { Db } from "../db.ts";
-import { ESTADOS_QUE_LIBERAN, type TipoTurno } from "../enums.ts";
+import { DIAS_EVENTO_INMINENTE, ESTADOS_QUE_LIBERAN, type TipoTurno } from "../enums.ts";
 import { type Franja, leerFranjas } from "../herramientas/horario_laboral.ts";
 import type { Agenda, Hueco, ResultadoAgenda } from "../herramientas/tipos.ts";
 import { fechaLocal, instanteLocal, MINUTOS_POR_HORA, MS_POR_MINUTO, sumarDias } from "../tiempo.ts";
@@ -108,7 +108,7 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
   }
   const hoy = fechaLocal(p.ahora, p.tz);
   if (p.fechaEvento !== null) {
-    if (p.fechaEvento >= hoy && p.fechaEvento <= sumarDias(hoy, 1)) return { huecos: [], derivar: "evento_inminente" };
+    if (p.fechaEvento >= hoy && p.fechaEvento <= sumarDias(hoy, DIAS_EVENTO_INMINENTE)) return { huecos: [], derivar: "evento_inminente" };
     if (p.fechaEvento < hoy) return { huecos: [] };
   }
 
@@ -256,11 +256,35 @@ async function leerOcupados(db: Db, desde: string, hasta: string, tz: string): P
 // Los días que el local no abre dentro del rango que se está consultando (cierres_agenda, de
 // paneles). Se piden acotados al rango y no enteros: la tabla puede tener feriados de años.
 async function leerCierres(db: Db, desde: string, hasta: string): Promise<ReadonlySet<string>> {
-  const filas = await db.consulta(
-    `select to_char(fecha, 'YYYY-MM-DD') as fecha from cierres_agenda where fecha between $1::date and $2::date`,
+  return new Set((await diasSinTurnos(db, desde, hasta)).keys());
+}
+
+// Posibles feriados (0098, pedido de Mateo 10/10): un feriado nacional que el equipo todavía no
+// decidió (local_abierto null) Lucía no lo ofrece, aunque el local no esté cerrado: recomienda otro
+// día. El que el equipo marcó «Local cerrado» está además en cierres_agenda; el que marcó «Local
+// abierto» es un día normal. Si la migración todavía no se aplicó, la tabla no existe y no hay
+// posibles feriados. Lo usan la agenda (sin huecos ese día), el contexto de Lucía (la lista de
+// próximos días y sus turnos) y el resumen de guardar_datos_cliente (que no confirma un turno así).
+export type DiaSinTurnos = { motivo: string; posibleFeriado: boolean };
+export async function diasSinTurnos(db: Db, desde: string, hasta: string): Promise<Map<string, DiaSinTurnos>> {
+  const dias = new Map<string, DiaSinTurnos>();
+  const cierres = await db.consulta<{ fecha: string; motivo: string | null }>(
+    `select to_char(fecha, 'YYYY-MM-DD') as fecha, motivo from cierres_agenda where fecha between $1::date and $2::date`,
     [desde, hasta],
   );
-  return new Set(filas.map((f) => String(f.fecha)));
+  for (const c of cierres) dias.set(String(c.fecha), { motivo: (c.motivo ?? "").trim(), posibleFeriado: false });
+  const [tabla] = await db.consulta<{ hay: boolean }>("select to_regclass('public.feriados_posibles') is not null as hay");
+  if (tabla?.hay) {
+    const feriados = await db.consulta<{ fecha: string; nombre: string; local_abierto: boolean | null }>(
+      `select to_char(fecha, 'YYYY-MM-DD') as fecha, nombre, local_abierto from feriados_posibles
+        where fecha between $1::date and $2::date and local_abierto is not true`,
+      [desde, hasta],
+    );
+    for (const f of feriados) {
+      if (!dias.has(String(f.fecha))) dias.set(String(f.fecha), { motivo: `Feriado: ${f.nombre}`, posibleFeriado: f.local_abierto === null });
+    }
+  }
+  return dias;
 }
 
 // Los horarios bloqueados del rango (bloqueos_agenda, 0067). La tabla guarda fecha + desde/hasta

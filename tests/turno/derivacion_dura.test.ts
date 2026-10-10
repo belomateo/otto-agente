@@ -8,13 +8,15 @@ const TZ = "America/Argentina/Cordoba";
 // Viernes 9/10/2026, 15:00 en Rosario.
 const AHORA = new Date("2026-10-09T18:00:00Z");
 
-Deno.test("evento hoy o mañana: deriva al local", () => {
+// Desde el 10/10 son 2 días (pedido de Mateo): hoy, mañana o pasado mañana.
+Deno.test("evento hoy, mañana o pasado mañana: deriva al local", () => {
   assertEquals(dura.derivacionDuraPorEventoInminente("2026-10-09", AHORA, TZ)?.motivo, "evento_inminente");
   assertEquals(dura.derivacionDuraPorEventoInminente("2026-10-10", AHORA, TZ)?.motivo, "evento_inminente");
+  assertEquals(dura.derivacionDuraPorEventoInminente("2026-10-11", AHORA, TZ)?.motivo, "evento_inminente");
 });
 
-Deno.test("evento pasado mañana, ya pasado o sin fecha: no deriva", () => {
-  assertEquals(dura.derivacionDuraPorEventoInminente("2026-10-11", AHORA, TZ), null);
+Deno.test("evento dentro de 3 días, ya pasado o sin fecha: no deriva", () => {
+  assertEquals(dura.derivacionDuraPorEventoInminente("2026-10-12", AHORA, TZ), null);
   assertEquals(dura.derivacionDuraPorEventoInminente("2026-10-08", AHORA, TZ), null);
   assertEquals(dura.derivacionDuraPorEventoInminente(null, AHORA, TZ), null);
 });

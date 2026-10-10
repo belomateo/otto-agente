@@ -45,7 +45,7 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
 | 18 hs antes | 🔧 | Plantilla `recordatorio_turno_18h` con botones. `recordatorio_enviado_at` | `turnos` |
 | Confirmación | 🧠→🔧 | Decisión de Mateo, 16/9: sin botón. Lucía entiende la intención de confirmar, venga como venga (respondiendo al recordatorio o en cualquier otro momento de la charla) y ejecuta `confirmar_turno`, que marca `confirmado=true` con `confirmado_por = 'cliente'`. "Reprogramar" → Lucía retoma con `reprogramar_turno` | `turnos.confirmado_at` |
 | Sin respuesta al recordatorio | 👤 | Aparece en Turnos con estado "sin confirmar"; el equipo decide llamar | panel |
-| Dar o mover un turno a mano | 👤 | Cualquiera del equipo, no solo un admin (Mateo, 5/10): «Nuevo turno» y «Mover» (otro horario, día o tipo) en Turnos, siempre entre los huecos reales. Mover vuelve el turno a "sin confirmar"; si el recordatorio del horario viejo ya había salido, el panel pide avisarle al cliente. Un cliente con el evento hoy o mañana (que Lucía no agenda) se agenda igual tildándolo | `turnos`, `historial_ediciones` |
+| Dar o mover un turno a mano | 👤 | Cualquiera del equipo, no solo un admin (Mateo, 5/10): «Nuevo turno» y «Mover» (otro horario, día o tipo) en Turnos, siempre entre los huecos reales. Mover vuelve el turno a "sin confirmar"; si el recordatorio del horario viejo ya había salido, el panel pide avisarle al cliente. Un cliente con el evento dentro de 2 días (que Lucía no agenda) se agenda igual tildándolo | `turnos`, `historial_ediciones` |
 | 30 min antes | 🔧→👤 | Cartel en todo el panel con los datos del turno (decisión #10). El OK de alguien del equipo lo cierra para todos y, si el turno seguía sin confirmar, lo confirma con `confirmado_por` = su email | `turnos.aviso_ok_at` |
 | En el local | 👤 | Turno de 45'; el asesor toma medidas; se reserva con el 100% (esto lo hace el equipo, Lucía nunca cobra) | el asesor marca "alquiló" en Turnos |
 | Prueba final | 🔧+👤 | Al marcar "alquiló", el sistema propone el turno de prueba final (15') un día antes del evento y lo agenda si el asesor confirma | `turnos` (tipo prueba_final) |
@@ -93,7 +93,7 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
 Motivos (enum): `reclamo`, `cliente_enojado` (el tono, no el contenido: lo detecta el
 clasificador aunque no diga "reclamo" ni nombre nada roto — pedido de Mateo, 16/9),
 `prenda_danada`, `corporativo`, `turno_urgente_sin_hueco`,
-`evento_inminente` (evento hoy o mañana: deriva siempre, decisión #8 del 14/9),
+`evento_inminente` (evento hoy, mañana o pasado mañana: deriva siempre, decisión #8 del 14/9, 2 días desde el 10/10),
 `descuento`, `dato_no_encontrado`, `pide_persona`, `devolucion_tardia` (quiere devolver el traje
 después del día hábil siguiente al evento, o después del lunes si el evento es el fin de semana:
 lo confirma el local, y el texto fijo le pasa su teléfono — Mateo, 0085, 5/10), `barandilla_doble`,

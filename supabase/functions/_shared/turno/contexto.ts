@@ -4,6 +4,7 @@
 // mensaje de sistema propio, justo después de prompt.md y antes del historial (STACK.md § 3:
 // "prompt.md (prefijo cacheable) + contexto del turno + historial, en ese orden").
 
+import { diasSinTurnos } from "../agenda/huecos.ts";
 import type { Db } from "../db.ts";
 import { ESTADOS_QUE_LIBERAN } from "../enums.ts";
 import { leerFicha } from "../herramientas/ficha.ts";
@@ -44,13 +45,22 @@ async function turnosActivosTexto(db: Db, clienteId: string, ahora: Date, tz: st
     [clienteId, ahora.toISOString(), [...ESTADOS_QUE_LIBERAN]],
   );
   if (filas.length === 0) return { texto: "No tiene ningún turno activo.", horas: [] };
+  // Un turno que quedó en un día cerrado o en un posible feriado (0098) se marca acá: Lucía le
+  // ofrece pasarlo a otro día en vez de confirmarlo (caso real del 9/10: «¿Trabajan? Es feriado»).
+  const fechas = filas.map((f) => fechaLocal(new Date(f.inicio), tz)).sort();
+  const sinTurnos = await diasSinTurnos(db, fechas[0], fechas[fechas.length - 1]);
   const horas: string[] = [];
   const texto = filas
     .map((f) => {
       const inicio = new Date(f.inicio);
       const h = horaLocal(inicio, tz);
       horas.push(h);
-      return `- turno_id ${f.id}: ${f.tipo}, ${fechaLarga(inicio, tz)} a las ${h}, ${f.estado}${f.confirmado ? " (confirmado)" : ""}`;
+      const dia = sinTurnos.get(fechaLocal(inicio, tz));
+      const ojo = dia
+        ? ` (OJO: ese día ${dia.posibleFeriado ? "es feriado" : "el local está cerrado"}${dia.motivo ? `, ${dia.motivo}` : ""}; ` +
+          "no se lo confirmes: ofrecele pasarlo a otro día con buscar_horarios y cambiar_turno)"
+        : "";
+      return `- turno_id ${f.id}: ${f.tipo}, ${fechaLarga(inicio, tz)} a las ${h}, ${f.estado}${f.confirmado ? " (confirmado)" : ""}${ojo}`;
     })
     .join("\n");
   return { texto, horas };
@@ -73,11 +83,9 @@ export const DIAS_DEL_CALENDARIO = 14;
 const hm = (min: number) => `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`;
 async function proximosDiasTexto(db: Db, ahora: Date, tz: string, horario: HorarioLocal[]): Promise<{ texto: string; horas: string[] }> {
   const hoy = fechaLocal(ahora, tz);
-  const cierres = await db.consulta<{ fecha: string; motivo: string | null }>(
-    `select to_char(fecha, 'YYYY-MM-DD') as fecha, motivo from cierres_agenda where fecha between $1::date and $2::date`,
-    [hoy, sumarDias(hoy, DIAS_DEL_CALENDARIO - 1)],
-  );
-  const cerrado = new Map(cierres.map((c) => [String(c.fecha), (c.motivo ?? "").trim()]));
+  // Días cerrados y posibles feriados (0098): el posible feriado no se ofrece ni se recomienda,
+  // pero tampoco se dice que el local cierra (el equipo todavía no lo decidió).
+  const sinTurnos = await diasSinTurnos(db, hoy, sumarDias(hoy, DIAS_DEL_CALENDARIO - 1));
   const lineas: string[] = [];
   for (let i = 0; i < DIAS_DEL_CALENDARIO; i++) {
     const ymd = sumarDias(hoy, i);
@@ -85,9 +93,14 @@ async function proximosDiasTexto(db: Db, ahora: Date, tz: string, horario: Horar
     const diaSemana = new Date(Date.UTC(a, m - 1, d)).getUTCDay();
     const h = horario.find((x) => x.diaSemana === diaSemana);
     const cuando = i === 0 ? " (hoy)" : i === 1 ? " (mañana)" : "";
-    const estado = cerrado.has(ymd)
-      ? `cerrado${cerrado.get(ymd) ? ` (${cerrado.get(ymd)})` : ""}`
-      : h ? `abre de ${hm(h.apertura)} a ${hm(h.cierre)}` : "cerrado";
+    const dia = sinTurnos.get(ymd);
+    const estado = dia && !dia.posibleFeriado
+      ? `cerrado${dia.motivo ? ` (${dia.motivo})` : ""}`
+      : !h
+      ? "cerrado"
+      : dia
+      ? `posible feriado (${dia.motivo.replace(/^Feriado: /, "")}): no ofrezcas ni recomiendes este día; si preguntan, es feriado y conviene venir otro día`
+      : `abre de ${hm(h.apertura)} a ${hm(h.cierre)}`;
     lineas.push(`- ${nombreDia(diaSemana)} ${d}/${m}${cuando}: ${estado}`);
   }
   return { texto: lineas.join("\n"), horas: describirHorarios(horario, []).horas };
@@ -117,8 +130,8 @@ export async function armarContextoDelTurno(
     horarioHoy.texto,
     "",
     `PRÓXIMOS ${DIAS_DEL_CALENDARIO} DÍAS (la agenda del local). Usala para saber qué fecha es «el sábado», «el lunes» o ` +
-    "«mañana», sin calcularla, y para contestar si un día abrimos: si no dice cerrado, ese día el local abre, aunque " +
-    "sea feriado. Los turnos libres de cada día los da buscar_horarios.",
+    "«mañana», sin calcularla, y para contestar si un día abrimos: si no dice cerrado ni posible feriado, ese día el " +
+    "local abre, aunque sea feriado. Los turnos libres de cada día los da buscar_horarios.",
     proximos.texto,
   ];
   if (p.diasDesdeUltimoMensaje !== null && p.diasDesdeUltimoMensaje >= UMBRAL_DIAS_REPRESENTACION) {

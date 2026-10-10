@@ -15,13 +15,24 @@ const NEGATIVAS = [
 // y ofrecer otro día. Antes se frenaban y, al segundo freno, terminaban en la disculpa con Lucía
 // apagada. Se mira oración por oración: la que habla del día cerrado no cuenta, las demás sí.
 const DIA_CERRADO = /\b(?:cerrad[oa]s?|feriados?|domingos?|cierre)\b/;
+// Ensayo del 10/10: «no hay descuento por dos alquileres» es una política, no falta de stock, y
+// «las 15:30 no están disponibles» o «el 10 y el 17 no hay turnos libres» son la agenda real si
+// buscar_horarios se consultó en este turno y el mismo mensaje ofrece otros horarios. Las dos se
+// frenaban y Lucía terminaba diciendo algo más vago, o borrando el dato útil.
+const NO_ES_STOCK = /\b(?:descuentos?|promos?|promociones?|envios?|cuotas)\b/;
+const HABLA_DE_AGENDA = /\b(?:turnos?|horarios?|lugar(?:es)?|libres?|disponibles?)\b|\d{1,2}[:.]\d{2}/;
+const OFRECE_HORARIO = /\b\d{1,2}[:.]\d{2}\b|\ba las \d{1,2}\b/;
 
 export const disponibilidadNegada: Barandilla = {
   nombre: "disponibilidad_negada", etapa: "reglas", accion: "rehacer",
-  evaluar({ texto }) {
+  evaluar({ texto, traza }) {
+    const buscoHorarios = traza.llamadas.some((l) => l.herramienta === "buscar_horarios" && l.ok);
+    const ofreceOtro = OFRECE_HORARIO.test(normalizar(texto));
     const negativa = oraciones(texto).some(({ texto: o }) => {
       const n = normalizar(o);
-      return !DIA_CERRADO.test(n) && NEGATIVAS.some((r) => r.test(n));
+      if (DIA_CERRADO.test(n) || NO_ES_STOCK.test(n)) return false;
+      if (buscoHorarios && ofreceOtro && HABLA_DE_AGENDA.test(n)) return false;
+      return NEGATIVAS.some((r) => r.test(n));
     });
     return negativa ? { salta: true, accion: "rehacer", motivo: "No afirmes que no tenés ni que no hay: no se confirma disponibilidad por acá. Si preguntan por un modelo, color o estilo, mandá el catálogo online (enviar_link, tipo web) y decile que la disponibilidad depende del talle y de la fecha, y se confirma en el turno con el asesor. Si es un turno que no encontró, buscá de nuevo sin la restricción o decile que le buscás otra fecha." } : NO_SALTA;
   },

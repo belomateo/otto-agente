@@ -375,10 +375,12 @@ ninguna derivación queda muda) un texto fijo aprobado (`texto_derivacion_reclam
 desde Configuración › Lucía) reemplaza esa despedida en vez de no mandar nada. Lucía también
 puede llamarlo directo con `derivar_a_persona` si lo nota a mitad de la charla.
 
-**Evento hoy o mañana** (decisión #8 de Mateo, 14/9): un alquiler con el evento hoy o
-mañana lo resuelve una persona, siempre. Se cuenta con la fecha del evento en hora de
-Argentina (`NEGOCIO_TZ`, supuesto #23); desde pasado mañana sigue el camino normal, con
-la reserva de urgencia de la agenda (supuesto #21). Es derivación dura: la decide código,
+**Evento dentro de 2 días** (decisión #8 de Mateo, 14/9; desde el 10/10 son 2 días,
+`DIAS_EVENTO_INMINENTE`): un alquiler con el evento hoy, mañana o pasado mañana lo resuelve
+una persona, siempre. Se cuenta con la fecha del evento en hora de Argentina (`NEGOCIO_TZ`,
+supuesto #23); desde el tercer día sigue el camino normal. La reserva de días para eventos
+cercanos (supuesto #21) quedó apagada el 10/10 (0098, `dias_reserva_urgencia = null`): Mateo
+pidió que se agende a cualquiera. Es derivación dura: la decide código,
 nunca el LLM, en cualquiera de estas puertas —el paso 4 del turno si la fecha ya está en
 la ficha; `buscar_horarios`, que no ofrece turnos (la agenda devuelve `derivar:
 evento_inminente` y la herramienta lo respeta, y además lo chequea con la fecha que
@@ -388,6 +390,15 @@ en `contexto_agente` (clave `texto_evento_inminente`, se edita en Configuración
 Lucía): «Te paso con un asesor del local para que te ayude con tu evento, y vamos a
 hacer lo posible por encontrarte un lugar en la agenda.» Lucía no escribe nada más en
 ese turno.
+
+**Posibles feriados** (0098, pedido de Mateo del 10/10): `feriados_posibles` tiene los
+feriados nacionales que quedan de 2026 y los de 2027 (los trasladables de 2027, «a
+confirmar»). Mientras el equipo no decide (`local_abierto` null), Lucía no ofrece ni
+recomienda ese día: la agenda no da huecos (`diasSinTurnos`, en `agenda/huecos.ts`) y el
+contexto lo marca «posible feriado», sin decir que el local cierra. En Turnos, un admin
+elige «Local abierto» (día normal) o «Local cerrado» (además crea el cierre en
+`cierres_agenda`). Un turno que ya estaba ese día o en un día cerrado no se confirma con el
+resumen de `guardar_datos_cliente`: Lucía ofrece moverlo.
 
 Derivación **por el LLM** (llama la tool, con un motivo de `MOTIVOS_DERIVACION_LLM`):
 no encuentra el dato tras buscarlo, descuento insistido, cliente pide una persona.

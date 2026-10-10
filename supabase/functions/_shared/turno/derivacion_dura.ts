@@ -10,12 +10,12 @@
 // qué molestaba: «¿tienen trajes para uniformar a los mozos del casamiento?» se iba a una persona
 // sin que Lucía lo viera.
 
-import type { MotivoDerivacion } from "../enums.ts";
+import { DIAS_EVENTO_INMINENTE, type MotivoDerivacion } from "../enums.ts";
 import { esEventoInminente } from "../herramientas/derivacion.ts";
 
 export type DerivacionDura = { motivo: MotivoDerivacion; porQue: string };
 
 export function derivacionDuraPorEventoInminente(fechaEvento: string | null, ahora: Date, tz: string): DerivacionDura | null {
   if (!esEventoInminente(fechaEvento, ahora, tz)) return null;
-  return { motivo: "evento_inminente", porQue: `la fecha del evento ya cargada (${fechaEvento}) es hoy o mañana` };
+  return { motivo: "evento_inminente", porQue: `la fecha del evento ya cargada (${fechaEvento}) es dentro de los próximos ${DIAS_EVENTO_INMINENTE} días` };
 }

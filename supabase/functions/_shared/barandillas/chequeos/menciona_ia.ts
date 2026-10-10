@@ -53,7 +53,10 @@ export const mencionaIa: Barandilla = {
   etapa: "reglas",
   accion: "rehacer",
   evaluar({ texto }) {
-    const n = normalizar(texto);
+    // «No me figura un turno a tu nombre» lo dice cualquiera en un mostrador (ensayo del 10/10):
+    // frenarlo hacía que Lucía pasara la charla al equipo en vez de preguntar a nombre de quién lo
+    // sacó. Sigue frenado «no me figura» para todo lo demás (un dato, un precio, en el sistema).
+    const n = normalizar(texto).replace(/\bno me figura\s+(?:ningun\s+|un\s+|tu\s+|el\s+|la\s+|una\s+)?(?:turno|reserva)\b/g, " ");
     const frase = FRASES_QUE_DELATAN.find((f) => contieneFrase(n, f));
     if (frase) {
       return {

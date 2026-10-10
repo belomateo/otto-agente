@@ -48,6 +48,14 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   /\b(?:chicos?|chicas?|nenes?|nenas?|ninos?|ninas?|hijos?|hijas?|pibes?)\s+de\s+\d{1,2}(?:\s+a\s+\d{1,2})?\b/g,
   /\b(?:usa|usaria|calza|ir|va|iria|queda|quedaria)\s+(?:un|el)\s+\d{1,2}(?:\s+o\s+(?:un\s+|el\s+)?\d{1,2})?\b/g,
   /\btalle\s+\d{1,3}\b/g, // "talle 4" o "talle 48"
+  // Talles dichos con palabras en el medio (ensayo del 10/10): «anoté tu talle aproximado de
+  // pantalón, 46» y «para el 56/58 de pantalón» se leían como precios de $46 y $58; Lucía tenía
+  // que rehacer el mensaje y se perdía el dato. Van antes de la regla de saco: «el 56» solo dejaba
+  // suelto el «/58». Sin palabras de precio en el medio: «talle M y el alquiler sale 150» sigue
+  // siendo un precio.
+  /\btalles?\b(?:(?!sale|cuesta|vale|precio|partir|desde|pesos)[^.?!$\d]){0,30}\d{2,3}(?:\s*\/\s*\d{2,3})?\b/g,
+  /\b\d{2,3}(?:\s*\/\s*\d{2,3})?\s+de\s+(?:pantalon|saco|camisa|cuello)\b/g,
+  /\b(?:pantalon|saco|camisa),?\s+(?:de\s+)?(?:talle\s+)?\d{2,3}(?:\s*\/\s*\d{2,3})?\b/g,
   // Talles de saco en número (8/10, el fragmento de talles dice "hasta el 68"): "el 62 entra",
   // "un 56", "hasta el 68". Del 44 al 68, que no es un precio que se diga así.
   /\b(?:el|un|tu|su|hasta\s+el)\s+(?:4[4-9]|5\d|6[0-8])\b(?!\s*(?:mil|lucas|k|%|pesos))/g,

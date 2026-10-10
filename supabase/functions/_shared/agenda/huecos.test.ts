@@ -39,6 +39,7 @@ const REGLAS_SIMULTANEAS: ReglasAgenda = { ...REGLAS, diasSimultaneos: [6] };
 const LUNES = "2030-06-03";
 const MARTES = "2030-06-04";
 const MIERCOLES = "2030-06-05";
+const JUEVES = "2030-06-06";
 const VIERNES = "2030-06-07";
 const SABADO = "2030-06-08";
 const DOMINGO = "2030-06-09";
@@ -173,16 +174,17 @@ Deno.test("h. cambiar una franja, los probadores o una duración cambia el resul
   assertEquals(horas(r2)[0], "13:45");
 });
 
-Deno.test("i. evento hoy o mañana: ningún hueco y derivar evento_inminente", () => {
+Deno.test("i. evento hoy, mañana o pasado mañana: ningún hueco y derivar evento_inminente", () => {
   const ahora = local(LUNES, "10:00");
-  for (const fechaEvento of [LUNES, MARTES]) {
+  // Desde el 10/10 son 2 días (DIAS_EVENTO_INMINENTE, pedido de Mateo): antes era hoy o mañana.
+  for (const fechaEvento of [LUNES, MARTES, MIERCOLES]) {
     const r = calcularHuecos(REGLAS, [], pedido(LUNES, VIERNES, { ahora, fechaEvento }));
     assertEquals(r, { huecos: [], derivar: "evento_inminente" }, fechaEvento);
   }
-  // Pasado mañana sigue el camino normal, y nada el día del evento ni después.
-  const r = calcularHuecos(REGLAS, [], pedido(LUNES, VIERNES, { ahora, fechaEvento: MIERCOLES }));
+  // Desde el tercer día sigue el camino normal, y nada el día del evento ni después.
+  const r = calcularHuecos(REGLAS, [], pedido(LUNES, VIERNES, { ahora, fechaEvento: JUEVES }));
   assertEquals(r.derivar, undefined);
-  assertEquals(dias(r), [LUNES, MARTES]);
+  assertEquals(dias(r), [LUNES, MARTES, MIERCOLES]);
   // Un evento que ya pasó no tiene huecos (buscar_horarios lo rechaza antes).
   assertEquals(calcularHuecos(REGLAS, [], pedido(LUNES, VIERNES, { ahora, fechaEvento: "2030-06-01" })), { huecos: [] });
 });

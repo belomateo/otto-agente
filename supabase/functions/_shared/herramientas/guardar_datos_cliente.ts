@@ -8,7 +8,8 @@
 // de las que escribe el equipo.
 
 import { AUTOR_LUCIA, DIA_O_NOCHE, ESTADOS_TURNO_ACTIVO, EVENTOS, ROLES_CLIENTE } from "../enums.ts";
-import { fechaLocal, horaLocal } from "../tiempo.ts";
+import { diasSinTurnos } from "../agenda/huecos.ts";
+import { fechaLarga, fechaLocal, horaLocal } from "../tiempo.ts";
 import { resumenTurno } from "./confirmacion.ts";
 import { actualizarFicha, CAMPOS_FICHA, formatoDeEmailValido, leerFicha, type Ficha } from "./ficha.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
@@ -79,8 +80,23 @@ export const guardarDatosCliente: Herramienta<Args> = {
         [ctx.cliente.id, [...ESTADOS_TURNO_ACTIVO], ctx.ahora.toISOString()],
       );
       if (turno) {
-        const ficha = await leerFicha(ctx.db, ctx.cliente.id);
         const inicio = new Date(turno.inicio);
+        // Un turno en un día cerrado o en un posible feriado no se confirma con el resumen: caso real
+        // del ensayo del 10/10, Lucía decía «el lunes 12 estamos cerrados» y enseguida salía el
+        // resumen «lunes 12 de octubre a las 11:30… ¡Te esperamos!». Lo que sigue es moverlo.
+        const dia = (await diasSinTurnos(ctx.db, fechaLocal(inicio, ctx.tz), fechaLocal(inicio, ctx.tz))).values().next().value;
+        if (dia) {
+          return {
+            ok: true,
+            datos: {
+              guardado: escritos,
+              turno_id: turno.id,
+              nota: `Guardado. Su turno del ${fechaLarga(inicio, ctx.tz)} cae en un día que ${dia.posibleFeriado ? "es feriado" : "el local está cerrado"}: ` +
+                "no se lo confirmes. Ofrecele pasarlo a otro día (buscar_horarios y, cuando elija, cambiar_turno).",
+            },
+          };
+        }
+        const ficha = await leerFicha(ctx.db, ctx.cliente.id);
         ctx.traza.horasDevueltas.push(horaLocal(inicio, ctx.tz));
         ctx.traza.resumenTurnoEmitido = true;
         return {
