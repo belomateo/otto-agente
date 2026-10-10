@@ -94,11 +94,12 @@ async function manejar(req: Request): Promise<Response> {
       return Response.json({ cliente_id: filaCliente.id, conversacion_id: conv.id, pausada: true, mensajes: [] });
     }
 
-    // El mismo prompt que el worker real: el de la base (prompt_vigente()), no el prompt.md que
-    // viaja con la función. Hallazgo del 25/9: once tandas de cambios del 19 al 23/9 estaban en la
-    // plantilla del repo y nunca llegaron a prompt_base. El emulador leía el archivo, así que los
-    // guiones daban bien, mientras el WhatsApp de verdad atendía con la versión del 17/9. Probar
-    // otra cosa que la que recibe el cliente es no probar.
+    // El mismo prompt que el worker real, por el mismo camino (promptDeLucia). Hallazgo del 25/9:
+    // once tandas de cambios del 19 al 23/9 estaban en la plantilla del repo y nunca llegaron a
+    // prompt_base; el emulador leía el archivo y el WhatsApp de verdad la base, así que los guiones
+    // daban bien mientras el cliente recibía la versión del 17/9. Probar otra cosa que la que recibe
+    // el cliente es no probar. Desde el 9/10 los dos leen primero prompt.md (pedido de Mateo); este
+    // emulador corre local y lo lee del disco, el worker lo lleva adentro (static_files).
     const { texto: prompt } = await promptDeLucia(db, ahora);
     const resultado = await correrTurno(db, {
       clienteId: filaCliente.id,
