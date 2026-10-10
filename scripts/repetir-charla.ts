@@ -90,6 +90,15 @@ try {
       where cliente_id = (select cliente_id from conversaciones where id = $2) and creado_at <= $3::timestamptz`,
     [clienteId, conversacionReal, puntos[0]],
   );
+  // Los que sacó DESPUÉS, en la misma charla que se repite, ocupaban el horario que se está
+  // ensayando: la Lucía del ensayo veía «ocupado» justo el horario que el cliente eligió (trabajo 3,
+  // 10/10). Se cancelan acá adentro; el rollback los deja como estaban.
+  await sql.query(
+    `update turnos set estado = 'cancelado', motivo_cancelacion = 'ensayo'
+      where cliente_id = (select cliente_id from conversaciones where id = $1) and creado_at > $2::timestamptz
+        and estado not in ('cancelado', 'no-vino')`,
+    [conversacionReal, puntos[0]],
+  );
   const prompt = promptBase
     ? (await sql.query("select prompt_vigente() as p")).rows[0].p as string
     : await Deno.readTextFile(new URL("../supabase/functions/_shared/prompt.md", import.meta.url));
