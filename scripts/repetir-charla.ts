@@ -20,6 +20,7 @@ import pg from "npm:pg@8.13.1";
 import { parse } from "jsr:@std/dotenv@0.225.5";
 import { type ClienteSql, dbDesde } from "../supabase/functions/_shared/db.ts";
 import { calendarioDeEnsayo } from "../supabase/functions/_shared/herramientas/tipos.ts";
+import { etiquetaDeAudio } from "../supabase/functions/_shared/turno/rafaga.ts";
 import { correrTurno } from "../supabase/functions/_shared/turno/turno.ts";
 
 const args = [...Deno.args];
@@ -99,17 +100,49 @@ try {
         and estado not in ('cancelado', 'no-vino')`,
     [conversacionReal, puntos[0]],
   );
+  // Y cada uno como estaba en ese momento, no como está hoy: un turno que el cliente canceló,
+  // confirmó o movió más tarde aparecía ya cancelado, confirmado o movido (trabajo 3, 10/10).
+  // historial_ediciones guarda cada versión reemplazada con SU fecha (el editado_at de esa versión):
+  // si la fila de hoy es posterior al punto, vale la última versión guardada hasta el punto. Se
+  // escribe sin triggers y solo en esta transacción: es el pasado, no una edición nueva, y la agenda
+  // de hoy (un feriado cargado después, por ejemplo) no la dejaría volver atrás.
+  const { rows: previos } = await sql.query(
+    `select distinct on (h.fila_id) h.fila_id::text as id, h.datos_anteriores as d
+       from historial_ediciones h join turnos t on t.id = h.fila_id
+      where h.tabla = 'turnos' and t.cliente_id = $1 and t.editado_at > $2::timestamptz
+        and h.editado_at <= $2::timestamptz
+      order by h.fila_id, h.editado_at desc`,
+    [clienteId, puntos[0]],
+  );
+  if (previos.length) {
+    await sql.query("set local session_replication_role = replica");
+    for (const p of previos) {
+      await sql.query(
+        `update turnos t set (estado, inicio, fin, probador, confirmado, confirmado_at, cancelado_at, motivo_cancelacion)
+           = (r.estado, r.inicio, r.fin, r.probador, r.confirmado, r.confirmado_at, r.cancelado_at, r.motivo_cancelacion)
+           from jsonb_populate_record(null::turnos, $2::jsonb) r where t.id = $1::uuid`,
+        [p.id, p.d],
+      );
+    }
+    await sql.query("set local session_replication_role = origin");
+  }
   const prompt = promptBase
     ? (await sql.query("select prompt_vigente() as p")).rows[0].p as string
     : await Deno.readTextFile(new URL("../supabase/functions/_shared/prompt.md", import.meta.url));
+  // Un audio ya transcripto se copia como texto con la misma etiqueta que le pone rafaga.ts: el
+  // archivo no viaja al cliente de prueba, y sin esto Lucía contestaba «no puedo leer esto» a un
+  // audio que en producción sí leyó (trabajo 3, 10/10).
   const copiar = (desde: string | null, hasta: string, soloCliente: boolean) =>
     sql.query(
       `insert into mensajes (conversacion_id, direccion, tipo, contenido, transcripcion, enviado_at)
-       select $1, direccion, tipo, contenido, transcripcion, enviado_at from mensajes
+       select $1, direccion,
+              case when tipo = 'audio' and transcripcion is not null then 'texto' else tipo end,
+              case when tipo = 'audio' and transcripcion is not null then $6 || transcripcion else contenido end,
+              transcripcion, enviado_at from mensajes
         where conversacion_id = $2 and enviado_at <= $3::timestamptz
           and ($4::timestamptz is null or enviado_at > $4::timestamptz)
           and (not $5 or direccion = 'entrante')`,
-      [conversacionId, conversacionReal, hasta, desde, soloCliente],
+      [conversacionId, conversacionReal, hasta, desde, soloCliente, etiquetaDeAudio("")],
     );
 
   let anterior: string | null = null;
