@@ -151,3 +151,39 @@ Deno.test("si Meta rechaza la plantilla, enviarPlantilla falla con el motivo", a
     "132001",
   );
 });
+
+// Aviso al equipo cuando Lucía pasa una charla (Mateo, 9/10): va al teléfono del local, no al cliente.
+const DERIVACION = "5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f";
+
+Deno.test("aviso_derivacion: quién es el cliente y el motivo dicho para una persona, con el texto de Meta", () => {
+  const p = armarPlantilla("aviso_derivacion", {
+    nombre: "Pato Gómez", inicio: null, referencia: DERIVACION, linkResena: null,
+    telefonoCliente: "5493415558862", motivo: "pide_persona",
+  }, TZ);
+  assert(!("falta" in p));
+  assertEquals(p.nombre, "aviso_derivacion");
+  assertEquals(p.idioma, "es_AR");
+  assertEquals(p.botones, []);
+  assertEquals(p.cuerpo, ["Pato Gómez (+54 9 3415558862)", "pidió hablar con una persona"]);
+  assertEquals(
+    p.texto,
+    "Lucía pasó una charla al equipo. Cliente: Pato Gómez (+54 9 3415558862). Motivo: pidió hablar con una persona. Respondele desde la Bandeja del panel.",
+  );
+});
+
+Deno.test("aviso_derivacion sale igual sin un nombre usable y con un motivo que no está en la lista (caso parecido)", () => {
+  // Un perfil que no es un nombre no frena el aviso: lo que importa es que alguien se entere.
+  const sinNombre = armarPlantilla("aviso_derivacion", {
+    nombre: "siempre te elijo", inicio: null, referencia: DERIVACION, linkResena: null,
+    telefonoCliente: "3415558862", motivo: "dato_no_encontrado",
+  }, TZ);
+  assert(!("falta" in sinNombre));
+  assertEquals(sinNombre.cuerpo, ["+54 9 3415558862", "Lucía no encontró el dato para responder"]);
+  // Meta rechaza variables con saltos de línea o muchos espacios: se aplanan.
+  const raro = armarPlantilla("aviso_derivacion", {
+    nombre: "Ana\n\nMaría", inicio: null, referencia: DERIVACION, linkResena: null,
+    telefonoCliente: null, motivo: "algo_nuevo",
+  }, TZ);
+  assert(!("falta" in raro));
+  assertEquals(raro.cuerpo, ["Ana María", "algo_nuevo"]);
+});

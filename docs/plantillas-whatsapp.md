@@ -74,6 +74,25 @@ El texto tiene que quedar igual al de `TEXTO_RECONTACTO_2` en `_shared/whatsapp/
 (la charla guarda lo que recibió el cliente). Si en Meta se cambia una palabra, cambiarla también
 ahí.
 
+## 5. `aviso_derivacion` — al equipo, cuando Lucía pasa una charla (Mateo, 9/10)
+
+La única que **no va al cliente**: le avisa al equipo que Lucía le pasó una charla. Hasta el 9/10
+la derivación solo se veía en el panel y al cliente se le decía «ya les avisé» sin que nadie avisara.
+
+- **A quién:** al teléfono del equipo, el secreto `DERIVACION_ALQUILER_TEL` de las funciones.
+- **Cuándo sale:** una sola vez por derivación, al minuto, de 9 a 21. Lo que se deriva de noche sale
+  junto a las 9 (hasta 14 horas para atrás). No sale si la derivación ya se marcó atendida.
+- **Categoría en Meta:** utilidad. **Idioma:** español (Argentina), `es_AR`.
+- **Nombre exacto:** `aviso_derivacion` (si se registra con otro nombre, no sale).
+- **Variables:** `{{1}}` el cliente, con nombre y teléfono (ejemplo para Meta: «Juan (+54 9 341 555 1234)»)
+  · `{{2}}` el motivo dicho para una persona (ejemplo: «pidió hablar con una persona»). Sin botones.
+
+> Lucía pasó una charla al equipo. Cliente: {{1}}. Motivo: {{2}}. Respondele desde la Bandeja del panel.
+
+Mientras Meta no la apruebe, o falte el secreto, no sale nada: cron-envios lo dice en su respuesta.
+No queda como mensaje de la charla (Lucía lo leería como algo que le dijo al cliente): queda en la
+bitácora. El texto tiene que quedar igual al de `TEXTO_AVISO_DERIVACION` en `plantillas.ts`.
+
 ## Cómo se escribieron
 
 - Con la voz de Lucía: voseo, cálida, sin presionar, una sola pregunta y al final.

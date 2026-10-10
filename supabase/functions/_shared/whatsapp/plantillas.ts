@@ -1,4 +1,4 @@
-// Las tres plantillas de WhatsApp del hito 1.14, tal como se cargan en Meta
+// Las plantillas de WhatsApp del hito 1.14 (más el aviso al equipo del 9/10), tal como se cargan en Meta
 // (docs/plantillas-whatsapp.md): nombre, idioma, las variables del cuerpo en orden y el texto
 // como le llega al cliente, para guardarlo en la charla: así Lucía ve qué se le mandó cuando el
 // cliente conteste.
@@ -15,11 +15,15 @@
 // botones, alcanza con llenarlo. Mandar un component de botón para una plantilla registrada SIN
 // botones hace que Meta rechace el envío, así que acá va vacío siempre.
 
+import type { MotivoDerivacion } from "../enums.ts";
 import { nombreUsable } from "../nombre.ts";
 import { fechaLarga, horaLocal } from "../tiempo.ts";
 import type { PlantillaAEnviar } from "./enviar.ts";
+import { telefonoParaMeta } from "./telefono.ts";
 
-export const TIPOS_ENVIO = ["recordatorio_18h", "agradecimiento_resena", "recontacto_1", "recontacto_2"] as const;
+// aviso_derivacion (Mateo, 9/10) es la única que NO va al cliente: le avisa al equipo que Lucía le
+// pasó una charla (PROCESOS.md § 4, paso 4). La manda cron-envios al teléfono del equipo.
+export const TIPOS_ENVIO = ["recordatorio_18h", "agradecimiento_resena", "recontacto_1", "recontacto_2", "aviso_derivacion"] as const;
 export type TipoEnvio = typeof TIPOS_ENVIO[number];
 export const esTipoEnvio = (v: unknown): v is TipoEnvio => (TIPOS_ENVIO as readonly unknown[]).includes(v);
 
@@ -35,6 +39,7 @@ export const NOMBRE_PLANTILLA: Record<TipoEnvio, string> = {
   agradecimiento_resena: "agradecimiento",
   recontacto_1: "recontacto_cliente",
   recontacto_2: "recontacto_cliente_2",
+  aviso_derivacion: "aviso_derivacion",
 };
 export const IDIOMA_PLANTILLAS = "es_AR";
 
@@ -47,8 +52,11 @@ const LINK_RESENA_EN_PLANTILLA = "https://g.page/r/CYt3m6AmKYylEBM/review";
 export type DatosEnvio = {
   nombre: string | null;
   inicio: Date | null; // el turno (recordatorio)
-  referencia: string; // el turno o la charla: queda en envios_programados, ya no en un botón
+  referencia: string; // el turno, la charla o la derivación: queda en envios_programados
   linkResena: string | null;
+  // Solo para aviso_derivacion: de quién es la charla y por qué se pasó.
+  telefonoCliente?: string | null;
+  motivo?: string | null;
 };
 
 export type Plantilla = PlantillaAEnviar & { texto: string };
@@ -73,6 +81,10 @@ function horaDePlantilla(fecha: Date, tz: string): string {
 }
 
 export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string): Plantilla | { falta: string } {
+  // El aviso al equipo sale aunque el cliente no tenga un nombre usable: lo importante es que
+  // alguien se entere. Va antes del chequeo del nombre, que es para los mensajes al cliente.
+  if (tipo === "aviso_derivacion") return avisoDerivacion(d);
+
   // Con un perfil que no es un nombre («siempre te elijo» salía «¡Hola Siempre!», 4/10): el
   // recontacto, que es publicidad, no sale; el recordatorio y el agradecimiento, que el cliente
   // espera, salen igual con lo que haya.
@@ -141,6 +153,58 @@ export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string): Plan
       "Tenemos la agenda abierta y podemos coordinar un turno para que vengas a probar las " +
       "opciones disponibles y te asesoremos con el look. 🤵‍♂️\n\n" +
       "¿Seguís buscando? ¿Querés que agendemos un turno?",
+  };
+}
+
+// aviso_derivacion (Mateo, 9/10): al equipo, cuando Lucía le pasa una charla. Hasta hoy la
+// derivación solo se veía en el panel y Lucía le decía al cliente «ya les avisé» sin que nadie
+// avisara (PROCESOS.md § 4, paso 4). El cuerpo tal como se registra en Meta (UTILITY, es_AR):
+// {{1}} = quién (nombre y teléfono del cliente), {{2}} = el motivo dicho para una persona.
+export const TEXTO_AVISO_DERIVACION =
+  "Lucía pasó una charla al equipo. Cliente: {{1}}. Motivo: {{2}}. Respondele desde la Bandeja del panel.";
+
+// El motivo de la derivación (enum) como lo entiende alguien del local. Record sobre el enum: si
+// se suma un motivo, esto no compila hasta que tenga su frase.
+export const MOTIVO_PARA_EL_EQUIPO: Record<MotivoDerivacion, string> = {
+  reclamo: "un reclamo",
+  cliente_enojado: "el cliente está molesto",
+  prenda_danada: "una prenda que volvió dañada",
+  corporativo: "un pedido para empresa o uniformes",
+  turno_urgente_sin_hueco: "necesita un turno urgente y no hay lugar",
+  evento_inminente: "el evento es hoy o mañana",
+  descuento: "pide un descuento",
+  dato_no_encontrado: "Lucía no encontró el dato para responder",
+  pide_persona: "pidió hablar con una persona",
+  devolucion_tardia: "quiere devolver el traje más tarde",
+  barandilla_doble: "Lucía no pudo armar la respuesta",
+  sin_respuesta: "quedó sin respuesta",
+  timeout: "Lucía tardó demasiado en responder",
+  fallo_tecnico: "hubo una falla técnica",
+};
+
+// Meta rechaza una variable con saltos de línea, tabulaciones o más de 4 espacios seguidos.
+const paraVariable = (s: string) => s.replace(/\s+/g, " ").trim().slice(0, 120);
+
+// "5493415551234" → "+54 9 3415551234": que el equipo lo pueda copiar y buscar.
+function telefonoLegible(crudo: string | null | undefined): string | null {
+  const d = telefonoParaMeta(crudo);
+  if (!d) return null;
+  return d.startsWith("549") ? `+54 9 ${d.slice(3)}` : `+${d}`;
+}
+
+function avisoDerivacion(d: DatosEnvio): Plantilla {
+  const nombre = nombreUsable(d.nombre);
+  const telefono = telefonoLegible(d.telefonoCliente);
+  const quien = paraVariable(nombre && telefono ? `${nombre} (${telefono})` : nombre ?? telefono ?? "sin nombre ni teléfono");
+  const motivo = paraVariable(
+    (d.motivo && MOTIVO_PARA_EL_EQUIPO[d.motivo as MotivoDerivacion]) || d.motivo || "sin motivo anotado",
+  );
+  return {
+    nombre: NOMBRE_PLANTILLA.aviso_derivacion,
+    idioma: IDIOMA_PLANTILLAS,
+    botones: [],
+    cuerpo: [quien, motivo],
+    texto: TEXTO_AVISO_DERIVACION.replace("{{1}}", quien).replace("{{2}}", motivo),
   };
 }
 

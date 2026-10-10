@@ -429,15 +429,15 @@ la charla; los pasos 4a/4b no llaman a `derivar()` de nuevo con `yaDerivada`, so
 anotan en la bitácora y siguen). `resultado.derivo` queda `false` en los dos casos: no
 es un evento de derivación, es simplemente no meterse o seguir ayudando.
 
-**Pendiente (hallazgo de logica, 16/9):** el aviso por WhatsApp al número del canal
-de alquiler que dice este párrafo todavía no está implementado en ningún lado —
-`derivaciones.destino_tel` se escribe (`registrarDerivacion`,
-`_shared/herramientas/derivacion.ts`) pero nada lo lee para mandar nada. El turno ya
-devuelve todo lo necesario (`ResultadoTurno.avisoEquipo: { motivo, derivacionId }`,
-y `derivacionTel` ya es un parámetro de `correrTurno`); falta el paso de enviar, que
-va en `worker/atender.ts` (logica) después de que `correrTurno` devuelve. Hasta que
-eso exista, una derivación se ve en el panel (Atención humana) pero no empuja ningún
-aviso: quien esté del otro lado tiene que estar mirando la pestaña.
+**Aviso al equipo (9/10, pendiente desde el 16/9):** cada derivación pendiente le
+llega por WhatsApp al teléfono del equipo (secreto `DERIVACION_ALQUILER_TEL`) con la
+plantilla `aviso_derivacion` (nombre y teléfono del cliente y el motivo dicho para una
+persona). No lo manda el worker sino `cron-envios`, por el mismo camino que los
+recordatorios: `envios_pendientes('aviso_derivacion')` elige las derivaciones de las
+últimas 14 horas sin avisar, de 9 a 21; `envio_reservar` evita que salga dos veces; y
+`envio_terminar` lo deja en la bitácora de la charla, nunca como mensaje de la charla
+(0097, cron `envios-aviso-derivacion` cada minuto). Sin el secreto o sin la plantilla
+aprobada en Meta no sale nada: la derivación se ve igual en el panel.
 
 ---
 

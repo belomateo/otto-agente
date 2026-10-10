@@ -1,5 +1,6 @@
 // Envíos por plantilla de WhatsApp (hito 1.14): el recordatorio 24 hs antes del turno, el
-// agradecimiento con pedido de reseña y los dos recontactos. Lo llaman los crons de 0022 con
+// agradecimiento con pedido de reseña, los dos recontactos y, desde el 9/10, el aviso al equipo
+// cuando Lucía pasa una charla (aviso_derivacion, 0097). Lo llaman los crons de 0022 con
 // x-worker-secret y {tipo}. A quién le toca lo decide la base (envios_pendientes); acá se arma
 // cada plantilla, se reserva el envío (así no sale dos veces aunque dos corridas se pisen), se
 // manda y se registra (envio_terminar: mensaje en la charla, bitácora y, en el recordatorio,
@@ -21,6 +22,9 @@ const WA = {
   token: Deno.env.get("WA_ACCESS_TOKEN") ?? "",
   phoneNumberId: Deno.env.get("WA_PHONE_NUMBER_ID") ?? "",
 };
+// A quién le llega el aviso de derivación: el teléfono del equipo (el mismo secreto que el worker
+// guarda en derivaciones.destino_tel). Sin él, el aviso no sale y la respuesta del cron lo dice.
+const EQUIPO_TEL = telefonoParaMeta(Deno.env.get("DERIVACION_ALQUILER_TEL"));
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
@@ -79,6 +83,15 @@ async function plantillaAprobada(nombre: string): Promise<boolean> {
   }
 }
 
+// El motivo de cada derivación a avisar (envios_pendientes devuelve las mismas columnas para todos
+// los tipos: referencia es la derivación, teléfono y nombre son los del cliente).
+async function motivosDeDerivacion(ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const { data, error } = await supabase.from("derivaciones").select("id, motivo").in("id", ids);
+  if (error) throw new Error(`derivaciones: ${error.message}`);
+  return new Map((data ?? []).map((f) => [String(f.id), String(f.motivo)]));
+}
+
 async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
   if (tipo === "recontacto_2" && !(await plantillaAprobada(NOMBRE_PLANTILLA.recontacto_2))) {
     return {
@@ -86,15 +99,30 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
       omitidos: [`la plantilla ${NOMBRE_PLANTILLA.recontacto_2} todavía no está aprobada en Meta: el segundo recontacto queda en pausa`],
     };
   }
+  const aviso = tipo === "aviso_derivacion";
+  if (aviso && !EQUIPO_TEL) {
+    return {
+      tipo, candidatos: 0, enviados: 0, errores: 0, sin_registrar: [] as string[],
+      omitidos: ["falta el teléfono del equipo (secreto DERIVACION_ALQUILER_TEL): el aviso de derivación queda en pausa"],
+    };
+  }
   const { data, error } = await supabase.rpc("envios_pendientes", { p_tipo: tipo, p_tz: TZ });
   if (error) throw new Error(`envios_pendientes(${tipo}): ${error.message}`);
   const candidatos = (data ?? []) as Candidato[];
   const r = { tipo, candidatos: candidatos.length, enviados: 0, errores: 0, omitidos: [] as string[], sin_registrar: [] as string[] };
+  // El aviso usa una plantilla nueva: mientras Meta no la apruebe, no sale. Se pregunta solo si hay
+  // algo para avisar, así el cron de cada minuto no le consulta a Meta en vano.
+  if (aviso && candidatos.length > 0 && !(await plantillaAprobada(NOMBRE_PLANTILLA.aviso_derivacion))) {
+    r.omitidos.push(`la plantilla ${NOMBRE_PLANTILLA.aviso_derivacion} todavía no está aprobada en Meta: el aviso queda en pausa`);
+    return r;
+  }
+  const motivos = aviso ? await motivosDeDerivacion(candidatos.map((c) => c.referencia)) : new Map<string, string>();
 
   for (const c of candidatos) {
     // Antes de reservar el envío: sin un número válido, Meta lo rechaza igual (2/10: los turnos
     // importados de doyTurnos tienen "sin teléfono · Nombre"). Se saltea y queda en omitidos.
-    const telefono = telefonoParaMeta(c.telefono);
+    // El aviso de derivación va al equipo; el resto, al cliente.
+    const telefono = aviso ? EQUIPO_TEL : telefonoParaMeta(c.telefono);
     if (!telefono) {
       r.omitidos.push(`${c.referencia}: sin teléfono válido`);
       continue;
@@ -104,6 +132,8 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
       inicio: c.inicio ? new Date(c.inicio) : null,
       referencia: c.referencia,
       linkResena,
+      telefonoCliente: c.telefono,
+      motivo: motivos.get(c.referencia) ?? null,
     }, TZ);
     if ("falta" in plantilla) {
       r.omitidos.push(`${c.referencia}: falta ${plantilla.falta}`);

@@ -71,11 +71,13 @@ Tiempo objetivo: < 25 s. Si pasa, derivación con texto fijo.
 2. 🔧 Se crea la fila en `derivaciones` con motivo (enum), resumen del extractor y
    últimos 5 mensajes.
 3. 🔧 Se pausa la conversación para Lucía.
-4. 🔧 **Pendiente** (hallazgo de logica, 16/9): se avisa por WhatsApp al número del
-   canal de alquiler: «Nueva derivación: <motivo> — <nombre> — <resumen>. Panel:
-   <link>». `derivaciones.destino_tel` ya se guarda; falta el paso que manda el
-   mensaje (`worker/atender.ts`, con `ResultadoTurno.avisoEquipo` que el turno ya
-   devuelve). Hasta entonces, la derivación solo se ve en el panel.
+4. 🔧 Se avisa por WhatsApp al teléfono del equipo (secreto `DERIVACION_ALQUILER_TEL`)
+   con la plantilla `aviso_derivacion`: «Lucía pasó una charla al equipo. Cliente:
+   <nombre (teléfono)>. Motivo: <motivo>. Respondele desde la Bandeja del panel.» Lo manda
+   `cron-envios` (cron `envios-aviso-derivacion`, cada minuto, 0097), una sola vez por
+   derivación y de 9 a 21: lo de la noche sale a las 9. Sin el secreto o sin la
+   plantilla aprobada en Meta no sale nada, y la derivación solo se ve en el panel
+   (pedido de Mateo, 9/10; pendiente desde el 16/9).
 5. 🔧 Al cliente se le manda un mensaje: el `mensaje_al_cliente` que escribió Lucía,
    o si es reclamo, cliente enojado o descuento, un texto fijo aprobado en su lugar
    (para que siga una persona sin discutir). Pedido de Mateo, 19/9: ninguna
