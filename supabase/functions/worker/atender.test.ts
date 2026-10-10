@@ -301,7 +301,8 @@ prueba("después de un turno largo con otro mensaje en la cola, pide relevo en v
 
   assertEquals(await atenderCola(espia.db, d, "worker-prueba"), 1); // el segundo no entra en esta llamada
   assert(espia.pidioRelevo());
-  assertEquals((await trabajos(c, TEL)).map((t) => t.estado), ["hecho", "pendiente"]);
+  // Los dos trabajos se crean en la misma transacción (mismo creado_at): el orden no importa.
+  assertEquals((await trabajos(c, TEL)).map((t) => t.estado).sort(), ["hecho", "pendiente"]);
 });
 
 prueba("con la cola vacía no pide relevo", async (c) => {
