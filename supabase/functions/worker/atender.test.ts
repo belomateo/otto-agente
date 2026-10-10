@@ -8,7 +8,7 @@
 import pg from "npm:pg@8.13.1";
 import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import { calendarioPropio } from "../_shared/agenda/calendario_propio.ts";
-import { type ClienteSql, type Db, dbDesde } from "../_shared/db.ts";
+import { type ClienteSql, type Db, dbDesde, type Fila } from "../_shared/db.ts";
 import type { ParametrosTurno, ResultadoTurno } from "../_shared/turno/turno.ts";
 import { HASTA_UN_MENSAJE } from "../_shared/whatsapp/preparar.ts";
 import { procesarTrabajo,
@@ -271,6 +271,46 @@ prueba("un mensaje que llega después de que arrancó el turno no se absorbe: ti
   assertEquals(await atenderCola(c.db, d, "worker-prueba"), 2);
   assertEquals(turno.llamadas.length, 2);
   assertEquals((await trabajos(c, TEL)).filter((t) => t.payload.absorbido_por).length, 0);
+});
+
+// 9/10 (hallazgo del trabajo 1): con el modelo que piensa, después de un turno largo ya no entra otro
+// en la misma llamada, y el segundo mensaje del cliente esperaba al cron de cada minuto. Ahora el
+// worker pide relevo (despertar_worker, 0096); con la cola vacía, no.
+function espiar(c: Contexto) {
+  const consultas: string[] = [];
+  const db: Db = {
+    consulta<T extends Fila = Fila>(q: string, v?: unknown[]): Promise<T[]> {
+      consultas.push(q);
+      return c.db.consulta<T>(q, v);
+    },
+  };
+  return { db, pidioRelevo: () => consultas.some((q) => q.includes("select despertar_worker()")) };
+}
+
+prueba("después de un turno largo con otro mensaje en la cola, pide relevo en vez de esperar al cron (0096)", async (c) => {
+  await c.sql.query(await Deno.readTextFile(new URL("../../migrations/0096_worker_pide_relevo.sql", import.meta.url)));
+  await mensajeDelCliente(c, TEL, "hola");
+  await mensajeDelCliente(c, TEL, "y cuanto sale?", 20); // llega después del arranque: su propio turno
+  const { d, reloj: r } = armar(c);
+  const turnoNormal = d.turno;
+  d.turno = async (db, p) => {
+    await r.dormir(20_000); // el modelo pensó 20 s
+    return turnoNormal(db, p);
+  };
+  const espia = espiar(c);
+
+  assertEquals(await atenderCola(espia.db, d, "worker-prueba"), 1); // el segundo no entra en esta llamada
+  assert(espia.pidioRelevo());
+  assertEquals((await trabajos(c, TEL)).map((t) => t.estado), ["hecho", "pendiente"]);
+});
+
+prueba("con la cola vacía no pide relevo", async (c) => {
+  await mensajeDelCliente(c, TEL, "hola");
+  const { d } = armar(c);
+  const espia = espiar(c);
+
+  assertEquals(await atenderCola(espia.db, d, "worker-prueba"), 1);
+  assert(!espia.pidioRelevo());
 });
 
 prueba("espera 4 s de quietud desde el último mensaje antes de correr el turno", async (c) => {

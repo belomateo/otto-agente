@@ -715,13 +715,17 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
 export async function atenderCola(db: Db, d: Dependencias, worker: string): Promise<number> {
   const inicio = d.ahora().getTime();
   let procesados = 0;
+  let colaVacia = false;
   while (entraOtroTrabajo(procesados, d.ahora().getTime() - inicio)) {
     // setof: la cola vacía (o solo con charlas que ya tienen un turno en curso) da cero filas.
     const [t] = await db.consulta<Trabajo>(
       "select id::text as id, conversacion_id::text as conversacion_id, payload from cola_tomar_uno($1)",
       [worker],
     );
-    if (!t) break;
+    if (!t) {
+      colaVacia = true;
+      break;
+    }
     try {
       await procesarTrabajo(db, t, d);
       await db.consulta("select cola_terminar($1::uuid, true)", [t.id]);
@@ -732,5 +736,22 @@ export async function atenderCola(db: Db, d: Dependencias, worker: string): Prom
     }
     procesados++;
   }
+  // Se fue por tiempo (o por MAX_POR_LLAMADA) y no porque se vació la cola: pide otro worker. Con
+  // el modelo que piensa, después de un turno de más de 13 s ya no entra otro en esta llamada, y el
+  // segundo mensaje que el cliente mandó mientras Lucía pensaba quedaba esperando al cron de cada
+  // minuto (hallazgo del trabajo 1, 9/10: 97 veces en 10 días). despertar_worker (0096) solo llama
+  // si de verdad queda algo pendiente.
+  if (!colaVacia && procesados > 0) await pedirRelevo(db);
   return procesados;
+}
+
+async function pedirRelevo(db: Db): Promise<void> {
+  try {
+    // Primero se pregunta si existe: sin 0096 aplicada, llamarla tiraría un error que, adentro de
+    // una transacción (las pruebas), la deja inservible. Sin ella lo levanta el cron de contención.
+    const [f] = await db.consulta<{ hay: boolean }>("select to_regprocedure('despertar_worker()') is not null as hay");
+    if (f?.hay) await db.consulta("select despertar_worker()");
+  } catch (e) {
+    console.error("worker: no se pudo pedir otro worker", mensajeDeError(e));
+  }
 }

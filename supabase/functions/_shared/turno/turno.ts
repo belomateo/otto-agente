@@ -238,10 +238,12 @@ export type ParametrosTurno = {
   // (derivar_a_persona con motivo cliente_enojado, o pide_persona.ts), y para cualquier otra cosa
   // sigue el turno normal, contestando.
   yaDerivada?: boolean;
-  // El prompt ya armado. Lo manda el worker, que lo saca de la base (prompt_vigente(), 0050) para
-  // que lo que la dueña edita en el panel le llegue a Lucía sin volver a publicar. Si no viene, se
-  // usa el prompt.md que viaja adentro de la función.
+  // El prompt ya armado. Lo manda el worker (promptDeLucia: desde el 9/10, primero el prompt.md que
+  // viaja con la función y la base de respaldo). Si no viene, se usa el prompt.md directo.
   prompt?: string;
+  // Solo para pruebas: cuánto tiene el modelo para consultar y contestar (por defecto
+  // LIMITE_TURNO_MS). Con 0 se prueba qué pasa cuando se queda sin tiempo, sin esperar 75 s.
+  limiteTurnoMs?: number;
   // El bucket privado de adjuntos (mismo `d.adjuntos` que ya usa el worker para las fotos del
   // mostrador), para leer los audios/imágenes que mandó el cliente (medios.ts). Sin esto (el
   // emulador no tiene Storage ni Meta), cualquier adjunto queda como "no legible" — mismo
@@ -251,13 +253,17 @@ export type ParametrosTurno = {
 };
 
 export async function correrTurno(db: Db, p: ParametrosTurno): Promise<ResultadoTurno> {
-  const limiteMs = Date.now() + LIMITE_TURNO_MS;
+  const limiteMs = Date.now() + (p.limiteTurnoMs ?? LIMITE_TURNO_MS);
   const eventos: EventoAgente[] = [];
   const llamadasLlm: LlamadaLlm[] = [];
   let resultado: ResultadoTurno | undefined;
   // Se llena en el try (queda [] si derivó por código antes de leer historial); lo usa el
   // extractor en el finally, con la charla completa y no solo el último intercambio (ver ahí).
   let historial: MensajeChat[] = [];
+  // El modelo se quedó sin tiempo (ver ultimoIntento): el extractor del finally no corre, porque
+  // si OpenAI está colgado puede sumar 41 s más (dos intentos de 20) y el trabajo se pasaría del
+  // límite de la función, que corta antes de mandar (hallazgo del trabajo 1, 9/10).
+  let seAgotoElTiempo = false;
 
   // Paso 3 — agrupar ráfaga: todo lo que el cliente mandó desde la última respuesta de Lucía
   // (o desde el principio) hasta ahora, ya insertado en `mensajes` por quien llamó a esto. Desde
@@ -473,6 +479,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     const ultimoIntento = async (rr: ResultadoPrincipal): Promise<ResultadoTurno> => {
       eventos.push(...eventosDeLaTraza(ctxHerramientas.traza));
       const motivo = rr.seCortoPorTiempo ? "timeout" : "sin_respuesta";
+      if (rr.seCortoPorTiempo) seAgotoElTiempo = true;
       eventos.push({ tipo: "error", detalle: { etapa: "principal", motivo, agotoIteraciones: rr.agotoIteraciones, seCortoPorTiempo: rr.seCortoPorTiempo } });
       const efectosMensajes = mensajesDeEfectos(rr.efectos);
       const imagenes = rr.efectos.flatMap((e) => e.imagenes ?? []);
@@ -602,7 +609,9 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     // texto de este turno (nada nuevo, o supuesto #33) no hay nada que el cliente haya dicho de
     // sí mismo para leer: no tiene sentido pagar un llamado que no puede extraer nada nuevo
     // (hallazgo propio, 15/9: antes se llamaba igual, con "Cliente: " vacío).
-    if (mensaje) {
+    if (mensaje && seAgotoElTiempo) {
+      eventos.push({ tipo: "pensamiento", detalle: { etapa: "extraer", nota: "salteado: el modelo se quedó sin tiempo en este turno; lo levanta el próximo, que lee la charla completa" } });
+    } else if (mensaje) {
       try {
         const textoLucia = resultado ? resultado.mensajesAlCliente.join("\n") : "";
         const turnoActual = `Cliente: ${mensaje}` + (textoLucia ? `\nLucía: ${textoLucia}` : "");

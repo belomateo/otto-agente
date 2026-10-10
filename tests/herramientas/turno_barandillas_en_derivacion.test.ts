@@ -341,6 +341,30 @@ prueba("si ni el último intento contesta: sale el texto de demora, sin derivar 
   assertEquals([conv.estado, conv.lucia_activa], ["activa", true]);
 });
 
+// Hallazgo del trabajo 1 (9/10): si el modelo se quedó sin tiempo, OpenAI puede estar colgado y el
+// extractor de la ficha sumaría hasta 41 s, pasando el trabajo del límite de la función (que corta
+// antes de mandar). En ese turno la ficha no se toca; el próximo la levanta con la charla completa.
+prueba("si el modelo se queda sin tiempo, contesta con el último intento y no llama al extractor de la ficha", async ({ ctx, sql, conversacionId }) => {
+  await insertarEntrante(sql, conversacionId, "hola, me caso el 20 de diciembre");
+  const pedidos: string[] = [];
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    if (body.response_format?.json_schema?.name === "ficha") {
+      pedidos.push("ficha");
+      return Promise.resolve(respuestaChat({ contenido: "{}" }));
+    }
+    pedidos.push(String(body.tool_choice));
+    return Promise.resolve(respuestaChat({ contenido: "Felicitaciones! Contame qué tipo de traje buscás." }));
+  }) as unknown as typeof fetch;
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher, limiteTurnoMs: 0,
+  });
+  assertEquals(resultado.mensajesAlCliente, ["Felicitaciones! Contame qué tipo de traje buscás."]);
+  assertEquals(pedidos, ["none"]); // solo el último intento: ni la vuelta normal ni el extractor
+  assertEquals(await contar(sql, "select count(*)::int as n from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = 'extraer' and detalle->>'nota' like 'salteado%'", [conversacionId]), 1);
+});
+
 // Verificación pedida por logica, 16/9: cuando una barandilla de "rehacer" (acá,
 // precio_sin_herramienta) vuelve a saltar después del reintento, ¿el turno manda un texto vacío
 // sin avisarle a nadie, o deriva de verdad? Fuerza al principal a decir SIEMPRE un precio sin
