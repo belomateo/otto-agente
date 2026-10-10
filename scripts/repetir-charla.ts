@@ -81,6 +81,15 @@ try {
     "insert into conversaciones (cliente_id, canal) values ($1, 'prueba') returning id::text as id",
     [clienteId],
   );
+  // Los turnos que el cliente ya tenía cuando escribió el primer mensaje elegido: en producción
+  // Lucía los ve en cada mensaje (contexto.ts). Se pasan al cliente de prueba (en vez de copiarlos,
+  // para no ocupar dos veces el mismo probador); todo vuelve atrás con el rollback. Sin esto, un
+  // «quiero cambiar mi turno» se repetía con Lucía sin ver ningún turno (ensayo del 9/10).
+  await sql.query(
+    `update turnos set cliente_id = $1
+      where cliente_id = (select cliente_id from conversaciones where id = $2) and creado_at <= $3::timestamptz`,
+    [clienteId, conversacionReal, puntos[0]],
+  );
   const prompt = promptBase
     ? (await sql.query("select prompt_vigente() as p")).rows[0].p as string
     : await Deno.readTextFile(new URL("../supabase/functions/_shared/prompt.md", import.meta.url));
