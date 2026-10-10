@@ -588,6 +588,29 @@ Deno.test("venta_sin_resolver no salta si mandó el link de venta (con o sin der
   await noSalta(ventaSinResolver, entrada("Eso te lo confirma el equipo del local.")); // sin mensaje del cliente, no salta
 });
 
+// Revisión del trabajo 1 (9/10): calibrado con los 30 mensajes reales del 29/9 al 9/10 que hablan de
+// comprar o vender. Estos se escapaban con la lista anterior.
+Deno.test("venta_sin_resolver reconoce «venta», «ventas», «vendían» y «compra» (casos reales que se escapaban)", async () => {
+  for (const m of [
+    "solo alquiler? o venta también?",
+    "En verde tenés para venta?",
+    "Quería saber si realizan ventas de trajes o solo alquiler?",
+    "Queria saber si solamente alquilaban trajes o tambien vendian",
+    "Ya le estoy consultando, es para mi sobrino que se gradúa de la secundaria.\nPrecio de compra aproximado?",
+    "Perfecto, y solo se dedican al alquiler, no a la venta?",
+  ]) await salta(ventaSinResolver, entrada("El alquiler arranca a partir de $150.000.", { mensajeCliente: m }));
+});
+
+Deno.test("venta_sin_resolver no salta si el cliente no quiere comprar o ya compró (casos reales, caso parecido)", async () => {
+  for (const m of [
+    "No quiero comprar, solo alquilar",
+    "pero ya compramos uno",
+    "quiero preguntar porque recien fui con mi mama a comprar un traje pero queriamos ver si podiamos ver otro y cambiarlo",
+    "Ya fui a ver opciones de compra",
+    "No de compra ya vi de compra",
+  ]) await noSalta(ventaSinResolver, entrada("Contame, ¿para qué evento es?", { mensajeCliente: m }));
+});
+
 Deno.test("no_a_secas salta con una negativa sola", async () => {
   await salta(noASecas, entrada("No, no hacemos envíos."));
   await salta(noASecas, entrada("Lamentablemente no tenemos ese color."));

@@ -29,14 +29,21 @@ import { type Barandilla, NO_SALTA } from "../tipos.ts";
 // 9/10: sin clasificador, la intención de COMPRAR un traje sale del mensaje del cliente. A
 // propósito conservador —solo frases claras—: si salta de más, obliga a mandar un link que no
 // pidió. Los accesorios sí se compran (con descuento por alquilar) y no son esto.
-// Cualquier forma de comprar («comprar», «comprarlos», «comprármelo», «compro»), o «venden».
-// Caso real del 8/10 que se escapaba con la lista cerrada: «Y comprarlos?», después de preguntar por
-// el precio de los trajes. Si nombra un accesorio, no cuenta: esos se compran con descuento aparte.
-const COMPRA = /\b(comprar\w*|compro|venden|vendes|en venta|a la venta)\b/;
+// Cualquier forma de comprar («comprar», «comprarlos», «compro», «la compra») o de vender («venden»,
+// «vendían», «venta», «ventas»). Calibrado (revisión del trabajo 1, 9/10) con los 30 mensajes reales
+// del 29/9 al 9/10 que hablan de comprar o vender: con la lista anterior se escapaban preguntas
+// claras («¿solo alquiler? o venta también?», «¿En verde tenés para venta?», «¿realizan ventas?»,
+// «precio de compra aproximado?»). Quien duda entre comprar y alquilar sí cuenta: el link de venta
+// le sirve para comparar. Si nombra un accesorio, no cuenta: esos se compran con descuento aparte.
+const COMPRA = /\b(comprar\w*|compro|compra|ventas?|venden|vendes|vendian|vende)\b/;
+// Tampoco cuenta si dice que NO quiere comprar o que ya compró: «no quiero comprar, solo alquilar»,
+// «ya compramos uno», «fui con mi mamá a comprar un traje… y cambiarlo», «ya vi de compra». Antes,
+// a esos se les mandaba la web de venta de prepo (casos reales …9668 y …1686, 30/9 y 1/10).
+const NO_COMPRA = /\b(ya (compr\w*|vi\b[^?]{0,20}compra)|fui\b[^?]{0,30}\b(a comprar\w*|de compra)|no (quiero|queria|busco|voy a|vamos a|pienso|necesito|me interesa|es para) (comprar\w*|compra)\b)/;
 
 export function pideComprarTraje(mensaje: string | null | undefined): boolean {
   const n = normalizar(mensaje ?? "");
-  return COMPRA.test(n) && !mencionaAccesorio(n);
+  return COMPRA.test(n) && !NO_COMPRA.test(n) && !mencionaAccesorio(n);
 }
 
 // 8/10: también cuenta el link de venta que ya le llegó antes en la charla. Sin esto, cada vez que

@@ -25,6 +25,19 @@ Deno.test("no confunde tranquilidad ni información positiva con falta de stock"
 Deno.test("no quedan + producto sí dispara", async () => {
   for (const texto of ["No quedan talles chicos.", "No quedan turnos para el viernes."]) assertEquals((await disponibilidadNegada.evaluar(entrada(texto))).salta, true, texto);
 });
+// Revisión del trabajo 1 (9/10): un día cerrado es la verdad, no falta de disponibilidad. Antes, «el
+// lunes 12 es feriado y no hay turnos» se frenaba y al segundo freno terminaba en la disculpa.
+Deno.test("un día cerrado (feriado, cierre o domingo) no cuenta como negativa; lo demás del mensaje sí", async () => {
+  for (const texto of [
+    "El lunes 12 es feriado: el local está cerrado y no hay turnos ese día. Te busco el martes 13.",
+    "Los domingos no trabajamos, pero el sábado abrimos de 9:30 a 18:30.",
+    "Ese día no hay turnos porque el local está cerrado.",
+  ]) assertEquals((await disponibilidadNegada.evaluar(entrada(texto))).salta, false, texto);
+  for (const texto of [
+    "El lunes 12 estamos cerrados por el feriado. No tenemos ese modelo en azul.",
+    "No hay turnos esa semana.",
+  ]) assertEquals((await disponibilidadNegada.evaluar(entrada(texto))).salta, true, texto);
+});
 Deno.test("agradecimientos no vuelven a disparar la venta; preguntas y confirmaciones siguen", () => {
   for (const t of ["Ok.", "Muchas gracias por tu atención.", "Ok. Muchas gracias por su atención", "Gracias 😊"]) assertEquals(esCierreCortes(t), true, t);
   for (const t of ["Dale", "Sí", "Confirmo", "Gracias, ¿tienen talle 8?", "Gracias quiero reservar", "Ok el viernes", "Gracias por confirmar el turno"]) assertEquals(esCierreCortes(t), false, t);
