@@ -1,0 +1,7 @@
+# Las claves nunca suben a Vercel: el panel toma sus variables de la configuración del proyecto en
+# Vercel. Sin este archivo, `vercel --prod` desde la raíz (así se publica el panel) subía también el
+# .env de la raíz, porque Vercel no lee .gitignore (9/10). Todo lo demás sí se sube: el panel importa
+# archivos de supabase/functions/_shared (agenda/huecos.ts, herramientas/tipos.ts).
+.env
+.env.*
+!.env.example
