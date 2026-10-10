@@ -251,6 +251,28 @@ Deno.test("precio_sin_herramienta: un total armado sumando (regla 9) se rehace u
   assertEquals(segundo.salta && segundo.texto, "");
 });
 
+// Trabajo 2, D13 (10/10): un monto sin respaldo que sigue en el segundo intento ya no pasa la charla:
+// se saca la oración y sale el resto. Caso real (ensayo del 9/10): el cliente hace su cuenta («Aca
+// tengo 90. Mas 150. Seria 240») y Lucía repite sus números.
+Deno.test("precio_sin_herramienta: en el segundo intento saca la oración con el monto y deja el resto (D13)", async () => {
+  const conPrecios = traza({ herramientas: ["consultar_catalogo:accesorios"], precios: [150000, 33500, 55000] });
+  const texto = "Los 90 que sumaste son aproximados. El traje es a partir de $150.000, con ajustes y tintorería incluidos.\n" +
+    "Camisa con corbata a partir de $33.500 y zapatos con cinturón a partir de $55.000.";
+  const primero = await precioSinHerramienta.evaluar(entrada(texto, { traza: conPrecios }));
+  assertEquals(primero.salta && primero.accion, "rehacer");
+  const segundo = await precioSinHerramienta.evaluar({ ...entrada(texto, { traza: conPrecios }), saltosPrevios: 1 });
+  assertEquals(segundo.salta && segundo.accion, "cortar");
+  assertEquals(
+    segundo.salta && segundo.texto,
+    "El traje es a partir de $150.000, con ajustes y tintorería incluidos.\nCamisa con corbata a partir de $33.500 y zapatos con cinturón a partir de $55.000.",
+  );
+  const todo = await aplicarBarandillas({ ...entrada(texto, { traza: conPrecios }) }, { saltosPrevios: 1 });
+  assertEquals(todo.decision, "enviar");
+  // Caso parecido: si el monto era todo el mensaje, no queda nada y termina como antes.
+  const solo = await aplicarBarandillas(entrada("Te sale $90.000.", { traza: conPrecios }), { saltosPrevios: 1 });
+  assertEquals([solo.decision, solo.motivoDerivacion], ["derivar", "barandilla_doble"]);
+});
+
 Deno.test("precio_sin_herramienta lee bien un precio seguido de una coma (6/10: $33.500, se leía $33)", () => {
   assertEquals(montos("También tenemos camisa y corbata por $33.500, y zapatos y cinturón por $55.000, cada conjunto por separado."), [33500, 55000]);
   assertEquals(montos("El alquiler es a partir de $150.000, e incluye el ambo."), [150000]);

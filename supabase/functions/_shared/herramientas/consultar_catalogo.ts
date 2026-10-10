@@ -133,9 +133,9 @@ export const consultarCatalogo: Herramienta<Args> = {
     if (precios.length) {
       datos.precio_desde = precios[0];
       datos.nota_precios = "Decí que el alquiler es a partir de ese precio («a partir de» o «desde»), nunca como un precio " +
-        "cerrado: el de cada modelo lo confirma el equipo en el local.";
+        "cerrado: el de cada modelo se ve en la visita, según el que elija.";
     } else {
-      datos.nota_precios = "No hay precio cargado: NO des ningún precio ni digas que sale cero. Decí lo que incluye y que el precio lo confirma el equipo del local.";
+      datos.nota_precios = "No hay precio cargado: NO des ningún precio ni digas que sale cero. Decí lo que incluye y que el precio depende del modelo y se ve en la visita.";
     }
     if (sinCoincidencia) {
       datos.nota_modelo = `No hay un precio cargado con el nombre «${modeloBuscado}»: no digas que no lo tenemos ni lo cambies por otro modelo. ` +

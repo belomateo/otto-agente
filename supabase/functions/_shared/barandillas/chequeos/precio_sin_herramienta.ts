@@ -191,6 +191,20 @@ function sinElTotal(texto: string, totales: number[], respaldados: Set<number>, 
   return letras(resultado) < 15 ? "" : resultado;
 }
 
+// Saca las oraciones que dicen un monto sin respaldo (segundo intento: ya se le pidió una vez que no
+// lo diga y lo volvió a decir). Trabajo 2, decisión D13 (10/10): antes el segundo intento pasaba la
+// charla con «Prefiero que te lo confirme alguien del equipo» y apagaba a Lucía (24 de las 29 veces
+// que pasó en 11 días fueron por precios; caso típico, el cliente hace su propia cuenta —«90 más
+// 150»— y Lucía repite sus números). Ahora sale el resto del mensaje; si no queda nada, el texto
+// vacío lo trata index.ts como antes.
+function sinLosMontos(texto: string, fuera: number[], nombreCliente?: string | null): string {
+  const linea = (l: string) =>
+    l.split(/(?<=[.!?…])\s+/).filter((o) => !montos(o, nombreCliente).some((m) => fuera.includes(m))).join(" ").trim();
+  const resultado = texto.split(/(\n+)/).map((b) => (/^\n+$/.test(b) ? b : linea(b))).join("")
+    .replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
+  return letras(resultado) < 15 ? "" : resultado;
+}
+
 export const precioSinHerramienta: Barandilla = {
   nombre: "precio_sin_herramienta",
   etapa: "contenido",
@@ -222,6 +236,9 @@ export const precioSinHerramienta: Barandilla = {
       ? `un precio (${lista}) sin consultar_catalogo en este turno`
       : `un monto (${lista}) que no devolvió ninguna herramienta: no sumes precios ni inventes totales; si te ` +
         "pidieron el total, decí cada precio por separado, tal como te lo dieron las herramientas";
+    if (saltosPrevios) {
+      return { salta: true, accion: "cortar", motivo: `${motivo} (segundo intento: se sacó en código la oración)`, texto: sinLosMontos(texto, fuera, nombreCliente) };
+    }
     return { salta: true, accion: "rehacer", motivo };
   },
 };

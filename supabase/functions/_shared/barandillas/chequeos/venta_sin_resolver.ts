@@ -71,7 +71,7 @@ export const ventaSinResolver: Barandilla = {
       salta: true,
       accion: "rehacer",
       motivo: "el cliente pidió comprar un traje y el turno no mandó el link de venta: " +
-        "mandá enviar_link con tipo web-venta y decile que ahí lo asesoran con la compra de su traje. No hace falta derivar.",
+        "mandá enviar_link con tipo web-venta (la tienda online, para ver modelos) y contale cómo se compra según que-no-hacemos. No hace falta derivar.",
     };
   },
 };

@@ -150,10 +150,11 @@ tocar herramientas ni prompt.
   entonces, RLS devuelve cero filas y la UI muestra "esperando aprobación".
 - Service role key **solo** en route handlers del servidor (`panel/app/api/**`).
   Nunca en componentes cliente. El subagente de seguridad barre el bundle.
-- Edición por el dueño: cada tabla editable tiene `version` y `editado_por`;
-  cambios en prompt base, reglas y contexto regeneran `prompt.md` vía un route
-  handler que corre `armar-prompt.mjs` y redespliega la función (o la función lee
-  el prompt de Storage con caché de 60 s — decisión de `logica`, supuesto: Storage).
+- Edición por el dueño: cada tabla editable tiene `version` y `editado_por`. Desde el
+  9/10 el prompt (`prompt.md`) se edita a mano y viaja con la función: los cambios en
+  prompt base, reglas y tono desde el panel ya no le llegan a Lucía (el panel lo avisa);
+  fichas, precios, agenda y textos fijos sí, al instante. Cómo vuelve a editarse sin
+  programador lo define el corrector de la Bitácora (pendiente).
 
 ---
 

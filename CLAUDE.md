@@ -56,9 +56,11 @@ Cada uno viene de un error que ya pasó en producción en sistemas como este.
 2. **El prompt solo tiene lo que sirve para cualquier mensaje.** Precios, horarios,
    modelos, políticas, links y fotos viven en la base y se consultan con
    herramientas. Un precio en el prompt es un precio viejo el día que cambie.
-3. **El prompt es un archivo versionado** (`supabase/functions/_shared/prompt.md`),
-   generado por `scripts/armar-prompt.mjs`. El dueño lo edita desde el panel; el
-   panel escribe el archivo fuente y regenera. Nada que cambie turno a turno entra
+3. **El prompt es un archivo versionado** (`supabase/functions/_shared/prompt.md`) y
+   desde el 9/10 es la fuente: Lucía lo lee primero y se edita a mano (la copia de la
+   base, `prompt_vigente()`, queda de respaldo). `scripts/armar-prompt.mjs` ya no lo
+   genera (se niega a pisarlo; la plantilla quedó vieja), y lo que se edite en el panel
+   como prompt, reglas o tono no le llega a Lucía. Nada que cambie turno a turno entra
    ahí (rompe el caché del prefijo).
 4. **Lo que el agente tiene que saber siempre se inyecta en el turno**: la libreta
    del cliente, su ficha, sus turnos. Si saberlo cuesta una llamada, a veces no se

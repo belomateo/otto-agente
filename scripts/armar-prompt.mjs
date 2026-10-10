@@ -198,7 +198,18 @@ function argumentos(argv) {
     else if (v === "--entrada") a.entrada = resolve(sig());
     else if (v === "--volcar") a.volcar = resolve(sig());
     else if (v === "--solo-validar") a.soloValidar = true;
+    else if (v === "--pisar-prompt-md") a.pisar = true;
     else throw new Error(`Argumento desconocido: ${v}`);
+  }
+  // Desde el 9/10 (pedido de Mateo) Lucía lee prompt.md primero y el archivo se edita a mano: es la
+  // fuente, ya no una salida de este generador. La plantilla quedó vieja (nombres de herramientas,
+  // reglas 12, 13 y 16), así que generarlo encima borraría lo que Lucía usa. Sigue sirviendo para
+  // --solo-validar (el panel) y para escribir en otra --salida (pruebas).
+  if (!a.soloValidar && a.salida === SALIDA_POR_DEFECTO && !a.pisar) {
+    throw new Error(
+      "prompt.md ya no se genera: desde el 9/10 se edita a mano y es lo que lee Lucía. " +
+        "Usá --salida <otro archivo>, o --pisar-prompt-md si de verdad querés reemplazarlo.",
+    );
   }
   return a;
 }
