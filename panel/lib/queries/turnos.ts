@@ -7,6 +7,7 @@ import { ESTILO_ESTADO_TURNO, ETIQUETA_DIA_O_NOCHE, ETIQUETA_EVENTO, ETIQUETA_RO
 import { diaDeLaSemana, diaMes, diasEnMes, fechaEnZona, fechaLarga, hora, rangoDelDia, rangoDelMes, sumarDias } from '@/lib/formato';
 import { ESTADOS_LIBERAN, nombreDe, telefonoLegible, type ClienteDb, type Fila } from './comun';
 import { aBloqueoDelDia, faltaLaTabla, listarBloqueos, type BloqueoDelDia } from './bloqueos';
+import { feriadosEntre, type FeriadoAgenda } from './feriados';
 
 export type FilaTurno = TurnoDelDia & {
   id: string;
@@ -79,6 +80,10 @@ export type AgendaDelDia = {
   /** Cierre puntual de ese día (0061, lo pone solo la dueña); null = no está cerrado. Cerrado, no
    *  se dan turnos aunque `franjas` diga que sí — `franjas` es el horario semanal, esto la excepción. */
   cierre: { motivo: string | null } | null;
+  /** Posible feriado de ese día (0098, pedido de Mateo 10/10); null = no es feriado, o la tabla
+   *  todavía no existe. Sin decidir (local_abierto null), Lucía no ofrece el día; si además hay
+   *  `cierre`, manda el cierre (así lo lee Lucía). */
+  feriado: FeriadoAgenda | null;
   /** Horarios bloqueados ese día (0067), por hora y probador (primero los de todos). Ahí no se
    *  dan turnos; los que ya estaban agendados siguen en `turnos`, no se tocan. */
   bloqueos: BloqueoDelDia[];
@@ -111,7 +116,7 @@ export async function turnosDelDia(
     .order('probador', { ascending: true });
   if (!o.incluirCancelados) q = q.not('estado', 'in', ESTADOS_LIBERAN);
 
-  const [turnos, horario, franjas, config, sinConfirmar, cierre, bloqueos] = await Promise.all([
+  const [turnos, horario, franjas, config, sinConfirmar, cierre, bloqueos, feriados] = await Promise.all([
     q,
     db
       .from('horarios')
@@ -134,6 +139,8 @@ export async function turnosDelDia(
     // correría el día (el bug del feriado que avisó logica, ver turno-alta.ts).
     db.from('cierres_agenda').select('motivo').eq('fecha', fecha).maybeSingle(),
     listarBloqueos(db, fecha, fecha),
+    // Sin 0098 aplicada todavía, la agenda sale igual, sin feriados (ver feriadosEntre).
+    feriadosEntre(db, fecha, fecha),
   ]);
   for (const r of [turnos, horario, franjas, config, sinConfirmar, cierre]) if (r.error) throw r.error;
 
@@ -172,6 +179,7 @@ export async function turnosDelDia(
     probadores: config.data?.cantidad_probadores ?? null,
     sin_confirmar_manana: sinConfirmar.count ?? 0,
     cierre: cierre.data ? { motivo: cierre.data.motivo } : null,
+    feriado: feriados.get(fecha) ?? null,
     bloqueos: bloqueos.map(aBloqueoDelDia),
     turnos: (turnos.data ?? []).map((t) => {
       const estilo = ESTILO_ESTADO_TURNO[t.estado] ?? ESTILO_ESTADO_TURNO['sin-confirmar'];
@@ -231,6 +239,8 @@ export type DiaDelMes = {
   sin_confirmar: number;
   /** Cierre puntual (0061); null = no está cerrado. Misma forma que AgendaDelDia.cierre. */
   cierre: { motivo: string | null } | null;
+  /** Posible feriado (0098); null = no es feriado. Misma forma que AgendaDelDia.feriado. */
+  feriado: FeriadoAgenda | null;
   /** Cuántos horarios bloqueados tiene ese día (0067). El detalle está en la agenda del día. */
   bloqueos: number;
 };
@@ -243,19 +253,21 @@ export type AgendaMes = {
 // Vista Mensual (pedido de Mateo, 19/9): un conteo por día, no los turnos completos — 30 días
 // con su ficha sería demasiado dato para pintar una grilla. Una sola consulta liviana (sin
 // joins) para todo el mes, agregada acá; todos los días del mes salen en `dias`, con 0 los que
-// no tienen turnos (así front no tiene que calcular cuántos días tiene el mes). Los cierres y
-// los bloqueos (0061/0067) van igual: una consulta por tabla para todo el mes, por el texto de
-// la fecha (columna date: ni pasa por Date ni por el huso del servidor).
+// no tienen turnos (así front no tiene que calcular cuántos días tiene el mes). Los cierres,
+// los bloqueos y los posibles feriados (0061/0067/0098) van igual: una consulta por tabla para
+// todo el mes, por el texto de la fecha (columna date: ni pasa por Date ni por el huso del servidor).
 export async function turnosDelMes(db: ClienteDb, mes: string, o: { incluirCancelados?: boolean } = {}): Promise<AgendaMes> {
   const { desde, hasta } = rangoDelMes(mes);
   const primero = `${mes}-01`;
   const ultimo = `${mes}-${String(diasEnMes(mes)).padStart(2, '0')}`;
   let q = db.from('turnos').select('inicio, estado').gte('inicio', desde).lt('inicio', hasta);
   if (!o.incluirCancelados) q = q.not('estado', 'in', ESTADOS_LIBERAN);
-  const [turnos, cierres, bloqueos] = await Promise.all([
+  const [turnos, cierres, bloqueos, feriados] = await Promise.all([
     q,
     db.from('cierres_agenda').select('fecha, motivo').gte('fecha', primero).lte('fecha', ultimo),
     db.from('bloqueos_agenda').select('fecha').gte('fecha', primero).lte('fecha', ultimo),
+    // Sin 0098 aplicada todavía, el mes se pinta igual, sin feriados (ver feriadosEntre).
+    feriadosEntre(db, primero, ultimo),
   ]);
   if (turnos.error) throw turnos.error;
   if (cierres.error) throw cierres.error;
@@ -280,6 +292,7 @@ export async function turnosDelMes(db: ClienteDb, mes: string, o: { incluirCance
       fecha,
       ...(porDia.get(fecha) ?? { total: 0, sin_confirmar: 0 }),
       cierre: cierrePorDia.get(fecha) ?? null,
+      feriado: feriados.get(fecha) ?? null,
       bloqueos: bloqueosPorDia.get(fecha) ?? 0,
     };
   });

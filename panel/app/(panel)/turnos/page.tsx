@@ -37,9 +37,11 @@ import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
 import { useDatos } from '@/components/api/useDatos';
 import { useEstadoTurno } from '@/components/api/useEstadoTurno';
+import type { FeriadoAgenda } from '@/lib/queries/feriados';
 import type { AgendaDelDia, FilaTurno } from '@/lib/queries/turnos';
 import { aHora, aMinutos, describirFranjas, horaCorta } from '../configuracion/agenda/franjas';
 import { CierreDelDia } from './CierreDelDia';
+import { estadoFeriado, FeriadoDelDia } from './FeriadoDelDia';
 import { MoverTurnoModal } from './MoverTurno';
 import { NuevoTurnoModal } from './NuevoTurno';
 
@@ -51,7 +53,14 @@ type AgendaSemana = { semana: { desde: string; hasta: string }; dias: AgendaDelD
 // alcanza para pintar la grilla sin traer 30 días de detalle (decisión de Mateo, 22/9,
 // "importante que se haga").
 // cierre (0061): el día está cerrado —feriado o cierre puntual—; lo manda /api/turnos/mes (turnosDelMes).
-type DiaMes = { fecha: string; total: number; sin_confirmar: number; cierre?: { motivo: string | null } | null };
+// feriado (0098, 10/10): el día es un posible feriado, decidido o no; también de turnosDelMes.
+type DiaMes = {
+  fecha: string;
+  total: number;
+  sin_confirmar: number;
+  cierre?: { motivo: string | null } | null;
+  feriado?: FeriadoAgenda | null;
+};
 type AgendaMes = { mes: string; dias: DiaMes[] };
 type Vista = 'dia' | 'semana' | 'mes';
 
@@ -646,6 +655,29 @@ function VistaSemana({
   );
 }
 
+// Cómo se pinta en el mes un día que no es normal. Cerrado (0061), como hasta ahora; posible
+// feriado sin decidir (0098, pedido de Mateo 10/10) en ámbar, que es «esperando» en la paleta:
+// falta que alguien diga si el local abre; y el feriado en que el local abre es un día normal con
+// una marca chica. Mismo criterio que la vista del día (estadoFeriado, FeriadoDelDia.tsx): un
+// cierre manda sobre lo que diga el feriado, como para Lucía.
+type MarcaDia = { caja: string; etiqueta: string; color: string; titulo: string };
+const marcaCerrado = (motivo: string | null): MarcaDia => ({
+  caja: 'border-ladrillo/30 bg-ladrillo-suave',
+  etiqueta: motivo || 'Cerrado',
+  color: 'text-ladrillo',
+  titulo: `Cerrado${motivo ? ` · ${motivo}` : ''}`,
+});
+function marcaDelDia(d: DiaMes | null): MarcaDia | null {
+  if (!d) return null;
+  if (!d.feriado) return d.cierre ? marcaCerrado(d.cierre.motivo) : null;
+  const { nombre } = d.feriado;
+  const estado = estadoFeriado(d.feriado, d.cierre);
+  if (estado === 'posible') return { caja: 'border-ambar/40 bg-ambar-suave', etiqueta: 'Posible feriado', color: 'text-ambar', titulo: `Posible feriado · ${nombre}` };
+  if (estado === 'abre') return { caja: 'border-borde bg-lino', etiqueta: 'Feriado · abre', color: 'text-grafito', titulo: `Feriado · ${nombre}: el local abre` };
+  // Cerrado: con el motivo del cierre si lo hay («Local cerrado» lo carga como «Feriado · nombre»).
+  return marcaCerrado(d.cierre ? d.cierre.motivo : `Feriado · ${nombre}`);
+}
+
 // Vista mensual (pedido explícito de Mateo, 22/9): un mapa de densidad para elegir a dónde ir,
 // no la semana pero más ancha — GET /api/turnos/mes trae un conteo por día a propósito, sin el
 // detalle de cada turno, para no arrastrarse con 30 días de fichas completas. Se toca un día y
@@ -705,27 +737,28 @@ function VistaMes({ mes, onNuevoTurno, onCambio }: { mes: AgendaMes; onNuevoTurn
           ))}
         </div>
         <div className="grid grid-cols-7 gap-1 pt-1.5">
-          {celdas.map((c) => (
-            <Link
-              key={c.fecha}
-              href={`/turnos?dia=${c.fecha}`}
-              title={c.esDelMes && c.dato?.cierre ? `Cerrado${c.dato.cierre.motivo ? ` · ${c.dato.cierre.motivo}` : ''}` : undefined}
-              className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-otto border ${
-                !c.esDelMes ? 'border-transparent text-[#C9C4B9]' : c.dato?.cierre ? 'border-ladrillo/30 bg-ladrillo-suave' : 'border-borde bg-lino'
-              }`}
-            >
-              <span className={`font-serif text-[14px] font-semibold md:text-[13px] ${c.esDelMes ? '' : 'text-[#C9C4B9]'}`}>{Number(c.fecha.slice(8, 10))}</span>
-              {c.esDelMes && c.dato?.cierre && (
-                <span className="max-w-full truncate px-1 text-[12px] font-medium text-ladrillo md:text-[11px]">{c.dato.cierre.motivo || 'Cerrado'}</span>
-              )}
-              {c.dato && c.dato.total > 0 && (
-                <span className="flex items-center gap-1">
-                  <span className="rounded-pill bg-cobre-claro px-[7px] py-px text-[14px] font-medium text-cobre md:text-[11px]">{c.dato.total}</span>
-                  {c.dato.sin_confirmar > 0 && <span className="h-[6px] w-[6px] rounded-pill bg-ambar" title={`${c.dato.sin_confirmar} sin confirmar`} />}
-                </span>
-              )}
-            </Link>
-          ))}
+          {celdas.map((c) => {
+            const marca = c.esDelMes ? marcaDelDia(c.dato) : null;
+            return (
+              <Link
+                key={c.fecha}
+                href={`/turnos?dia=${c.fecha}`}
+                title={marca?.titulo}
+                className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-otto border ${
+                  !c.esDelMes ? 'border-transparent text-[#C9C4B9]' : (marca?.caja ?? 'border-borde bg-lino')
+                }`}
+              >
+                <span className={`font-serif text-[14px] font-semibold md:text-[13px] ${c.esDelMes ? '' : 'text-[#C9C4B9]'}`}>{Number(c.fecha.slice(8, 10))}</span>
+                {marca && <span className={`max-w-full truncate px-1 text-[12px] font-medium md:text-[11px] ${marca.color}`}>{marca.etiqueta}</span>}
+                {c.dato && c.dato.total > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="rounded-pill bg-cobre-claro px-[7px] py-px text-[14px] font-medium text-cobre md:text-[11px]">{c.dato.total}</span>
+                    {c.dato.sin_confirmar > 0 && <span className="h-[6px] w-[6px] rounded-pill bg-ambar" title={`${c.dato.sin_confirmar} sin confirmar`} />}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </>
@@ -782,10 +815,28 @@ export default function TurnosPage() {
   if (error) return <EstadoError mensaje={error} onReintentar={recargar} />;
   if (!agenda) return null;
 
-  const resumen = agenda.cierre ? 'Día cerrado' : agenda.franjas.length ? `Turnos ${describirFranjas(agenda.franjas)}` : 'Sin turnos';
+  // Posible feriado (0098): mismo estado que el cartel de FeriadoDelDia, para que el resumen no
+  // diga «Turnos de…» de un día que Lucía no ofrece.
+  const estadoDelFeriado = agenda.feriado ? estadoFeriado(agenda.feriado, agenda.cierre) : null;
+  const resumen =
+    agenda.cierre || estadoDelFeriado === 'cerrado'
+      ? 'Día cerrado'
+      : estadoDelFeriado === 'posible'
+        ? 'Posible feriado'
+        : agenda.franjas.length
+          ? `Turnos ${describirFranjas(agenda.franjas)}`
+          : 'Sin turnos';
   const vacio = agenda.franjas.length === 0 ? SIN_FRANJAS : agenda.turnos.length === 0 ? VACIO : null;
   const turnos = [...agenda.turnos].sort((a, b) => inicioMin(a) - inicioMin(b));
   const abierto = agenda.turnos.find((t) => t.id === abiertoId) ?? null;
+  // Un posible feriado lleva su propio cartel (abrir o cerrar el local) EN LUGAR del de cierre: los
+  // dos a la vez ofrecerían cerrar el mismo día por dos caminos. key: al cambiar de día, el cartel
+  // arranca de cero (sin el error ni el aviso de turnos del día anterior).
+  const cartelDelDia = agenda.feriado ? (
+    <FeriadoDelDia key={agenda.fecha} fecha={agenda.fecha} feriado={agenda.feriado} cierre={agenda.cierre} onCambio={recargar} />
+  ) : (
+    <CierreDelDia fecha={agenda.fecha} cierre={agenda.cierre} onCambio={recargar} />
+  );
 
   return (
     <>
@@ -809,7 +860,7 @@ export default function TurnosPage() {
           </button>
         </div>
         <div className="mb-4 text-[14px] text-grafito md:text-[13px]">{resumen}</div>
-        <CierreDelDia fecha={agenda.fecha} cierre={agenda.cierre} onCambio={recargar} />
+        {cartelDelDia}
 
         {vacio ? (
           <div className="rounded-otto border border-borde bg-lino">
@@ -835,9 +886,7 @@ export default function TurnosPage() {
             </Flechas>
           </div>
           <div className="mt-2 text-[14px] leading-[1.45] text-grafito">{resumen}</div>
-          <div className="mt-2">
-            <CierreDelDia fecha={agenda.fecha} cierre={agenda.cierre} onCambio={recargar} />
-          </div>
+          <div className="mt-2">{cartelDelDia}</div>
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             {!vacio && agenda.sin_confirmar_manana > 0 && (
               <span className="rounded-pill border border-[#EEDFC0] bg-ambar-suave px-3 py-1.5 text-[14px] font-medium text-ambar">Sin confirmar mañana · {agenda.sin_confirmar_manana}</span>

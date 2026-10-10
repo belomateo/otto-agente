@@ -11,7 +11,9 @@
 // firma es la que avisó por chat, no está verificada contra la base todavía). Mismo motivo, 26/9:
 // la tabla bloqueos_agenda (0067), escrita a mano contra el CREATE TABLE de la migración (que se
 // verificó con rollback contra la base real); el panel no manda creado_por, creado_por_admin ni
-// editado_por: los fija la base.
+// editado_por: los fija la base. Mismo motivo, 10/10: la tabla feriados_posibles (0098), escrita a
+// mano contra el CREATE TABLE de la migración, que todavía no estaba aplicada cuando se escribió
+// esto (la aplica Mateo); las consultas del panel toleran que falte (faltaLaTabla, bloqueos.ts).
 
 export type Json =
   | string
@@ -599,6 +601,38 @@ export type Database = {
             columns: ["conversacion_id"]
             isOneToOne: false
             referencedRelation: "conversaciones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feriados_posibles: {
+        Row: {
+          decidido_at: string | null
+          decidido_por: string | null
+          fecha: string
+          local_abierto: boolean | null
+          nombre: string
+        }
+        Insert: {
+          decidido_at?: string | null
+          decidido_por?: string | null
+          fecha: string
+          local_abierto?: boolean | null
+          nombre: string
+        }
+        Update: {
+          decidido_at?: string | null
+          decidido_por?: string | null
+          fecha?: string
+          local_abierto?: boolean | null
+          nombre?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feriados_posibles_decidido_por_fkey"
+            columns: ["decidido_por"]
+            isOneToOne: false
+            referencedRelation: "perfiles"
             referencedColumns: ["id"]
           },
         ]
