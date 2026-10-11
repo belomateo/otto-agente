@@ -21,7 +21,8 @@
 //    a esa hora se ofrece el siguiente libre; si el bloqueo es de todos, esa hora no se ofrece.
 //  · mismo día: solo huecos que arrancan después de `ahora`.
 //  · evento hoy, mañana o pasado mañana (decisión #8, 2 días desde el 10/10): ningún hueco y `derivar: evento_inminente`.
-//  · con la fecha del evento, nada el día del evento ni después (supuesto #24).
+//  · con la fecha del evento, nada el día del evento ni después (supuesto #24), ni en los días de
+//    confección de antes; si eso recorta lo pedido, se avisa el último día que queda (10/10).
 //  · orden de urgencia (decisión #9, supuesto #21): con dias_reserva_urgencia = N, los N días
 //    que empiezan hoy quedan para los eventos que caen hasta hoy + N; a un evento más lejano,
 //    o sin fecha, se le ofrece desde hoy + N. Vacío = sin reserva.
@@ -127,6 +128,10 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
     if (!urgente && primerDia < finDeLaReserva) primerDia = finDeLaReserva;
   }
 
+  // El evento recortó lo pedido (10/10): buscar_horarios lo usa para decir que ese día queda
+  // pegado al evento, y no que está completo, cuando ofrece los días de antes.
+  const recortadoPorEvento = p.fechaEvento !== null && ultimoDia < p.hasta;
+
   const escalonadoMs = reglas.escalonadoMin * MS_POR_MINUTO;
   const duracionMs = reglas.duracionMin * MS_POR_MINUTO;
   const huecos: Hueco[] = [];
@@ -165,7 +170,17 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
       }
     }
   }
-  return { huecos };
+  return recortadoPorEvento ? { huecos, ultimoDiaAntesDelEvento: ultimoDia } : { huecos };
+}
+
+// Hasta qué probador da turnos Lucía (configuracion_agenda.probadores_lucia, 0073). null = todos:
+// desde el 10/10 (0099, pedido de Mateo) Lucía da también el tercero, que hasta ahí quedaba para que
+// el equipo agendara a mano (pedido de Sofía del 30/9) y con los otros dos tomados la dejaba diciendo
+// que no había lugar. Un número vuelve a reservar los de más arriba para el equipo. Se recorta acá y
+// no en calcularHuecos porque esa la usa también el panel, que sí tiene que ver todos.
+export function conTopeDeProbadores(franjas: Franja[], tope: number | null): Franja[] {
+  if (tope === null || !Number.isFinite(tope)) return franjas;
+  return franjas.map((f) => ({ ...f, probadores: Math.min(f.probadores, tope) }));
 }
 
 // Los días de confección salen de configuracion_agenda si la columna existe (la agrega paneles,
@@ -194,10 +209,8 @@ async function leerReglas(db: Db, tipo: TipoTurno): Promise<ReglasAgenda> {
   if (!duracion) throw new Error(`duraciones_turno no tiene el tipo ${tipo}: la agenda no puede calcular huecos.`);
   const { franjas: todas } = await leerFranjas(db);
 
-  // probadores_lucia (0073, pedido de Sofi 30/9): los probadores de más arriba quedan para que el
-  // equipo agende a mano (urgencias). Se recorta acá y no en calcularHuecos porque esa la usa
-  // también el panel, que sí tiene que ver todos.
-  let franjas = todas;
+  // probadores_lucia (0073; null desde 0099, ver conTopeDeProbadores).
+  let tope: number | null = null;
   const [colLucia] = await db.consulta(
     `select 1 from information_schema.columns
        where table_schema = 'public' and table_name = 'configuracion_agenda'
@@ -205,9 +218,9 @@ async function leerReglas(db: Db, tipo: TipoTurno): Promise<ReglasAgenda> {
   );
   if (colLucia) {
     const [lim] = await db.consulta("select probadores_lucia from configuracion_agenda limit 1");
-    const tope = lim?.probadores_lucia === null || lim?.probadores_lucia === undefined ? null : Number(lim.probadores_lucia);
-    if (tope !== null && Number.isFinite(tope)) franjas = todas.map((f) => ({ ...f, probadores: Math.min(f.probadores, tope) }));
+    tope = lim?.probadores_lucia === null || lim?.probadores_lucia === undefined ? null : Number(lim.probadores_lucia);
   }
+  const franjas = conTopeDeProbadores(todas, tope);
 
   // dias_simultaneos: columna de la migración 0068. Si la migración todavía no se aplicó,
   // la columna no existe y usamos [] (sin días simultáneos) hasta que se aplique.

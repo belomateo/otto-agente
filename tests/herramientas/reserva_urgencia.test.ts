@@ -5,7 +5,7 @@
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { ejecutarHerramienta } from "../../supabase/functions/_shared/herramientas/index.ts";
-import { buscar, contar, esOk, esRechazo, FECHA_EVENTO, fila, MARTES, prueba } from "./_arnes.ts";
+import { buscar, contar, esOk, esRechazo, FECHA_EVENTO, fila, JUEVES, MARTES, prueba } from "./_arnes.ts";
 
 // AHORA es el lunes 2030-06-03: con 3 días, del lunes al miércoles quedan para eventos que caen
 // hasta el jueves 6, y a un evento más lejano (o sin fecha) se le ofrece desde el jueves 6.
@@ -39,10 +39,14 @@ prueba("reserva de urgencia con el evento lejos: el vacío manda a buscar desde 
   assertEquals(ctx.traza.reservaSinFechaEvento, false);
 });
 
-prueba("evento dentro de la reserva: el vacío es de verdad y queda la nota de siempre", async ({ sql, ctx }) => {
+// El evento el jueves 6 cae en la reserva y no es inminente (desde el 10/10, a 2 días o menos deriva
+// por evento_inminente: con el miércoles 5 que tenía esta prueba ya no llegaba acá). El vacío es de
+// verdad: desde el 10/10 buscar_horarios mira solo lo más cercano y, como ahí tampoco hay lugar,
+// recién entonces indica pasar la charla.
+prueba("evento dentro de la reserva: el vacío es de verdad y, sin lugar cerca, indica pasar la charla", async ({ sql, ctx }) => {
   await reserva(sql);
-  // El jueves 6 (a 3 días): sigue dentro de la reserva y ya no es inminente (2 días desde el 10/10).
-  const r = await buscar(ctx, MARTES, MARTES, "invitado", "2030-06-06");
+  const r = await buscar(ctx, MARTES, MARTES, "invitado", JUEVES);
   esOk(r);
+  assertMatch(String(r.datos.nota), /Tampoco hay lugar en los días más cercanos/);
   assertMatch(String(r.datos.nota), /Derivá con dato_no_encontrado/);
 });

@@ -4,12 +4,14 @@
 
 import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import type { Db, Fila } from "../db.ts";
+import { resumirPorDia } from "../herramientas/buscar_horarios.ts";
 import { dentroDeFranja, type Franja } from "../herramientas/horario_laboral.ts";
 import type { ResultadoAgenda } from "../herramientas/tipos.ts";
-import { fechaLocal, horaLocal } from "../tiempo.ts";
+import { fechaLocal, horaLocal, sumarDias } from "../tiempo.ts";
 import {
   type BloqueoAgenda,
   calcularHuecos,
+  conTopeDeProbadores,
   leerBloqueos,
   type Ocupado,
   type PedidoHuecos,
@@ -413,4 +415,54 @@ Deno.test("días simultáneos: sin días en la lista, todos los días usan escal
   // Un solo probador por hora (el break sigue activo)
   const huecos930 = r.huecos.filter((h) => horaLocal(new Date(h.inicio), TZ) === "09:30");
   assertEquals(huecos930.length, 1);
+});
+
+// Trabajo 4, agenda (pedido de Mateo, 10/10) ──────────────────────────────────────────────────
+
+Deno.test("probadores_lucia en null (0099): Lucía da el tercer probador; con 2, ese queda para el equipo", () => {
+  // Con el 1 y el 2 tomados, a las 13:30 solo queda el 3 (como en la prueba a).
+  const dos = [turno(1, LUNES, "13:00", "13:45"), turno(2, LUNES, "13:15", "14:00")];
+  const sinTope = calcularHuecos({ ...REGLAS, franjas: conTopeDeProbadores(FRANJAS, null) }, dos, pedido(LUNES, LUNES));
+  assertEquals([horas(sinTope)[0], probadorA(sinTope, "13:30")], ["13:30", 3]);
+  // Con el tope de antes (0073) esa hora no se ofrecía: el primero libre era 13:45, en el 1.
+  const conTope = calcularHuecos({ ...REGLAS, franjas: conTopeDeProbadores(FRANJAS, 2) }, dos, pedido(LUNES, LUNES));
+  assertEquals(probadorA(conTope, "13:30"), undefined);
+  assertEquals([horas(conTope)[0], probadorA(conTope, "13:45")], ["13:45", 1]);
+  // null deja las franjas como las cargó el equipo (el sábado a la tarde sigue con 2), y un tope
+  // nunca suma probadores.
+  assertEquals(conTopeDeProbadores(FRANJAS, null), FRANJAS);
+  assertEquals(conTopeDeProbadores(FRANJAS, 5), FRANJAS);
+  assert(conTopeDeProbadores(FRANJAS, 2).every((f) => f.probadores <= 2));
+});
+
+Deno.test("dos semanas: buscar_horarios resume todos los días con lugar, el último también (caso del sábado 17, 10/10)", () => {
+  const ultimo = sumarDias(LUNES, 12); // el sábado de la semana siguiente
+  const r = calcularHuecos(REGLAS, [], pedido(LUNES, ultimo));
+  const conLugar = dias(r);
+  assertEquals(conLugar.length, 12); // dos semanas de lunes a sábado: el domingo no abre
+  const resumen = resumirPorDia(r.huecos.map((h) => new Date(h.inicio).getTime()), TZ);
+  const diasDelResumen = [...new Set(resumen.map((k) => fechaLocal(new Date(k), TZ)))];
+  assertEquals(diasDelResumen, conLugar);
+  assertEquals(diasDelResumen.at(-1), ultimo);
+  // Hasta dos de la mañana y dos de la tarde por día: de lunes a viernes estas franjas son solo de
+  // tarde (2 por día) y el sábado tiene las dos (4).
+  assertEquals(resumen.length, 10 * 2 + 2 * 4);
+  // Con el tope de 16 en total que había hasta el 10/10, el último sábado no llegaba a aparecer.
+  assert(!resumen.slice(0, 16).some((k) => fechaLocal(new Date(k), TZ) === ultimo));
+});
+
+Deno.test("si el evento recorta lo pedido, la agenda avisa el último día que queda (10/10)", () => {
+  const conConfeccion: ReglasAgenda = { ...REGLAS, diasConfeccion: 2 };
+  // Casamiento el sábado: con dos días de confección, la última prueba es el jueves.
+  const r = calcularHuecos(conConfeccion, [], pedido(LUNES, SABADO, { fechaEvento: SABADO }));
+  assertEquals(r.ultimoDiaAntesDelEvento, JUEVES);
+  assertEquals(dias(r).at(-1), JUEVES);
+  // Pidiendo solo el viernes: ningún hueco, y dice hasta cuándo se puede (no que esté completo).
+  assertEquals(
+    calcularHuecos(conConfeccion, [], pedido(VIERNES, VIERNES, { fechaEvento: SABADO })),
+    { huecos: [], ultimoDiaAntesDelEvento: JUEVES },
+  );
+  // Si el evento no recorta nada, no dice nada (caso parecido).
+  assertEquals(calcularHuecos(conConfeccion, [], pedido(LUNES, MIERCOLES, { fechaEvento: SABADO })).ultimoDiaAntesDelEvento, undefined);
+  assertEquals(calcularHuecos(REGLAS, [], pedido(LUNES, VIERNES)).ultimoDiaAntesDelEvento, undefined);
 });
