@@ -30,6 +30,7 @@ import { accesorioSinHerramienta } from "./chequeos/accesorio_sin_herramienta.ts
 import { disponibilidadNegada } from "./chequeos/disponibilidad_negada.ts";
 import { derivaYPregunta } from "./chequeos/deriva_y_pregunta.ts";
 import { anunciaSinDerivar } from "./chequeos/anuncia_sin_derivar.ts";
+import { promesaSinHacer } from "./chequeos/promesa_sin_hacer.ts";
 import { ventaSinResolver } from "./chequeos/venta_sin_resolver.ts";
 import { noASecas } from "./chequeos/no_a_secas.ts";
 import { mencionaIa } from "./chequeos/menciona_ia.ts";
@@ -41,12 +42,15 @@ import { nuncaNoSeco } from "./nunca_no_seco.ts";
 import { paseCoherente } from "./pase_coherente.ts";
 import { venta } from "./venta.ts";
 import { ventanaMeta } from "./ventana_meta.ts";
-import type { Accion, Barandilla, Control, EntradaBarandilla } from "./tipos.ts";
+import type { Accion, Barandilla, Control, EntradaBarandilla, RegistroBitacora } from "./tipos.ts";
 
 // Los 7 controles, en el orden de la tabla de AGENTE.md § 6.
 export const BARANDILLAS: readonly Control[] = [repeticiones, formaYTono, datoSinConsultar, nuncaNoSeco, paseCoherente, venta, ventanaMeta];
 
-// Las 16 revisiones en el orden en que corrieron siempre (hasta el 9/10 eran BARANDILLAS).
+// Las revisiones en el orden en que corrieron siempre (hasta el 9/10 eran BARANDILLAS): 16, y desde el
+// 10/10 la 17, promesa_sin_hacer (el auditor de promesas), después de anuncia_sin_derivar — así ve el
+// texto ya limpio por las de formato (confirmacion_doble ya sacó la confirmación repetida de un turno
+// que sí se agendó, y sin_relleno el «Te paso el catálogo:» que no se mandó).
 export const CHEQUEOS_EN_ORDEN: readonly Barandilla[] = [
   confirmacionDoble,
   sinMarkdown,
@@ -60,6 +64,7 @@ export const CHEQUEOS_EN_ORDEN: readonly Barandilla[] = [
   disponibilidadNegada,
   derivaYPregunta,
   anunciaSinDerivar,
+  promesaSinHacer,
   ventaSinResolver,
   noASecas,
   mencionaIa,
@@ -69,7 +74,8 @@ export const CHEQUEOS_EN_ORDEN: readonly Barandilla[] = [
 // De cada revisión, a qué control pertenece.
 const CONTROL_DE = new Map(BARANDILLAS.flatMap((c) => c.chequeos.map((ch) => [ch.nombre, c.nombre] as const)));
 
-export type Salto = { barandilla: string; chequeo: string; accion: Accion; motivo: string };
+// registro: lo que el chequeo pidió dejar en la bitácora además del motivo (ver RegistroBitacora).
+export type Salto = { barandilla: string; chequeo: string; accion: Accion; motivo: string; registro?: RegistroBitacora };
 
 export type ResultadoBarandillas = {
   texto: string;
@@ -89,7 +95,13 @@ export async function aplicarBarandillas(
   for (const b of CHEQUEOS_EN_ORDEN) {
     const r = await b.evaluar({ ...entrada, texto, saltosPrevios: opciones.saltosPrevios ?? 0 });
     if (!r.salta) continue;
-    saltos.push({ barandilla: CONTROL_DE.get(b.nombre) ?? b.nombre, chequeo: b.nombre, accion: r.accion, motivo: r.motivo });
+    saltos.push({
+      barandilla: CONTROL_DE.get(b.nombre) ?? b.nombre,
+      chequeo: b.nombre,
+      accion: r.accion,
+      motivo: r.motivo,
+      ...(r.registro ? { registro: r.registro } : {}),
+    });
     if (r.texto !== undefined) texto = r.texto;
   }
   const hay = (a: Accion) => saltos.some((s) => s.accion === a);

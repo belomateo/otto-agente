@@ -6,9 +6,11 @@ import { assert, assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
 import { aplicarBarandillas, BARANDILLAS, CHEQUEOS_EN_ORDEN } from "../../supabase/functions/_shared/barandillas/index.ts";
 import { AHORA, entrada, HORA_MS, traza } from "./_ayuda.ts";
 
-Deno.test("son 7 controles con 16 revisiones, que corren en orden formato → contenido → reglas", () => {
+// 17 desde el 10/10: promesa_sin_hacer (el auditor de promesas) entró en pase_coherente, sin un
+// octavo control.
+Deno.test("son 7 controles con 17 revisiones, que corren en orden formato → contenido → reglas", () => {
   assertEquals(BARANDILLAS.length, 7);
-  assertEquals(CHEQUEOS_EN_ORDEN.length, 16);
+  assertEquals(CHEQUEOS_EN_ORDEN.length, 17);
   const orden = { formato: 0, contenido: 1, reglas: 2 } as const;
   const etapas = CHEQUEOS_EN_ORDEN.map((b) => orden[b.etapa]);
   assertEquals(etapas, [...etapas].sort((a, b) => a - b));

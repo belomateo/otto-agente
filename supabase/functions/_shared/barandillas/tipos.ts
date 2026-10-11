@@ -38,7 +38,12 @@ export type EntradaBarandilla = {
 
 export type ResultadoBarandilla =
   | { salta: false }
-  | { salta: true; accion: Accion; motivo: string; texto?: string };
+  | { salta: true; accion: Accion; motivo: string; texto?: string; registro?: RegistroBitacora };
+
+// Lo que un chequeo quiere dejar en la bitácora además del motivo (auditor de promesas, 10/10): se
+// suma tal cual al evento del salto que escribe turno.ts. Si trae `etapa`, reemplaza a «barandilla»,
+// para que la Bitácora del panel lo encuentre aparte (detalle->>'etapa' = 'auditor_promesas').
+export type RegistroBitacora = { etapa?: string; [campo: string]: unknown };
 
 export interface Barandilla {
   nombre: string;

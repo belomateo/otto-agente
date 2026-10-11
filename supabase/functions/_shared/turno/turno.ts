@@ -25,7 +25,7 @@ import { montos } from "../barandillas/chequeos/precio_sin_herramienta.ts";
 import type { Db } from "../db.ts";
 import { type MotivoDerivacion, TIPOS_LINK } from "../enums.ts";
 import { type Enlace, enlacesActivos, enlacesDeTipo } from "../herramientas/enlaces.ts";
-import { actualizarFicha, leerFicha } from "../herramientas/ficha.ts";
+import { actualizarFicha, CAMPOS_FICHA, leerFicha } from "../herramientas/ficha.ts";
 import { mensajesDeEfectos } from "../herramientas/efectos.ts";
 import { esCierreCortes } from "./cierre_cortes.ts";
 import {
@@ -405,6 +405,11 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       preciosDevueltos: yaDicho.precios,
       accesoriosDevueltos: yaDicho.accesorios,
       linksPrevios: linksYaEnviados(historial, enlaces),
+      // Auditor de promesas (trabajo 4, 10/10): lo que ya era verdad en la base al empezar el turno. Con
+      // esto, «tu turno del martes ya está confirmado» o «ya anoté tu mail» no se frenan si ya lo
+      // estaban; «queda confirmado» sin cambiar_turno sobre un turno sin confirmar, sí (Walter, 10/10).
+      turnosCliente: contexto.turnos,
+      datosConocidos: CAMPOS_FICHA.filter((c) => ficha[c] !== null),
     };
     const ctxHerramientas = contextoDeHerramientas({
       db, tz: p.tz, cliente: { id: p.clienteId, telefono: p.telefono }, conversacionId: p.conversacionId,
@@ -554,7 +559,15 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     }
     eventos.push(...eventosDeLaTraza(ctxHerramientas.traza));
     for (const s of b.saltos) {
-      eventos.push({ tipo: "error", detalle: { etapa: "barandilla", barandilla: s.barandilla, chequeo: s.chequeo, accion: s.accion, motivo: s.motivo, ...(b.decision === "enviar" ? {} : { borrador: borrador(r.textoFinal) }) } });
+      // s.registro: lo que el chequeo pidió dejar además del motivo. El auditor de promesas (10/10) manda
+      // etapa auditor_promesas, la promesa y lo que faltó, y así la Bitácora lo encuentra aparte.
+      eventos.push({
+        tipo: "error",
+        detalle: {
+          etapa: "barandilla", barandilla: s.barandilla, chequeo: s.chequeo, accion: s.accion, motivo: s.motivo, ...s.registro,
+          ...(b.decision === "enviar" ? {} : { borrador: borrador(r.textoFinal) }),
+        },
+      });
     }
 
     const efectosMensajes = mensajesDeEfectos(r.efectos);

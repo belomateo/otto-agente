@@ -7,7 +7,10 @@
 //   · precio_sin_herramienta solo acepta montos que estén en preciosDevueltos;
 //   · horario_sin_herramienta solo acepta horas que estén en horasDevueltas;
 //   · accesorio_sin_herramienta acepta, sin consultar_accesorios, los accesorios nombrados en un
-//     texto de la casa que una herramienta devolvió en este turno (accesoriosDevueltos).
+//     texto de la casa que una herramienta devolvió en este turno (accesoriosDevueltos);
+//   · promesa_sin_hacer (el auditor de promesas, 10/10) acepta «te agendé», «queda confirmado» o
+//     «anoté tu mail» solo si la herramienta salió bien en este turno (llamadas) o si ya era verdad
+//     en la base al empezar (turnosCliente, datosConocidos, linksPrevios).
 // El turno (H1.7) arranca una traza nueva por turno y siembra horasDevueltas con los turnos
 // del cliente que ya le pasa en el contexto.
 
@@ -31,6 +34,22 @@ export type HuecoOfrecido = { inicio: string; fin: string; probador: number; tip
 // igual, sin haber mirado ni un solo día más).
 export type RangoBuscado = { desde: string; hasta: string };
 
+// Un turno activo del cliente tal como lo ve Lucía en SUS TURNOS al empezar el turno (contexto.ts),
+// ya en hora de Argentina. fecha "AAAA-MM-DD", hora "HH:MM", diaSemana 0 (domingo) a 6, dia del mes,
+// enDias: cuántos días faltan desde hoy (0 hoy, 1 mañana). promesa_sin_hacer lo usa para no frenar
+// lo que ya es verdad sin llamar a nada (10/10): «tu turno del martes ya está confirmado» cuando ya lo
+// estaba, o «tu turno del miércoles a las 16:30 ya quedó reservado» cuando lo tiene.
+export type TurnoDelCliente = {
+  id: string;
+  fecha: string;
+  hora: string;
+  diaSemana: number;
+  dia: number;
+  enDias: number;
+  estado: string;
+  confirmado: boolean;
+};
+
 export type Traza = {
   resumenTurnoEmitido?: boolean;
   // buscar_horarios vino vacío porque los días pedidos están en la reserva de urgencia y el
@@ -47,6 +66,12 @@ export type Traza = {
   // turno (turno.ts los saca del historial). enviar_link no los reenvía; venta_sin_resolver y
   // derivar_a_persona los cuentan como mandados, para no obligar a repetirlos (8/10).
   linksPrevios?: string[];
+  // Auditor de promesas (10/10): lo que ya era verdad en la base al empezar el turno, sembrado por
+  // turno.ts. turnosCliente son los turnos activos del cliente (los de SUS TURNOS, con si están
+  // confirmados) y datosConocidos los campos de la ficha que ya tenían valor («email», «nombre»…).
+  // Sin sembrar (pruebas, otra entrada) es como si no tuviera ni turnos ni datos.
+  turnosCliente?: TurnoDelCliente[];
+  datosConocidos?: string[];
 };
 
 export function trazaNueva(): Traza {

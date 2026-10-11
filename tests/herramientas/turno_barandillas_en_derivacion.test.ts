@@ -17,7 +17,7 @@ import { comoChat } from "./_openai_simulado.ts";
 // El principal habla Responses desde el 9/10; los fetchers de acá, Chat Completions: comoChat traduce.
 const correrTurno: typeof correrTurnoReal = (db, p) => correrTurnoReal(db, { ...p, fetcher: p.fetcher ? comoChat(p.fetcher) : p.fetcher });
 import { sinSignosDeApertura } from "../../supabase/functions/_shared/whatsapp/preparar.ts";
-import { AHORA, conBase, contar, crearTurno, fila, prueba, TZ } from "./_arnes.ts";
+import { AHORA, conBase, contar, crearTurno, fila, local, MARTES, prueba, TZ } from "./_arnes.ts";
 
 // Arma una respuesta de Chat Completions mínima, con o sin tool_call.
 function respuestaChat(p: { contenido?: string | null; toolCall?: { nombre: string; argumentos: unknown } }) {
@@ -860,4 +860,99 @@ prueba("evento hoy o mañana por buscar_horarios: el texto con el teléfono pasa
   assertEquals(resultado.mensajesAlCliente.join(" "), TEXTO_CON_TELEFONO);
   const saltos = await contar(sql, "select count(*)::int as n from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = 'barandilla-en-derivacion'", [conversacionId]);
   assertEquals(saltos, 0, "ninguna barandilla tendría que saltar con este texto");
+});
+
+// Auditor de promesas (trabajo 4, 10/10), de punta a punta. Caso real: Walter ya tenía el turno agendado y
+// escribió «Gracias. Ya confirmé para las 13»; Lucía contestó «queda confirmado tu turno» sin llamar a
+// ninguna herramienta y el turno siguió «sin confirmar» en el panel. Las tres pruebas usan el turno
+// real que siembra turno.ts en la traza (los turnos del contexto), no uno armado a mano.
+const FICHA_SIN_DATOS = JSON.stringify({
+  nombre: null, evento: null, fecha_evento: null, rol: null, dia_o_noche: null,
+  talle_aprox: null, ciudad: null, color_preferido: null, presupuesto_mencionado: null, email: null,
+});
+type MensajeChat = { role: string; content: unknown };
+const correccionDe = (mensajes: MensajeChat[]) =>
+  mensajes.find((m) => m.role === "system" && String(m.content).startsWith("CORRECCIÓN INTERNA"));
+
+prueba("auditor de promesas: «queda confirmado» sin cambiar_turno se rehace, y Lucía confirma de verdad (Walter, 10/10)", async ({ ctx, sql, conversacionId, clienteId }) => {
+  const turnoId = await crearTurno(sql, { clienteId, inicio: local(MARTES, "13:00") });
+  await insertarEntrante(sql, conversacionId, "Gracias. Ya confirmé para las 13");
+  const correcciones: string[] = [];
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    if (body.response_format?.json_schema?.name === "ficha") return Promise.resolve(respuestaChat({ contenido: FICHA_SIN_DATOS }));
+    const mensajes = body.messages as MensajeChat[];
+    const correccion = correccionDe(mensajes);
+    if (correccion) correcciones.push(String(correccion.content));
+    // Con la corrección, el modelo hace lo que le dicen: confirma con cambiar_turno y después contesta.
+    if (correccion && !mensajes.some((m) => m.role === "tool")) {
+      return Promise.resolve(respuestaChat({ toolCall: { nombre: "cambiar_turno", argumentos: { accion: "confirmar", turno_id: turnoId, fecha_hora: null, motivo: null } } }));
+    }
+    return Promise.resolve(respuestaChat({ contenido: "Perfecto, Walter, queda confirmado tu turno del martes 4 a las 13:00." }));
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assertEquals(resultado.derivo, false);
+  assert(correcciones.some((c) => c.includes("no llamaste a cambiar_turno con accion confirmar")), `la corrección dice qué llamar: ${correcciones}`);
+  const t = await fila(sql, "select estado, confirmado, confirmado_por from turnos where id = $1", [turnoId]);
+  assertEquals([t.estado, t.confirmado, t.confirmado_por], ["confirmado", true, "cliente"], "la verdad es lo que quedó en la base: ahora sí está confirmado");
+  // Sale una sola confirmación, la de código (la del modelo la recorta confirmacion_doble).
+  const { valor: textoConfirmado } = await fila(sql, "select valor from contexto_agente where clave = 'texto_turno_confirmado'");
+  assertEquals(resultado.mensajesAlCliente, [sinSignosDeApertura(textoConfirmado)]);
+});
+
+prueba("auditor de promesas: si insiste sin confirmar, a la segunda se saca la oración, sale el resto y queda en la Bitácora", async ({ ctx, sql, conversacionId, clienteId }) => {
+  const turnoId = await crearTurno(sql, { clienteId, inicio: local(MARTES, "13:00") });
+  await insertarEntrante(sql, conversacionId, "Gracias. Ya confirmé para las 13");
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    if (body.response_format?.json_schema?.name === "ficha") return Promise.resolve(respuestaChat({ contenido: FICHA_SIN_DATOS }));
+    // El modelo no corrige: vuelve a prometer sin llamar a nada.
+    return Promise.resolve(respuestaChat({ contenido: "Perfecto, queda confirmado tu turno del martes 4 a las 13:00. Te esperamos en España 764." }));
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assertEquals(resultado.derivo, false, "no deriva: se saca la promesa y sale el resto (como los montos, D13)");
+  assertEquals(resultado.mensajesAlCliente, ["Te esperamos en España 764."]);
+  const t = await fila(sql, "select estado, confirmado from turnos where id = $1", [turnoId]);
+  assertEquals([t.estado, t.confirmado], ["sin-confirmar", false]);
+  const ev = await fila(
+    sql,
+    `select detalle->>'barandilla' as barandilla, detalle->>'chequeo' as chequeo, detalle->>'accion' as accion,
+            detalle->>'promesa' as promesa, detalle->>'falto' as falto, detalle->>'resumen' as resumen
+       from eventos_agente where conversacion_id = $1 and tipo = 'error' and detalle->>'etapa' = 'auditor_promesas'`,
+    [conversacionId],
+  );
+  assertEquals([ev?.barandilla, ev?.chequeo, ev?.accion], ["pase_coherente", "promesa_sin_hacer", "cortar"]);
+  assertEquals(ev?.promesa, "Perfecto, queda confirmado tu turno del martes 4 a las 13:00.");
+  assertEquals(ev?.falto, "cambiar_turno con accion confirmar");
+  assert(String(ev?.resumen).startsWith("Auditor de promesas:"), "la Bitácora del panel muestra el resumen");
+});
+
+prueba("auditor de promesas, caso parecido: si el turno ya estaba confirmado, «ya está confirmado» sale tal cual", async ({ ctx, sql, conversacionId, clienteId }) => {
+  await crearTurno(sql, { clienteId, inicio: local(MARTES, "13:00"), estado: "confirmado", confirmado: true });
+  await insertarEntrante(sql, conversacionId, "Hola, mi turno del martes sigue en pie?");
+  const fetcher = ((_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    if (body.response_format?.json_schema?.name === "ficha") return Promise.resolve(respuestaChat({ contenido: FICHA_SIN_DATOS }));
+    if (correccionDe(body.messages as MensajeChat[])) throw new Error("no tenía que pedirse ninguna corrección");
+    return Promise.resolve(respuestaChat({ contenido: "Sí, tu turno del martes 4 a las 13:00 ya está confirmado. Te esperamos en España 764." }));
+  }) as unknown as typeof fetch;
+
+  const resultado = await correrTurno(ctx.db, {
+    clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
+    calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
+  });
+
+  assertEquals(resultado.derivo, false);
+  assertEquals(resultado.mensajesAlCliente, ["Sí, tu turno del martes 4 a las 13:00 ya está confirmado. Te esperamos en España 764."]);
+  assertEquals(await contar(sql, "select count(*)::int as n from eventos_agente where conversacion_id = $1 and tipo = 'error'", [conversacionId]), 0);
 });
