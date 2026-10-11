@@ -83,7 +83,7 @@ export const guardarDatosCliente: Herramienta<Args> = {
         const inicio = new Date(turno.inicio);
         // Un turno en un día cerrado o en un posible feriado no se confirma con el resumen: caso real
         // del ensayo del 10/10, Lucía decía «el lunes 12 estamos cerrados» y enseguida salía el
-        // resumen «lunes 12 de octubre a las 11:30… ¡Te esperamos!». Lo que sigue es moverlo.
+        // resumen «lunes 12 de octubre… ¡Te esperamos!». Lo que sigue es moverlo.
         const dia = (await diasSinTurnos(ctx.db, fechaLocal(inicio, ctx.tz), fechaLocal(inicio, ctx.tz))).values().next().value;
         if (dia) {
           return {

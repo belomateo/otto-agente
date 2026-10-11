@@ -41,7 +41,8 @@ prueba("reserva de urgencia con el evento lejos: el vacío manda a buscar desde 
 
 prueba("evento dentro de la reserva: el vacío es de verdad y queda la nota de siempre", async ({ sql, ctx }) => {
   await reserva(sql);
-  const r = await buscar(ctx, MARTES, MARTES, "invitado", "2030-06-05");
+  // El jueves 6 (a 3 días): sigue dentro de la reserva y ya no es inminente (2 días desde el 10/10).
+  const r = await buscar(ctx, MARTES, MARTES, "invitado", "2030-06-06");
   esOk(r);
   assertMatch(String(r.datos.nota), /Derivá con dato_no_encontrado/);
 });

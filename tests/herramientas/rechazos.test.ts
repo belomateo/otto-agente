@@ -134,10 +134,11 @@ prueba("agendar_turno agenda sin fecha del evento", async ({ ctx, sql, clienteId
 });
 
 prueba("agendar_turno rechaza un turno que cae después del evento", async ({ ctx, sql, clienteId, agenda }) => {
-  await fichaCompleta(sql, clienteId, { fecha_evento: MIERCOLES });
-  agenda.lista = [hueco(JUEVES, "11:00", 45)];
-  esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
-  esRechazo(await agendar(ctx, JUEVES, "11:00", "invitado"), "turno_despues_del_evento");
+  // Evento el jueves (a 3 días): con el miércoles ya sería inminente y derivaría (2 días desde el 10/10).
+  await fichaCompleta(sql, clienteId, { fecha_evento: JUEVES });
+  agenda.lista = [hueco(SABADO, "11:00", 45)];
+  esOk(await buscar(ctx, SABADO, SABADO, "invitado"));
+  esRechazo(await agendar(ctx, SABADO, "11:00", "invitado"), "turno_despues_del_evento");
   assertEquals(await contar(sql, turnosDe, [clienteId]), 0);
 });
 
