@@ -672,8 +672,8 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   await bajarMediosPendientes(db, d, t.conversacion_id);
 
   const ahora = d.ahora();
-  // Del prompt.md que se publicó con la función; la base es solo el respaldo (Mateo, 9/10: ver
-  // prompt.ts).
+  // La versión activa del corrector (10/10) y, si no hay, el prompt.md que se publicó con la función;
+  // la copia vieja de la base es solo el respaldo (ver prompt.ts).
   const prompt = await promptDeLucia(db, ahora);
   const resultado = await d.turno(db, {
     clienteId: conv.cliente_id,
@@ -709,7 +709,13 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   } catch (e) {
     console.error("worker: cola_absorber falló", mensajeDeError(e));
   }
-  await evento(db, t.conversacion_id, "ok", { etapa: "worker-lucia", ...entrega, absorbidos, prompt: prompt.origen });
+  // prompt: de dónde salieron las instrucciones de este turno: «archivo», «base» o, desde el 10/10,
+  // «corrector vN» (la versión activa del corrector de la Bitácora, 0104). prompt_archivo_cambio: esa
+  // versión se armó sobre otro prompt.md que el publicado hoy (prompt.ts).
+  await evento(db, t.conversacion_id, "ok", {
+    etapa: "worker-lucia", ...entrega, absorbidos, prompt: prompt.etiqueta,
+    ...(prompt.archivoCambio ? { prompt_archivo_cambio: true } : {}),
+  });
 }
 
 export async function atenderCola(db: Db, d: Dependencias, worker: string): Promise<number> {

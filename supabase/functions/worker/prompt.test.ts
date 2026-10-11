@@ -1,6 +1,9 @@
 // El prompt de Lucía sale del prompt.md que viene en la función y, solo si el archivo no se puede
 // leer, de la base (pedido de Mateo, 9/10). Acá se prueba esa elección y la caché del respaldo; que
 // lo que devuelve la base sea un prompt correcto lo prueba tests/sql/prompt-vigente.mjs.
+// Desde el 10/10 antes de todo eso está la versión activa del corrector (0104): sus pruebas están en
+// tests/corrector/prompt.test.ts. Acá la base no la tiene (como hoy en producción, sin 0104), y
+// `pedidos` cuenta solo los pedidos a prompt_vigente().
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import type { Db } from "../_shared/db.ts";
 import { olvidarPrompt, promptDeLucia, VIGENCIA_MS } from "./prompt.ts";
@@ -11,7 +14,9 @@ function baseDoble(respuestas: (string | null | Error)[]): { db: Db; pedidos: nu
   const estado = { pedidos: 0 };
   const db: Db = {
     // deno-lint-ignore no-explicit-any
-    consulta: ((_sql: string) => {
+    consulta: ((sql: string) => {
+      // ¿Existe instrucciones_lucia? No: la base todavía no tiene la migración del corrector.
+      if (sql.includes("to_regclass")) return Promise.resolve([{ existe: false }]);
       const r = respuestas[Math.min(estado.pedidos, respuestas.length - 1)];
       estado.pedidos++;
       if (r instanceof Error) return Promise.reject(r);
