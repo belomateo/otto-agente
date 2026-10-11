@@ -14,6 +14,9 @@ Deno.test("un talle dicho con palabras en el medio no es un precio; un precio al
   assertEquals(montos("Para el 56/58 de pantalón, el calce se confirma en la prueba."), []);
   assertEquals(montos("Tenemos el pantalón 48 y el saco talle 52."), []);
   assertEquals(montos("Talle M y el alquiler sale 150."), [150]);
+  // La negrita no corta las reglas: «entre *60 y 7 días antes*» no es un precio; «*$150.000*» sí.
+  assertEquals(montos("Lo ideal es venir entre *60 y 7 días antes del evento*."), []);
+  assertEquals(montos("El alquiler es *a partir de $150.000*."), [150000]);
   assertEquals(montos("El saco sale 120."), [120]);
 });
 

@@ -130,7 +130,9 @@ const TELEFONO = /(?:\+\s?)?\d(?:[\s-]?\d){9,}/g;
 const enmascararTelefonos = (normalizado: string) => normalizado.replace(TELEFONO, (m) => "·".repeat(m.length));
 
 export function montos(t: string, nombreCliente?: string | null): number[] {
-  let crudo = enmascararTelefonos(normalizar(String(t ?? "")));
+  // Sin los asteriscos de la negrita de WhatsApp (ensayo del 10/10): «entre *60 y 7 días antes*»
+  // se leía como un precio de $60, porque el asterisco cortaba la regla de los días de anticipación.
+  let crudo = enmascararTelefonos(normalizar(String(t ?? "").replace(/[*_~]/g, "")));
   if (nombreCliente) crudo = enmascararNombre(crudo, nombreCliente);
   const res = new Set<number>();
   // "$150 mil" o "$33,5 mil" no son $150 ni $33: el monto lo cuenta la regla del millar de abajo
