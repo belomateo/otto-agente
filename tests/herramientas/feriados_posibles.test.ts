@@ -43,7 +43,7 @@ prueba("guardar el mail de alguien con turno en un posible feriado no le confirm
      values ($1, 'invitado', 45, 1, $2, $3, 'sin-confirmar', 'prueba')`,
     [clienteId, iso(JUEVES, "11:30"), iso(JUEVES, "12:15")],
   );
-  const r = await ejecutarHerramienta("guardar_datos_cliente", { email: "maxi@gmail.com" }, ctx);
+  const r = await ejecutarHerramienta("guardar_datos_cliente", { email: "cliente@ejemplo.com" }, ctx);
   esOk(r);
   assertEquals(r.efectos?.mensajesAlCliente ?? [], [], "no sale el resumen «¡Te esperamos!»");
   assertMatch(String(r.datos.nota), /es feriado: no se lo confirmes\. Ofrecele pasarlo a otro día/);
@@ -55,7 +55,7 @@ prueba("guardar el mail de alguien con turno en un posible feriado no le confirm
 
   // Con «Local abierto», el resumen vuelve a salir como siempre.
   await sql.query("update feriados_posibles set local_abierto = true where fecha = $1", [JUEVES]);
-  const r2 = await ejecutarHerramienta("guardar_datos_cliente", { email: "maxi.otro@gmail.com" }, ctx);
+  const r2 = await ejecutarHerramienta("guardar_datos_cliente", { email: "cliente.otro@ejemplo.com" }, ctx);
   esOk(r2);
   assertEquals(r2.efectos?.mensajesAlCliente?.length, 1);
   assertMatch(String(r2.efectos?.mensajesAlCliente?.[0]), /Ya actualicé los datos de tu reserva/);
