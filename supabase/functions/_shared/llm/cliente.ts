@@ -136,6 +136,9 @@ export type PeticionRespuestas = {
   store: false;
   prompt_cache_key?: string;
   max_output_tokens: number;
+  // Salida en JSON estricto contra un esquema. La usa el analista de charlas (0102, 10/10), que no
+  // tiene herramientas y tiene que devolver una lista que el código valida; el principal no la manda.
+  text?: { format: { type: "json_schema"; name: string; schema: unknown; strict: boolean } };
 };
 
 // `items`: la salida tal cual vino (razonamiento cifrado, llamadas a herramientas, mensaje). La

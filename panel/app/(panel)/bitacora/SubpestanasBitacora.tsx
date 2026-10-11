@@ -1,17 +1,16 @@
 'use client';
 
-// Subpestañas de Bitácora: Actividad (/bitacora) y Propuestas (/bitacora/propuestas). Son
-// subrutas y no estado local para que un aviso pueda llevar directo a Propuestas. Propuestas
-// no tiene ruta en paneles todavía (el analista nocturno de PROCESOS.md § 6 no está
-// construido): sin datos reales que contar, no lleva número — mostrar "0" insinuaría que se
-// sabe que no hay ninguna, y no es eso.
+// Subpestañas de Bitácora: Actividad (/bitacora) y Analista (/bitacora/analista). Son subrutas y
+// no estado local para que un link pueda llevar directo a una. Analista reemplaza a la vieja
+// «Propuestas», que nunca tuvo datos (10/10, pedido de Mateo: el analista de charlas va solo acá,
+// en ningún otro lugar del panel). No lleva número: los pendientes se ven adentro, por noche.
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const PESTANAS = [
   { href: '/bitacora', label: 'Actividad' },
-  { href: '/bitacora/propuestas', label: 'Propuestas' },
+  { href: '/bitacora/analista', label: 'Analista' },
 ];
 
 export function SubpestanasBitacora() {

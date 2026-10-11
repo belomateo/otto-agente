@@ -128,26 +128,43 @@ en segundo plano y muestra el resultado en Bitácora: «los 14 guiones pasaron»
 
 ## 6. Mejora continua
 
-### Analista nocturno (🧠, 03:00)
+### Analista de charlas (🧠, 03:00 — desde el 10/10, migración 0102)
 
-1. Lee todas las charlas del día con su bitácora.
-2. Para cada regla de § 5 de `AGENTE.md`, busca turnos donde se rompió y los lista
-   con el mensaje textual.
-3. Detecta preguntas de clientes que terminaron en `dato_no_encontrado` o en una
-   búsqueda vacía de `buscar_informacion` → propone el fragmento que faltó, con
-   tema y texto sugerido.
-4. Detecta objeciones sin guion (el cliente frenó y no hay sección que pegue) →
-   propone la sección.
-5. Calcula: consultas, turnos agendados, tasa de conversión, derivaciones por
-   motivo, costo por conversación, latencia p50/p95. 📋 `metricas_diarias`
-6. Escribe todo en `propuestas_mejora` con estado `pendiente`. **Nunca aplica.**
+Pedido de Mateo (9/10 y 10/10): «una sub-pestaña dentro de la Bitácora, solo ahí, con los
+errores y las mejoras del agente».
 
-### El dueño o Mateo revisa (👤, pestaña Bitácora › Propuestas)
+1. 🔧 El cron `analista-charlas` (0102) llama a la función `analista` a las 03:00 (y a las
+   04:00, de contención). Toma las charlas del día anterior en que habló Lucía (no cuentan
+   las plantillas ni lo que escribió el equipo; no entran los teléfonos de prueba ni el
+   emulador), primero las que pasaron al equipo. 📋 `analisis_revisiones`
+2. 🧠 De a una (hasta 3 a la vez), un modelo (`LLM_ANALISTA`, o el de Lucía) lee la charla
+   del día con su bitácora (herramientas, controles que saltaron, pases al equipo), las reglas
+   de Lucía (`prompt.md`) y lo que es verdad (fichas, precios, horario y días cerrados), y
+   devuelve en JSON estricto:
+   - errores: dato falso, promesa no cumplida, pasó la charla sin necesidad, no contestó, no
+     ofreció turno, tono u otra regla, cada uno citando el mensaje textual;
+   - mejoras: el dato que faltó en las fichas (con la ficha y el texto sugerido; lo que no
+     sabe lo deja entre corchetes, no lo inventa) y frases para decir mejor.
+3. 🔧 El código valida cada punto antes de guardarlo: la cita tiene que estar en la charla (si
+   no, se guarda el texto real de ese mensaje, o se descarta el punto), como mucho 5 errores y
+   3 mejoras por charla. 📋 `analisis_charlas`, estado `pendiente`
+4. 🔧 Topes por noche: 80 charlas o US$ 1 (lo que queda se anota «salteada»). Una charla que
+   falla no corta la noche: queda «fallo» y se reintenta una vez. Cada llamada va a
+   `consumo_llm` (sin charla: no es un turno de Lucía). Una Edge Function vive ~150 s: si
+   quedan charlas, la función se pide relevo (`analista_relevo`). A mano, para una fecha: POST
+   con `{ "fecha": "AAAA-MM-DD" }` y `x-worker-secret`; lo ya analizado no se repite.
+5. **Nunca aplica nada.**
 
-- Cada propuesta tiene "Aplicar", "Editar y aplicar" o "Descartar".
-- Aplicar un fragmento lo crea activo. Aplicar una regla regenera el prompt.
-- Al aplicar, corre el tester modo agente. Si un guion falla, la propuesta queda
-  "aplicada con alerta" y aparece en rojo hasta que alguien la mire.
+Lo que este proceso pedía y todavía no hace: llenar `metricas_diarias` (Bitácora › Actividad
+las calcula en vivo) y correr el tester modo agente cuando se aplica algo.
+
+### El dueño o Mateo revisa (👤, pestaña Bitácora › Analista)
+
+- Errores arriba y mejoras abajo, noche por noche (flechas y selector de fecha), cada uno con
+  «Ver la charla».
+- «Hecho» (ya se resolvió: se cargó el dato, se corrigió el prompt o el control) o «Descartar»
+  (no corresponde); los dos se pueden deshacer. Solo admin. Marcar no cambia nada de Lucía: el
+  arreglo se hace donde corresponde (Conocimiento, `prompt.md`, código).
 
 ### Falla del agente vs falla del dato
 
