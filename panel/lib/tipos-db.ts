@@ -14,6 +14,9 @@
 // editado_por: los fija la base. Mismo motivo, 10/10: la tabla feriados_posibles (0098), escrita a
 // mano contra el CREATE TABLE de la migración, que todavía no estaba aplicada cuando se escribió
 // esto (la aplica Mateo); las consultas del panel toleran que falte (faltaLaTabla, bloqueos.ts).
+// Mismo motivo, 10/10: analisis_charlas y analisis_revisiones (0102, el analista de charlas),
+// escritas a mano contra el CREATE TABLE de la migración (probada en un Postgres local, todavía sin
+// aplicar en la base: la aplica Mateo); lib/queries/analista.ts tolera que falten.
 
 export type Json =
   | string
@@ -58,6 +61,144 @@ export type Database = {
           version?: number
         }
         Relationships: []
+      }
+      analisis_charlas: {
+        Row: {
+          autor_cita: string | null
+          categoria: string
+          cita: string | null
+          conversacion_id: string
+          creado_at: string
+          estado: string
+          fecha: string
+          gravedad: string | null
+          id: string
+          marcado_at: string | null
+          marcado_por: string | null
+          mensaje_id: string | null
+          modelo: string | null
+          que_conviene: string | null
+          que_paso: string
+          tema: string | null
+          texto_sugerido: string | null
+          tipo: string
+        }
+        Insert: {
+          autor_cita?: string | null
+          categoria: string
+          cita?: string | null
+          conversacion_id: string
+          creado_at?: string
+          estado?: string
+          fecha: string
+          gravedad?: string | null
+          id?: string
+          marcado_at?: string | null
+          marcado_por?: string | null
+          mensaje_id?: string | null
+          modelo?: string | null
+          que_conviene?: string | null
+          que_paso: string
+          tema?: string | null
+          texto_sugerido?: string | null
+          tipo: string
+        }
+        Update: {
+          autor_cita?: string | null
+          categoria?: string
+          cita?: string | null
+          conversacion_id?: string
+          creado_at?: string
+          estado?: string
+          fecha?: string
+          gravedad?: string | null
+          id?: string
+          marcado_at?: string | null
+          marcado_por?: string | null
+          mensaje_id?: string | null
+          modelo?: string | null
+          que_conviene?: string | null
+          que_paso?: string
+          tema?: string | null
+          texto_sugerido?: string | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analisis_charlas_conversacion_id_fkey"
+            columns: ["conversacion_id"]
+            isOneToOne: false
+            referencedRelation: "conversaciones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analisis_charlas_marcado_por_fkey"
+            columns: ["marcado_por"]
+            isOneToOne: false
+            referencedRelation: "perfiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analisis_charlas_mensaje_id_fkey"
+            columns: ["mensaje_id"]
+            isOneToOne: false
+            referencedRelation: "mensajes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      analisis_revisiones: {
+        Row: {
+          conversacion_id: string
+          costo_usd: number
+          detalle: string | null
+          estado: string
+          fecha: string
+          hallazgos: number
+          intentos: number
+          modelo: string | null
+          terminada_at: string | null
+          tokens_in: number
+          tokens_out: number
+          tomada_at: string
+        }
+        Insert: {
+          conversacion_id: string
+          costo_usd?: number
+          detalle?: string | null
+          estado: string
+          fecha: string
+          hallazgos?: number
+          intentos?: number
+          modelo?: string | null
+          terminada_at?: string | null
+          tokens_in?: number
+          tokens_out?: number
+          tomada_at?: string
+        }
+        Update: {
+          conversacion_id?: string
+          costo_usd?: number
+          detalle?: string | null
+          estado?: string
+          fecha?: string
+          hallazgos?: number
+          intentos?: number
+          modelo?: string | null
+          terminada_at?: string | null
+          tokens_in?: number
+          tokens_out?: number
+          tomada_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analisis_revisiones_conversacion_id_fkey"
+            columns: ["conversacion_id"]
+            isOneToOne: false
+            referencedRelation: "conversaciones"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       bloqueos_agenda: {
         Row: {

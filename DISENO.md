@@ -218,11 +218,14 @@ descripción corta. Sección aparte "Accesorios" en tabla: nombre, precio de
 alquiler, precio de compra con descuento, switch.
 
 ### 7. Bitácora (ruta `/bitacora`)
-Dos subpestañas: **Actividad** (`/bitacora`, lo que sigue) y **Propuestas · N**
-(`/bitacora/propuestas`): lo que el análisis nocturno sugiere (PROCESOS.md § 6).
-Cada propuesta dice de dónde sale (cuántas charlas y un ejemplo textual) y tiene
-Aplicar · Editar y aplicar · Descartar; las «aplicadas con alerta» van en
-Ladrillo, con el guion que falló y «Ver». N es la cantidad de pendientes.
+Dos subpestañas: **Actividad** (`/bitacora`, lo que sigue) y **Analista**
+(`/bitacora/analista`, desde el 10/10): lo que el analista de charlas encontró cada
+noche (PROCESOS.md § 6). Errores de Lucía arriba (etiqueta en Ladrillo, la cita
+textual con el color de quien la dijo, qué estuvo mal, qué conviene y «Ver la
+charla») y mejoras abajo (en Cobre claro: el dato que faltó en las fichas con el
+texto sugerido, o una frase para decir mejor). Un admin marca cada uno «Hecho» o
+«Descartar» (con «Deshacer»). Reemplazó a «Propuestas» (Aplicar · Editar y
+aplicar), que nunca tuvo datos: el analista no aplica nada.
 
 En Actividad, arriba, **cuatro números del día** en tarjetas: Consultas · Turnos agendados ·
 Conversión · Derivaciones (con el costo de IA en chico). Debajo, la línea de

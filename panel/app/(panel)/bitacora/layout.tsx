@@ -1,6 +1,6 @@
 // Bitácora (pestaña 7, ruta /bitacora: decisión de Mateo, 12/9). Título y subpestañas
-// compartidos por Actividad y Propuestas. La fecha vive en Actividad (con sus flechas de
-// día, GET /api/bitacora?fecha=...): Propuestas no tiene fecha propia, así que ya no va acá.
+// compartidos por Actividad y Analista. La fecha vive en cada subpestaña (Actividad con sus
+// flechas de día, Analista con las noches analizadas): no son la misma fecha, así que no va acá.
 
 import { SubpestanasBitacora } from './SubpestanasBitacora';
 
