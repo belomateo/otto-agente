@@ -260,6 +260,10 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
   // Se llena en el try (queda [] si derivó por código antes de leer historial); lo usa el
   // extractor en el finally, con la charla completa y no solo el último intercambio (ver ahí).
   let historial: MensajeChat[] = [];
+  // Los precios que vio o dijo Lucía en este turno (traza.preciosDevueltos), para que el extractor
+  // del finally no anote uno como presupuesto del cliente (trabajo 5, 10/10, ver llm/extractor.ts).
+  // Va acá porque la traza nace adentro del try; es la misma lista, que las herramientas van llenando.
+  let preciosDelTurno: number[] = [];
   // El modelo se quedó sin tiempo (ver ultimoIntento): el extractor del finally no corre, porque
   // si OpenAI está colgado puede sumar 41 s más (dos intentos de 20) y el trabajo se pasaría del
   // límite de la función, que corta antes de mandar (hallazgo del trabajo 1, 9/10).
@@ -406,6 +410,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       accesoriosDevueltos: yaDicho.accesorios,
       linksPrevios: linksYaEnviados(historial, enlaces),
     };
+    preciosDelTurno = traza.preciosDevueltos;
     const ctxHerramientas = contextoDeHerramientas({
       db, tz: p.tz, cliente: { id: p.clienteId, telefono: p.telefono }, conversacionId: p.conversacionId,
       ahora: p.ahora, calendario: p.calendario, derivacionTel: p.derivacionTel, traza,
@@ -618,7 +623,11 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
         const turnoTexto = [...historial.map((m) => `${m.role === "user" ? "Cliente" : "Lucía"}: ${m.content}`), turnoActual].join("\n");
         // El "hoy" del negocio va sí o sí: sin él, el extractor escribiría en la ficha una fecha
         // de evento que ya pasó y dejaría al cliente sin poder sacar turno nunca (ver extractor.ts).
-        const extraccion = await extraer(turnoTexto, p.fetcher, fechaLocal(p.ahora, p.tz));
+        const extraccion = await extraer(turnoTexto, p.fetcher, fechaLocal(p.ahora, p.tz), {
+          cliente: [...historial.filter((m) => m.role === "user").map((m) => m.content), mensaje].join("\n"),
+          lucia: [...historial.filter((m) => m.role === "assistant").map((m) => m.content), textoLucia].join("\n"),
+          preciosDevueltos: preciosDelTurno,
+        });
         if (!extraccion) {
           eventos.push({ tipo: "error", detalle: { etapa: "extraer", error: "sin respuesta del extractor" } });
         } else {

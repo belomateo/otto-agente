@@ -41,7 +41,14 @@ export const guardarDatosCliente: Herramienta<Args> = {
     talle_aprox: { type: ["string", "null"], maxLength: 20, description: "Talle aproximado, como lo dijo." },
     ciudad: { type: ["string", "null"], maxLength: 60, description: "De dónde es." },
     color_preferido: { type: ["string", "null"], maxLength: 40, description: "Color que prefiere." },
-    presupuesto_mencionado: { type: ["string", "null"], maxLength: 80, description: "Lo que dijo del presupuesto, con sus palabras." },
+    // Trabajo 5, 10/10: «lo que dijo del presupuesto» se leía como «el precio que se dijo» (presupuesto
+    // también es cotización) y en 13 charlas Lucía guardó su propio «a partir de» como si fuera la
+    // plata del cliente. Mismo arreglo que el extractor (llm/extractor.ts).
+    presupuesto_mencionado: {
+      type: ["string", "null"],
+      maxLength: 80,
+      description: "Cuánto dijo el cliente que quiere o puede gastar, con sus palabras. Nunca un precio que le diste vos.",
+    },
     email: { type: ["string", "null"], maxLength: 120, description: "Mail que dio, como lo escribió." },
     nota: {
       type: ["string", "null"],
