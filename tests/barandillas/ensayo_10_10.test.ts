@@ -50,7 +50,7 @@ Deno.test("«no me figura un turno a tu nombre» es una frase de mostrador; «no
 
 Deno.test("la cortesía suelta antes del resumen del turno se saca; lo que dice algo más, no", async () => {
   const agendo = { traza: traza({ herramientas: ["agendar_turno"] }) };
-  for (const texto of ["¡Te esperamos, Jaz!", "Te esperamos con tu hijo, Marisa!", "Gracias, Walter. Te esperamos!"]) {
+  for (const texto of ["¡Te esperamos, Jaz!", "Te esperamos con tu hijo, Marisa!", "Gracias, Walter. Te esperamos!", "Sí, Luciana!"]) {
     const r = await confirmacionDoble.evaluar(entrada(texto, agendo));
     assertEquals(r.salta && r.texto, "", texto);
   }

@@ -78,7 +78,7 @@ function esSaludoDeApertura(clausula: string): boolean {
 function esCortesiaSuelta(clausula: string): boolean {
   const n = normalizar(clausula).replace(/^[¡!¿\s]+/, "").replace(/[^\p{L}]+$/u, "");
   return n.length <= 40 &&
-    /^(?:te esperamos|los esperamos|las esperamos|nos vemos|gracias(?: por (?:confirmar|avisar|escribir))?|muchas gracias|listo|perfecto|genial|excelente|dale)(?:,?\s+[a-zñ]+){0,4}$/
+    /^(?:te esperamos|los esperamos|las esperamos|nos vemos|gracias(?: por (?:confirmar|avisar|escribir))?|muchas gracias|listo|perfecto|genial|excelente|dale|si|claro)(?:,?\s+[a-zñ]+){0,4}$/
       .test(n);
 }
 
