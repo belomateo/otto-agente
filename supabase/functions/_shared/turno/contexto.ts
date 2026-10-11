@@ -9,7 +9,8 @@ import type { Db } from "../db.ts";
 import { ESTADOS_QUE_LIBERAN } from "../enums.ts";
 import { leerFicha } from "../herramientas/ficha.ts";
 import { describirHorarios, type HorarioLocal, leerHorarioDelLocal } from "../herramientas/horario_laboral.ts";
-import { fechaLarga, fechaLocal, horaLocal, nombreDia, partesLocales, sumarDias } from "../tiempo.ts";
+import { diasEntre, fechaLarga, fechaLocal, horaLocal, nombreDia, partesLocales, sumarDias } from "../tiempo.ts";
+import type { TurnoDelCliente } from "../traza.ts";
 
 // Pedido de Mateo, 21/9: Lucía se presenta la primera vez de la charla, y de nuevo si pasaron
 // más de 7 días desde el último mensaje — un hueco así de largo se trata como si arrancara una
@@ -37,14 +38,31 @@ async function libretaTexto(db: Db, clienteId: string): Promise<string> {
   return "Esto es lo que ya sabés de este cliente (no se lo vuelvas a preguntar):\n" + partes.join("\n");
 }
 
-async function turnosActivosTexto(db: Db, clienteId: string, ahora: Date, tz: string): Promise<{ texto: string; horas: string[] }> {
+async function turnosActivosTexto(
+  db: Db,
+  clienteId: string,
+  ahora: Date,
+  tz: string,
+): Promise<{ texto: string; horas: string[]; turnos: TurnoDelCliente[] }> {
   const filas = await db.consulta<{ id: string; tipo: string; inicio: string; estado: string; confirmado: boolean }>(
     `select id::text as id, tipo, inicio, estado, confirmado from turnos
       where cliente_id = $1 and fin > $2::timestamptz and not (estado = any($3::text[]))
       order by inicio`,
     [clienteId, ahora.toISOString(), [...ESTADOS_QUE_LIBERAN]],
   );
-  if (filas.length === 0) return { texto: "No tiene ningún turno activo.", horas: [] };
+  if (filas.length === 0) return { texto: "No tiene ningún turno activo.", horas: [], turnos: [] };
+  // Los mismos turnos, como datos, para el auditor de promesas (10/10, traza.turnosCliente): «queda
+  // confirmado tu turno del martes» es verdad sin llamar a nada solo si ese turno ya estaba confirmado.
+  const hoy = fechaLocal(ahora, tz);
+  const turnos: TurnoDelCliente[] = filas.map((f) => {
+    const inicio = new Date(f.inicio);
+    const p = partesLocales(inicio, tz);
+    const fecha = fechaLocal(inicio, tz);
+    return {
+      id: f.id, fecha, hora: horaLocal(inicio, tz), diaSemana: p.diaSemana, dia: p.dia, enDias: diasEntre(hoy, fecha),
+      estado: f.estado, confirmado: Boolean(f.confirmado) || f.estado === "confirmado",
+    };
+  });
   // Un turno que quedó en un día cerrado o en un posible feriado (0098) se marca acá: Lucía le
   // ofrece pasarlo a otro día en vez de confirmarlo (caso real del 9/10: «¿Trabajan? Es feriado»).
   const fechas = filas.map((f) => fechaLocal(new Date(f.inicio), tz)).sort();
@@ -63,7 +81,7 @@ async function turnosActivosTexto(db: Db, clienteId: string, ahora: Date, tz: st
       return `- turno_id ${f.id}: ${f.tipo}, ${fechaLarga(inicio, tz)} a las ${h}, ${f.estado}${f.confirmado ? " (confirmado)" : ""}${ojo}`;
     })
     .join("\n");
-  return { texto, horas };
+  return { texto, horas, turnos };
 }
 
 // Pedido de Mateo, 5/10: el local abre de corrido. Antes iban también las franjas de turnos de hoy
@@ -109,7 +127,7 @@ async function proximosDiasTexto(db: Db, ahora: Date, tz: string, horario: Horar
 export async function armarContextoDelTurno(
   db: Db,
   p: { clienteId: string; ahora: Date; tz: string; diasDesdeUltimoMensaje: number | null },
-): Promise<{ texto: string; horas: string[] }> {
+): Promise<{ texto: string; horas: string[]; turnos: TurnoDelCliente[] }> {
   const horario = await leerHorarioDelLocal(db);
   const [libreta, turnos, horarioHoy, proximos] = await Promise.all([
     libretaTexto(db, p.clienteId),
@@ -147,5 +165,5 @@ export async function armarContextoDelTurno(
   // preguntando por su propio turno ("¿a qué hora era?") hacía saltar la barandilla dos veces y
   // terminaba en barandilla_doble (con el texto fijo de turno.ts, desde el 19/9 — antes, mudo).
   const horas = [...new Set([...turnos.horas, ...horarioHoy.horas, ...proximos.horas])];
-  return { texto, horas };
+  return { texto, horas, turnos: turnos.turnos };
 }
