@@ -58,7 +58,7 @@ Un proyecto nuevo, solo para Otto. Nada compartido con otros clientes de ZW Labs
 | `webhook-whatsapp` | POST de Meta | Verifica firma, dedup por `wa_message_id`, guarda mensaje, encola. Responde 200 en < 1 s siempre. |
 | `worker` | trigger al encolar + cron de contención cada minuto | Toma trabajos, corre el turno del agente (ver `AGENTE.md` § 3), envía por Meta, escribe bitácora. |
 | `cron-envios` | pg_cron por `tipo` (0022) | Los cuatro envíos por plantilla: recordatorio 18 hs antes del turno (0045; marca `recordatorio_enviado_at`), agradecimiento con pedido de reseña tras la devolución, y los dos recontactos. Ninguno sale fuera de 9:00–21:00 (0047). Apagado mientras `CRONS_ENVIOS` no valga `on`: espera que Meta apruebe las plantillas. |
-| `cron-analista` | pg_cron 03:00 | Subagente LLM que lee las charlas del día y propone mejoras (ver `PROCESOS.md` § 6). |
+| `analista` | pg_cron 03:00 y 04:00 (0102) + su propio relevo | Subagente LLM que lee las charlas del día anterior y deja errores de Lucía y mejoras para Bitácora › Analista (ver `PROCESOS.md` § 6). Tope: 80 charlas o US$ 1 por noche. |
 | — | webhook (respuesta al botón) | La confirmación del turno **no es una función aparte**: la resuelve el `worker` (`confirmarPorBoton` en `atender.ts`, `turno_confirmar_por_boton` en 0021). |
 | `probar-agente` | POST desde `scripts/` | Emulador: mismo agente, misma base, sin Meta, sin Calendar real (usa modo dry-run). |
 
@@ -76,7 +76,7 @@ redeploy:
 | `LLM_RAZONAMIENTO` | Cuánto piensa el principal: minimal / low / medium / high | `low`: probado el 8/10 (0 invenciones en los casos que fallaban) |
 | `LLM_API_PRINCIPAL` | `responses` (por defecto) o `chat` | Solo para volver atrás |
 | `LLM_EXTRACTOR` | Arma la ficha del cliente a partir del mensaje | Modelo chico; salida JSON estricta contra un schema |
-| `LLM_ANALISTA` | Análisis nocturno de charlas | Modelo grande, corre una vez por día |
+| `LLM_ANALISTA` | Análisis nocturno de charlas (función `analista`, 0102) | Si no está, el de Lucía (`LLM_PRINCIPAL`). Va por Responses con JSON estricto; `LLM_RAZONAMIENTO_ANALISTA` dice cuánto piensa (`low` si no se dice: probado el 10/10 contra `medium` en 3 charlas reales, encontró lo mismo, más rápido y un poco más barato) |
 
 Reglas de uso:
 
@@ -174,7 +174,8 @@ LLM_PRINCIPAL
 LLM_RAZONAMIENTO                   # low si no está
 LLM_API_PRINCIPAL                  # responses si no está; chat = volver atrás
 LLM_EXTRACTOR
-LLM_ANALISTA
+LLM_ANALISTA                       # el de Lucía si no está
+LLM_RAZONAMIENTO_ANALISTA          # low si no está
 
 # WhatsApp
 WA_PHONE_NUMBER_ID

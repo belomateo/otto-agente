@@ -461,7 +461,7 @@ filtro por palabra clave: esa decisión la toma Lucía con `derivar_a_persona` (
 | Subagente | Modelo | Cuándo | Entrada → Salida |
 | --- | --- | --- | --- |
 | **Extractor** | `LLM_EXTRACTOR` | Paso 10 de cada turno | Turno completo → ficha del cliente (§ 7) JSON. Solo lo dicho. |
-| **Analista nocturno** | `LLM_ANALISTA` | 03:00 — **todavía no existe** | Charlas del día + reglas → propuestas de fragmentos nuevos, fallas por regla, objeciones sin guion. **Propone, no aplica** (ver `PROCESOS.md` § 6). Pendiente pedido por Mateo (9/10): una sub-pestaña propia dentro de Bitácora. |
+| **Analista de charlas** | `LLM_ANALISTA` (si no está, `LLM_PRINCIPAL`) | 03:00, función `analista` (0102, 10/10) | Charlas del día anterior con su bitácora + `prompt.md` + fichas, precios y horario → errores de Lucía con la cita textual y mejoras (el dato que faltó en las fichas, frases). JSON estricto, validado en código (la cita tiene que estar en la charla). **Propone, no aplica**: Bitácora › Analista, pedido de Mateo (9/10) — ver `PROCESOS.md` § 6. |
 | **Transcriptor** | `LLM_TRANSCRIPCION` | Paso 3, si el cliente manda un audio | Audio → texto (gpt-4o-mini-transcribe; OpenAI lo da de baja el 26/2/2027). |
 
 Ninguno escribe en la base directamente: devuelven JSON, el código valida contra
