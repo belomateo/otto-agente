@@ -157,7 +157,11 @@ A.push(
   "|---|---|---|---|",
   ...franjas.map((f) => `| ${DIAS[f.dia_semana]} | ${hm(f.desde)} | ${hm(f.hasta)} | ${f.probadores} |`),
   "",
-  `- Probadores en total: ${conf?.cantidad_probadores ?? "—"}. **Lucía agenda solo en los primeros ${conf?.probadores_lucia ?? "todos"}**; el resto queda para el equipo.`,
+  // probadores_lucia null = Lucía da todos (0099, 10/10); un número deja los de arriba para el equipo.
+  `- Probadores en total: ${conf?.cantidad_probadores ?? "—"}. ` +
+    (conf?.probadores_lucia
+      ? `**Lucía agenda solo en los primeros ${conf.probadores_lucia}**; el resto queda para el equipo.`
+      : "Lucía agenda en todos."),
   `- Turnos cada ${conf?.escalonado_min ?? "—"} minutos. Días con probadores simultáneos: ${(conf?.dias_simultaneos ?? []).map((d) => DIAS[d]).join(", ") || "ninguno"}.`,
   conf?.dias_reserva_urgencia
     ? `- Reserva de urgencia: los próximos ${conf.dias_reserva_urgencia} días (hoy incluido) quedan para eventos que caen dentro de ese plazo. A un evento más lejano, o si no se sabe la fecha, se le ofrece desde después; si el día pedido cae en la reserva y no se sabe la fecha, Lucía pregunta para cuándo es el evento.`

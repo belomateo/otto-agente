@@ -197,12 +197,16 @@ prueba("buscar_horarios ofrece hasta dos por franja y por día", async ({ ctx, a
 
 prueba("buscar_horarios busca desde hoy si le piden un día que pasó, y rechaza rangos inválidos", async ({ ctx, sql, agenda }) => {
   // Sin reserva de urgencia: con reserva y sin fecha de evento, el vacío pide la fecha del evento
-  // en vez de derivar (reserva_urgencia.test.ts); acá se prueba el vacío de siempre.
+  // en vez de derivar (reserva_urgencia.test.ts). Acá la agenda está vacía también en lo más
+  // cercano: desde el 10/10 recién ahí indica pasar la charla (agenda_10_10.test.ts).
   await sql.query("update configuracion_agenda set dias_reserva_urgencia = null");
   const r = await buscar(ctx, "2030-05-20", JUEVES, "invitado");
   esOk(r);
   assertEquals(agenda.pedidos[0].desde, LUNES);
   assertMatch(String(r.datos.aviso), /desde hoy/);
+  // Arranca hoy: lo más cercano es solo para adelante (las dos semanas siguientes).
+  assertEquals(agenda.pedidos.map((p) => [p.desde, p.hasta]), [[LUNES, JUEVES], ["2030-06-07", "2030-06-20"]]);
+  assertMatch(String(r.datos.nota), /Tampoco hay lugar en los días más cercanos/);
   assertMatch(String(r.datos.nota), /dato_no_encontrado/);
   esRechazo(await buscar(ctx, JUEVES, MARTES, "invitado"), "rango_invertido");
   // Más de dos semanas ya no se rechaza: se recorta a dos semanas y se avisa (4/10).
