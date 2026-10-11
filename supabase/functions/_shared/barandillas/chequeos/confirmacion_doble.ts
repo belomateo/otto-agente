@@ -76,9 +76,12 @@ function esSaludoDeApertura(clausula: string): boolean {
 // de «¡Gracias por confirmar! Te esperamos en el local» (ensayo del 10/10, Mateo: «sin el saludo
 // repetido adelante»). Solo si es corta y no dice nada más.
 function esCortesiaSuelta(clausula: string): boolean {
+  // «¡Sí, Luciana!» o «Claro, Luciana»: solo con el nombre y nada más (con mayúscula, como lo
+  // escribe el modelo). «Sí, alquilamos corbata» arranca una respuesta de verdad y no se toca.
+  if (/^[¡!\s]*(?:[Ss][ií]|[Cc]laro),?\s+\p{Lu}\p{Ll}+[\s!.]*$/u.test(clausula.trim())) return true;
   const n = normalizar(clausula).replace(/^[¡!¿\s]+/, "").replace(/[^\p{L}]+$/u, "");
   return n.length <= 40 &&
-    /^(?:te esperamos|los esperamos|las esperamos|nos vemos|gracias(?: por (?:confirmar|avisar|escribir))?|muchas gracias|listo|perfecto|genial|excelente|dale|si|claro)(?:,?\s+[a-zñ]+){0,4}$/
+    /^(?:te esperamos|los esperamos|las esperamos|nos vemos|gracias(?: por (?:confirmar|avisar|escribir))?|muchas gracias|listo|perfecto|genial|excelente|dale)(?:,?\s+[a-zñ]+){0,4}$/
       .test(n);
 }
 
