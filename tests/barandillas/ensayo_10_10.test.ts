@@ -24,6 +24,10 @@ Deno.test("«no hay descuento por dos» es una política, no falta de stock", as
   const texto = "No tenemos un descuento aprobado por dos alquileres. Si querés, le consulto al equipo.";
   assertEquals((await disponibilidadNegada.evaluar(entrada(texto))).salta, false);
   assertEquals((await disponibilidadNegada.evaluar(entrada("No tenemos ese modelo en azul."))).salta, true);
+  // Solo ropa de hombre (Sofía, 10/10): es la política de la casa, no falta de stock.
+  const mujer = "No tenemos ropa de mujer: trabajamos solo ropa de hombre, para adultos y chicos.";
+  assertEquals((await disponibilidadNegada.evaluar(entrada(mujer))).salta, false);
+  assertEquals((await disponibilidadNegada.evaluar(entrada("No trabajamos vestidos."))).salta, false);
 });
 
 Deno.test("«las 15:30 no están disponibles» con otros horarios buscados en la agenda no se frena", async () => {

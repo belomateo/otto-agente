@@ -19,7 +19,10 @@ const DIA_CERRADO = /\b(?:cerrad[oa]s?|feriados?|domingos?|cierre)\b/;
 // «las 15:30 no están disponibles» o «el 10 y el 17 no hay turnos libres» son la agenda real si
 // buscar_horarios se consultó en este turno y el mismo mensaje ofrece otros horarios. Las dos se
 // frenaban y Lucía terminaba diciendo algo más vago, o borrando el dato útil.
-const NO_ES_STOCK = /\b(?:descuentos?|promos?|promociones?|envios?|cuotas)\b/;
+// También «no tenemos ropa de mujer»: Mr Otto trabaja solo ropa de hombre (Sofía, 10/10), es la
+// política de la casa y no falta de stock. Frenarlo dejaba a Lucía contestando algo vago y
+// mandando el catálogo a quien buscaba un vestido.
+const NO_ES_STOCK = /\b(?:descuentos?|promos?|promociones?|envios?|cuotas|mujer(?:es)?|damas?|vestidos?|femenin[oa]s?)\b/;
 const HABLA_DE_AGENDA = /\b(?:turnos?|horarios?|lugar(?:es)?|libres?|disponibles?)\b|\d{1,2}[:.]\d{2}/;
 const OFRECE_HORARIO = /\b\d{1,2}[:.]\d{2}\b|\ba las \d{1,2}\b/;
 
