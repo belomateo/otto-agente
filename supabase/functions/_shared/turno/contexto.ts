@@ -124,16 +124,36 @@ async function proximosDiasTexto(db: Db, ahora: Date, tz: string, horario: Horar
   return { texto: lineas.join("\n"), horas: describirHorarios(horario, []).horas };
 }
 
+// Prueba del 11/10: con un casamiento el martes 24/11, Lucía no sabía que el lunes 23 es feriado
+// (los 14 días de arriba no llegan) y no podía decirle que retira el sábado. Los días cerrados y los
+// posibles feriados de los próximos seis meses, en una lista corta, para el retiro y la devolución.
+const MESES_DE_FERIADOS = 6;
+async function feriadosQueVienenTexto(db: Db, ahora: Date, tz: string): Promise<string> {
+  const desde = sumarDias(fechaLocal(ahora, tz), DIAS_DEL_CALENDARIO);
+  const dias = await diasSinTurnos(db, desde, sumarDias(desde, MESES_DE_FERIADOS * 30));
+  return [...dias.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([ymd, dia]) => {
+      const [a, m, d] = ymd.split("-").map(Number);
+      const nombre = nombreDia(new Date(Date.UTC(a, m - 1, d)).getUTCDay());
+      return dia.posibleFeriado
+        ? `- ${nombre} ${d}/${m}: posible feriado (${dia.motivo.replace(/^Feriado: /, "")})`
+        : `- ${nombre} ${d}/${m}: cerrado${dia.motivo ? ` (${dia.motivo})` : ""}`;
+    })
+    .join("\n");
+}
+
 export async function armarContextoDelTurno(
   db: Db,
   p: { clienteId: string; ahora: Date; tz: string; diasDesdeUltimoMensaje: number | null },
 ): Promise<{ texto: string; horas: string[]; turnos: TurnoDelCliente[] }> {
   const horario = await leerHorarioDelLocal(db);
-  const [libreta, turnos, horarioHoy, proximos] = await Promise.all([
+  const [libreta, turnos, horarioHoy, proximos, feriados] = await Promise.all([
     libretaTexto(db, p.clienteId),
     turnosActivosTexto(db, p.clienteId, p.ahora, p.tz),
     horarioDeHoyTexto(db, p.ahora, p.tz, horario),
     proximosDiasTexto(db, p.ahora, p.tz, horario),
+    feriadosQueVienenTexto(db, p.ahora, p.tz),
   ]);
   const lineas = [
     "CONTEXTO DE ESTE TURNO (no es parte de lo que sabés de memoria; usalo, no lo repitas al cliente tal cual).",
@@ -151,6 +171,9 @@ export async function armarContextoDelTurno(
     "«mañana», sin calcularla, y para contestar si un día abrimos: si no dice cerrado ni posible feriado, ese día el " +
     "local abre, aunque sea feriado. Los turnos libres de cada día los da buscar_horarios.",
     proximos.texto,
+    ...(feriados
+      ? ["", "FERIADOS Y DÍAS CERRADOS DE LOS PRÓXIMOS MESES (para el retiro y la devolución; los demás días abre como siempre):", feriados]
+      : []),
   ];
   if (p.diasDesdeUltimoMensaje !== null && p.diasDesdeUltimoMensaje >= UMBRAL_DIAS_REPRESENTACION) {
     lineas.push(

@@ -2,7 +2,9 @@
 // que estaban bien. Cada prueba tiene el caso real y su contracara: lo que el control sí tiene que
 // seguir frenando.
 
-import { assertEquals } from "jsr:@std/assert@1.0.13";
+import { assertEquals, assertMatch } from "jsr:@std/assert@1.0.13";
+import { aplicarBarandillas } from "../../supabase/functions/_shared/barandillas/index.ts";
+import { horarioSinHerramienta } from "../../supabase/functions/_shared/barandillas/chequeos/horario_sin_herramienta.ts";
 import { confirmacionDoble } from "../../supabase/functions/_shared/barandillas/chequeos/confirmacion_doble.ts";
 import { disponibilidadNegada } from "../../supabase/functions/_shared/barandillas/chequeos/disponibilidad_negada.ts";
 import { mencionaIa } from "../../supabase/functions/_shared/barandillas/chequeos/menciona_ia.ts";
@@ -18,6 +20,24 @@ Deno.test("un talle dicho con palabras en el medio no es un precio; un precio al
   assertEquals(montos("Lo ideal es venir entre *60 y 7 días antes del evento*."), []);
   assertEquals(montos("El alquiler es *a partir de $150.000*."), [150000]);
   assertEquals(montos("El saco sale 120."), [120]);
+});
+
+// Prueba del 11/10: el cliente contestó «11» a una oferta de 10:00 o 13:00; Lucía preguntó por las
+// 11:00 sin buscarlas dos veces y la charla terminó en el equipo (barandilla_doble).
+Deno.test("una hora sin buscar: primero rehace; la segunda vez se saca la oración y no pasa la charla", async () => {
+  const texto = "Perfecto, Tomás. Te reservo mañana jueves a las 11:00?";
+  const primera = await horarioSinHerramienta.evaluar(entrada(texto));
+  assertEquals(primera.salta && primera.accion, "rehacer");
+  assertMatch(String(primera.salta && primera.motivo), /llamá a buscar_horarios con fecha_hora/);
+  const segunda = await horarioSinHerramienta.evaluar(entrada(texto, { saltosPrevios: 1 }));
+  assertEquals(segunda.salta && segunda.accion, "cortar");
+  assertEquals(segunda.salta && segunda.texto, "Me decís qué día te queda mejor, así lo reviso en la agenda?");
+  // Lo que no trae la hora sale igual.
+  const conMas = "Podés venir con un acompañante. Te reservo el jueves a las 11:00?";
+  const r = await horarioSinHerramienta.evaluar(entrada(conMas, { saltosPrevios: 1 }));
+  assertEquals(r.salta && r.texto, "Podés venir con un acompañante.");
+  const decision = await aplicarBarandillas(entrada(texto), { saltosPrevios: 1 });
+  assertEquals(decision.decision === "derivar", false, "ya no pasa la charla al equipo");
 });
 
 Deno.test("«no hay descuento por dos» es una política, no falta de stock", async () => {
