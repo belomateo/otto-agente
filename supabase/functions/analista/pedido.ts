@@ -305,7 +305,7 @@ Errores de Lucía, solo en los mensajes de ese día:
 - dato_falso: afirmó algo que contradice LO QUE ES VERDAD, o dijo un precio, horario, política, talle o disponibilidad que no sale de ningún lado (lo inventó).
 - promesa_no_cumplida: prometió algo que no hizo o que no puede hacer: que alguien del equipo le va a escribir sin haber pasado la charla, que le manda algo que nunca mandó, que le reservó un turno que no figura en sus turnos.
 - derivo_sin_necesidad: pasó la charla al equipo cuando podía resolverla con sus herramientas o con LO QUE ES VERDAD (por un modelo o un color, un mensaje abreviado, varias preguntas juntas, un horario ocupado, un dato que estaba cargado).
-- no_contesto: el cliente preguntó algo y Lucía no lo contestó, o el último mensaje del cliente quedó sin respuesta. Citá el mensaje del cliente.
+- no_contesto: el cliente preguntó algo y Lucía no lo contestó, o el último mensaje del cliente quedó sin respuesta. Citá el mensaje del cliente. No cuenta un «gracias», «ok», «chau» o «muchas gracias» suelto con el que el cliente cierra: a eso Lucía no contesta a propósito, para no quedar en un ida y vuelta de agradecimientos.
 - no_ofrecio_turno: ya había dado el precio o explicado cómo funciona, sabía la fecha del evento, el cliente no tenía turno, y Lucía no le ofreció buscarle uno. No cuenta si el cliente dijo que solo estaba averiguando, si ya se lo había ofrecido antes, o si el evento era dentro de dos días (eso lo resuelve el equipo).
 - tono: frío, robótico, repetitivo, insistente, con cierres de relleno, con más de una pregunta, demasiado largo, o se volvió a presentar.
 - regla: rompió otra de sus instrucciones (por ejemplo: sumó precios, negó algo sin buscarlo, recomendó modelos, pidió datos de tarjeta, dio otro teléfono).
