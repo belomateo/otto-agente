@@ -43,19 +43,33 @@ export function horas(t: string): string[] {
 const OFRECE_DIA =
   /\b(tengo|tenemos|hay|te puedo dar|te ofrezco|disponible|libre|lugar)\b[^.?!\n]{0,40}\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|(?<!la )manana)\b/;
 
+// Segundo intento con una hora sin respaldo (prueba del 11/10): el cliente contestó «11» a una
+// oferta de 10:00 o 13:00, Lucía le preguntó por las 11:00 sin buscarla dos veces y la charla
+// terminó en el equipo con el texto genérico. Ahora, como el precio (D13): se saca la oración con
+// esa hora y sale el resto; si no queda nada, una pregunta neutra para seguir, sin pasar la charla.
+const PREGUNTA_NEUTRA = "Me decís qué día te queda mejor, así lo reviso en la agenda?";
+function sinLasHoras(texto: string, fuera: string[]): string {
+  const linea = (l: string) => l.split(/(?<=[.!?…])\s+/).filter((o) => !horas(o).some((h) => fuera.includes(h))).join(" ").trim();
+  const resultado = texto.split(/(\n+)/).map((b) => (/^\n+$/.test(b) ? b : linea(b))).join("")
+    .replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
+  return (resultado.match(/\p{L}/gu) ?? []).length < 15 ? PREGUNTA_NEUTRA : resultado;
+}
+
 export const horarioSinHerramienta: Barandilla = {
   nombre: "horario_sin_herramienta",
   etapa: "contenido",
   accion: "rehacer",
-  evaluar({ texto, traza }) {
+  evaluar({ texto, traza, saltosPrevios }) {
     const permitidas = new Set(traza.horasDevueltas.map((h) => h.trim().padStart(5, "0")));
     const fuera = horas(texto).filter((h) => !permitidas.has(h));
     if (fuera.length) {
-      return {
-        salta: true,
-        accion: "rehacer",
-        motivo: `una hora (${fuera.join(", ")}) que no devolvió ninguna herramienta en este turno: salen de buscar_horarios o buscar_informacion`,
-      };
+      const motivo = `una hora (${fuera.join(", ")}) que no devolvió ninguna herramienta en este turno: salen de buscar_horarios o buscar_informacion. ` +
+        "Si el cliente la pidió, llamá a buscar_horarios con fecha_hora (ese día y esa hora) para ver si está libre antes de nombrarla; " +
+        "si no sabés de qué día habla, preguntale el día sin nombrar la hora";
+      if (saltosPrevios) {
+        return { salta: true, accion: "cortar", motivo: `${motivo} (segundo intento: se sacó en código la oración)`, texto: sinLasHoras(texto, fuera) };
+      }
+      return { salta: true, accion: "rehacer", motivo };
     }
     if (OFRECE_DIA.test(normalizar(texto)) && !llamoA(traza, "buscar_horarios")) {
       return { salta: true, accion: "rehacer", motivo: "ofrece un día sin haber llamado a buscar_horarios en este turno" };
