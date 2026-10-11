@@ -287,6 +287,12 @@ turno_id (lo pone código) · recordatorio_enviado_at (código)
 confirmado (código, solo tras la plantilla) · notas_libres
 ```
 
+`presupuesto_mencionado` es cuánto dijo el **cliente** que quiere o puede gastar, nunca un
+precio que dijo Lucía (trabajo 5, 10/10: «presupuesto» también es cotización, y 160 de 163 fichas
+tenían el «a partir de $150.000» de Lucía). Lo dice la instrucción del extractor y, además, una
+guarda en código lo descarta si es un precio de Lucía que el cliente nunca nombró
+(`esUnPrecioQueDijoLucia`, `llm/extractor.ts`); la limpieza de lo ya escrito es la 0101.
+
 La ficha completa se inyecta arriba de cada turno como TU LIBRETA. Si algo está
 ahí, Lucía ya lo sabe: no lo pregunta de nuevo y no se vuelve a presentar. Un
 mail sin forma de mail se descarta y queda en la bitácora, igual que una fecha
@@ -466,6 +472,10 @@ filtro por palabra clave: esa decisión la toma Lucía con `derivar_a_persona` (
 
 Ninguno escribe en la base directamente: devuelven JSON, el código valida contra
 schema y escribe.
+
+Cada ayudante tiene su prueba en `tests/subagentes/` (trabajo 5, 10/10): una parte simulada, sin
+base ni red, que corre siempre, y una con el modelo real que corre solo con `PRUEBA_MODELO_REAL=1`
+(el cómo, en `tests/subagentes/_comun.ts`).
 
 ---
 

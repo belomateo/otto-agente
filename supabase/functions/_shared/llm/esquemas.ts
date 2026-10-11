@@ -17,7 +17,12 @@ export const ESQUEMA_FICHA = {
     talle_aprox: { type: ["string", "null"] },
     ciudad: { type: ["string", "null"] },
     color_preferido: { type: ["string", "null"] },
-    presupuesto_mencionado: { type: ["string", "null"] },
+    // Trabajo 5, 10/10: sin descripción, el modelo leía «presupuesto» como cotización y guardaba el
+    // «a partir de» que había dicho Lucía (160 de 163 fichas). Ver extractor.ts.
+    presupuesto_mencionado: {
+      type: ["string", "null"],
+      description: "Cuánto dijo el CLIENTE que quiere o puede gastar, con sus palabras. Nunca un precio que dijo Lucía. Si no lo dijo, null.",
+    },
     email: { type: ["string", "null"], description: "Mail que dio el cliente, como lo escribió; si no lo dio, null." },
   },
   required: [...CAMPOS_FICHA],
