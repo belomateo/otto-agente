@@ -27,6 +27,7 @@ import { type MotivoDerivacion, TIPOS_LINK } from "../enums.ts";
 import { type Enlace, enlacesActivos, enlacesDeTipo } from "../herramientas/enlaces.ts";
 import { actualizarFicha, CAMPOS_FICHA, leerFicha } from "../herramientas/ficha.ts";
 import { mensajesDeEfectos } from "../herramientas/efectos.ts";
+import { sinAnuncioDePase } from "./anuncio_de_pase.ts";
 import { esCierreCortes } from "./cierre_cortes.ts";
 import {
   type ClaveDerivacion,
@@ -455,7 +456,11 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       // pieza no sale limpia como "enviar", se descarta esa pieza (nunca se manda lo que saltó) y,
       // si se descartó algo, se completa con el texto fijo genérico en vez de dejar la despedida
       // vacía.
-      const piezas = [...(rr.textoFinal ? [rr.textoFinal] : []), ...mensajesDeEfectos(rr.efectos)];
+      // Con despedida de la herramienta, el anuncio del pase que el modelo haya escrito en su texto
+      // se saca: si no, salía dos veces (anuncio_de_pase.ts, ensayo del 10/10).
+      const despedida = mensajesDeEfectos(rr.efectos);
+      const textoDelModelo = rr.textoFinal && despedida.length ? sinAnuncioDePase(rr.textoFinal) : rr.textoFinal;
+      const piezas = [...(textoDelModelo ? [textoDelModelo] : []), ...despedida];
       const textosRevisados: string[] = [];
       let seDescartoAlgo = false;
       for (const pieza of piezas) {

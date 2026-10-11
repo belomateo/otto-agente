@@ -68,10 +68,10 @@ update configuracion_agenda
 
 -- 3. Prendas sueltas (respuesta de Sofía a D4/D5, 10/10): se puede alquilar solo el saco o una
 --    prenda por separado. Lo que sigue sin alquilarse es un accesorio solo (zapatos, cinturón). El
---    precio de una prenda suelta no está cargado: se confirma en la visita.
+--    precio de una prenda suelta no está cargado: se ve en el local (Sofía, 10/10).
 update fragmentos
    set texto = replace(texto, 'Se puede alquilar solo el traje (saco y pantalón), sin accesorios.',
-                 'Se puede alquilar solo el traje (saco y pantalón), sin accesorios, y también una prenda por separado: por ejemplo, solo el saco o solo el pantalón. El precio de una prenda suelta se confirma en la visita.'),
+                 'Se puede alquilar solo el traje (saco y pantalón), sin accesorios, y también una prenda por separado: por ejemplo, solo el saco o solo el pantalón. El precio de una prenda suelta se ve en el local.'),
        version = version + 1,
        editado_por = 'claude-code 10/10: prendas por separado (Sofía)'
  where id = 'a9f10000-0000-4000-8000-000000000101'
