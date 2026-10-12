@@ -51,7 +51,7 @@ export async function enviarFotoMostrador(sesion: Sesion, conversacionId: string
   const { data, error: e2 } = await sesion.supabase.rpc('mostrador_enviar_foto', {
     p_conversacion: conversacionId,
     p_storage_path: ruta,
-    p_epigrafe: epigrafe || null,
+    p_epigrafe: epigrafe || undefined,
   });
   if (e2) {
     // La foto ya quedó subida en Storage aunque el mensaje no se haya podido mandar (charla

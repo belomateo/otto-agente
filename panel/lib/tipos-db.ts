@@ -1,24 +1,4 @@
-// Tipos de la base (schema public), generados con `supabase gen types typescript` contra el
-// proyecto real: la base es una sola y la comparten los cuatro roles, así que esto refleja
-// también migraciones de otros roles ya aplicadas (p. ej. mostrador_enviar, 0028 de logica).
-// No se editan a mano: si cambia el esquema, se regeneran (CLAUDE.md § 7: no hay vistas
-// tipadas a mano). Excepción puntual (16/9): mensajes.no_enviado_motivo (0042 de logica) se
-// sumó a mano porque el CLI (`gen types --db-url`) falla acá por Docker Desktop inalcanzable,
-// no por la base; verificado contra el esquema real (information_schema, pg_constraint) antes
-// de escribirlo. Se reemplaza solo con regenerar de verdad en cuanto Docker ande. Mismo motivo,
-// mismo día: catalogo_alquiler.orden (0044), turnos.urgencia (0046) y la función
-// mostrador_enviar_foto (0028-bis de logica, todavía sin aplicar cuando se escribió esto: la
-// firma es la que avisó por chat, no está verificada contra la base todavía). Mismo motivo, 26/9:
-// la tabla bloqueos_agenda (0067), escrita a mano contra el CREATE TABLE de la migración (que se
-// verificó con rollback contra la base real); el panel no manda creado_por, creado_por_admin ni
-// editado_por: los fija la base. Mismo motivo, 10/10: la tabla feriados_posibles (0098), escrita a
-// mano contra el CREATE TABLE de la migración, que todavía no estaba aplicada cuando se escribió
-// esto (la aplica Mateo); las consultas del panel toleran que falte (faltaLaTabla, bloqueos.ts).
-// Mismo motivo, 10/10: analisis_charlas y analisis_revisiones (0102, el analista de charlas),
-// escritas a mano contra el CREATE TABLE de la migración (probada en un Postgres local, todavía sin
-// aplicar en la base: la aplica Mateo); lib/queries/analista.ts tolera que falten.
-
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -27,6 +7,36 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       accesorios_alquiler: {
@@ -243,7 +253,15 @@ export type Database = {
           probador?: number | null
           version?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "bloqueos_agenda_creado_por_fkey"
+            columns: ["creado_por"]
+            isOneToOne: false
+            referencedRelation: "perfiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       catalogo_alquiler: {
         Row: {
@@ -309,11 +327,20 @@ export type Database = {
           fecha?: string
           motivo?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "cierres_agenda_creado_por_fkey"
+            columns: ["creado_por"]
+            isOneToOne: false
+            referencedRelation: "perfiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       clientes: {
         Row: {
           actualizado_at: string
+          busqueda: string | null
           ciudad: string | null
           color_preferido: string | null
           creado_at: string
@@ -334,6 +361,7 @@ export type Database = {
         }
         Insert: {
           actualizado_at?: string
+          busqueda?: string | null
           ciudad?: string | null
           color_preferido?: string | null
           creado_at?: string
@@ -354,6 +382,7 @@ export type Database = {
         }
         Update: {
           actualizado_at?: string
+          busqueda?: string | null
           ciudad?: string | null
           color_preferido?: string | null
           creado_at?: string
@@ -383,6 +412,8 @@ export type Database = {
           intentos: number
           payload: Json
           procesado_at: string | null
+          reintentar_despues_de: string | null
+          respondido_at: string | null
           tomado_at: string | null
           tomado_por: string | null
         }
@@ -394,6 +425,8 @@ export type Database = {
           intentos?: number
           payload?: Json
           procesado_at?: string | null
+          reintentar_despues_de?: string | null
+          respondido_at?: string | null
           tomado_at?: string | null
           tomado_por?: string | null
         }
@@ -405,6 +438,8 @@ export type Database = {
           intentos?: number
           payload?: Json
           procesado_at?: string | null
+          reintentar_despues_de?: string | null
+          respondido_at?: string | null
           tomado_at?: string | null
           tomado_por?: string | null
         }
@@ -428,6 +463,7 @@ export type Database = {
           editado_por: string | null
           escalonado_min: number
           id: string
+          probadores_lucia: number | null
           unica: boolean
           version: number
         }
@@ -440,6 +476,7 @@ export type Database = {
           editado_por?: string | null
           escalonado_min: number
           id?: string
+          probadores_lucia?: number | null
           unica?: boolean
           version?: number
         }
@@ -452,6 +489,7 @@ export type Database = {
           editado_por?: string | null
           escalonado_min?: number
           id?: string
+          probadores_lucia?: number | null
           unica?: boolean
           version?: number
         }
@@ -559,6 +597,134 @@ export type Database = {
             columns: ["cliente_id"]
             isOneToOne: false
             referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      correcciones_lucia: {
+        Row: {
+          actualizada_at: string
+          analisis: Json
+          base: Json
+          cambio: Json | null
+          costo_usd: number
+          creada_at: string
+          destino: string | null
+          estado: string
+          id: string
+          modelo: string | null
+          opcion: string | null
+          pedida_por: string | null
+          pedida_por_id: string | null
+          pedido: string
+          pruebas_ok: number
+          pruebas_total: number
+          resultado: string | null
+          terminada_at: string | null
+        }
+        Insert: {
+          actualizada_at?: string
+          analisis: Json
+          base?: Json
+          cambio?: Json | null
+          costo_usd?: number
+          creada_at?: string
+          destino?: string | null
+          estado?: string
+          id?: string
+          modelo?: string | null
+          opcion?: string | null
+          pedida_por?: string | null
+          pedida_por_id?: string | null
+          pedido: string
+          pruebas_ok?: number
+          pruebas_total?: number
+          resultado?: string | null
+          terminada_at?: string | null
+        }
+        Update: {
+          actualizada_at?: string
+          analisis?: Json
+          base?: Json
+          cambio?: Json | null
+          costo_usd?: number
+          creada_at?: string
+          destino?: string | null
+          estado?: string
+          id?: string
+          modelo?: string | null
+          opcion?: string | null
+          pedida_por?: string | null
+          pedida_por_id?: string | null
+          pedido?: string
+          pruebas_ok?: number
+          pruebas_total?: number
+          resultado?: string | null
+          terminada_at?: string | null
+        }
+        Relationships: []
+      }
+      correcciones_pruebas: {
+        Row: {
+          charla: Json | null
+          correccion_id: string
+          costo_usd: number
+          debe: Json
+          estado: string
+          ficha: Json | null
+          id: string
+          intentos: number
+          mensajes: Json
+          motivo: string | null
+          no_debe: Json
+          nombre: string
+          orden: number
+          terminada_at: string | null
+          tomada_at: string | null
+          veredicto: Json | null
+        }
+        Insert: {
+          charla?: Json | null
+          correccion_id: string
+          costo_usd?: number
+          debe: Json
+          estado?: string
+          ficha?: Json | null
+          id?: string
+          intentos?: number
+          mensajes: Json
+          motivo?: string | null
+          no_debe?: Json
+          nombre: string
+          orden: number
+          terminada_at?: string | null
+          tomada_at?: string | null
+          veredicto?: Json | null
+        }
+        Update: {
+          charla?: Json | null
+          correccion_id?: string
+          costo_usd?: number
+          debe?: Json
+          estado?: string
+          ficha?: Json | null
+          id?: string
+          intentos?: number
+          mensajes?: Json
+          motivo?: string | null
+          no_debe?: Json
+          nombre?: string
+          orden?: number
+          terminada_at?: string | null
+          tomada_at?: string | null
+          veredicto?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "correcciones_pruebas_correccion_id_fkey"
+            columns: ["correccion_id"]
+            isOneToOne: false
+            referencedRelation: "correcciones_lucia"
             referencedColumns: ["id"]
           },
         ]
@@ -952,6 +1118,80 @@ export type Database = {
         }
         Relationships: []
       }
+      instrucciones_lucia: {
+        Row: {
+          activada_at: string | null
+          base_origen: string
+          base_version: number | null
+          correccion_id: string | null
+          creada_at: string
+          creada_por: string | null
+          desactivada_at: string | null
+          desactivada_por: string | null
+          estado: string
+          hash_archivo: string | null
+          id: string
+          motivo_desactivacion: string | null
+          pedido: string | null
+          prueba: Json | null
+          prueba_ok: boolean
+          restaurada_de: number | null
+          resumen: string
+          texto: string
+          version: number
+        }
+        Insert: {
+          activada_at?: string | null
+          base_origen: string
+          base_version?: number | null
+          correccion_id?: string | null
+          creada_at?: string
+          creada_por?: string | null
+          desactivada_at?: string | null
+          desactivada_por?: string | null
+          estado?: string
+          hash_archivo?: string | null
+          id?: string
+          motivo_desactivacion?: string | null
+          pedido?: string | null
+          prueba?: Json | null
+          prueba_ok?: boolean
+          restaurada_de?: number | null
+          resumen: string
+          texto: string
+          version: number
+        }
+        Update: {
+          activada_at?: string | null
+          base_origen?: string
+          base_version?: number | null
+          correccion_id?: string | null
+          creada_at?: string
+          creada_por?: string | null
+          desactivada_at?: string | null
+          desactivada_por?: string | null
+          estado?: string
+          hash_archivo?: string | null
+          id?: string
+          motivo_desactivacion?: string | null
+          pedido?: string | null
+          prueba?: Json | null
+          prueba_ok?: boolean
+          restaurada_de?: number | null
+          resumen?: string
+          texto?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instrucciones_lucia_correccion_id_fkey"
+            columns: ["correccion_id"]
+            isOneToOne: false
+            referencedRelation: "correcciones_lucia"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invitaciones_acceso: {
         Row: {
           creado_at: string
@@ -998,7 +1238,9 @@ export type Database = {
           conversacion_id: string
           direccion: string
           enviado_at: string
+          enviando_at: string | null
           id: string
+          leido_equipo_at: string | null
           no_enviado_motivo: string | null
           tipo: string
           transcripcion: string | null
@@ -1017,7 +1259,9 @@ export type Database = {
           conversacion_id: string
           direccion: string
           enviado_at?: string
+          enviando_at?: string | null
           id?: string
+          leido_equipo_at?: string | null
           no_enviado_motivo?: string | null
           tipo?: string
           transcripcion?: string | null
@@ -1036,7 +1280,9 @@ export type Database = {
           conversacion_id?: string
           direccion?: string
           enviado_at?: string
+          enviando_at?: string | null
           id?: string
+          leido_equipo_at?: string | null
           no_enviado_motivo?: string | null
           tipo?: string
           transcripcion?: string | null
@@ -1089,6 +1335,7 @@ export type Database = {
           creado_at: string
           id: string
           texto: string
+          turno_id: string | null
         }
         Insert: {
           autor: string
@@ -1096,6 +1343,7 @@ export type Database = {
           creado_at?: string
           id?: string
           texto: string
+          turno_id?: string | null
         }
         Update: {
           autor?: string
@@ -1103,6 +1351,7 @@ export type Database = {
           creado_at?: string
           id?: string
           texto?: string
+          turno_id?: string | null
         }
         Relationships: [
           {
@@ -1110,6 +1359,20 @@ export type Database = {
             columns: ["cliente_id"]
             isOneToOne: false
             referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_turno_id_fkey"
+            columns: ["turno_id"]
+            isOneToOne: false
+            referencedRelation: "turnos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_turno_id_fkey"
+            columns: ["turno_id"]
+            isOneToOne: false
+            referencedRelation: "turnos_por_avisar"
             referencedColumns: ["id"]
           },
         ]
@@ -1381,6 +1644,7 @@ export type Database = {
           confirmado_at: string | null
           confirmado_por: string | null
           creado_at: string | null
+          devuelto_at: string | null
           duracion_min: number | null
           editado_at: string | null
           editado_por: string | null
@@ -1408,50 +1672,26 @@ export type Database = {
       }
     }
     Functions: {
-      bandeja_no_leidos: {
-        Args: { p_ids: string[] }
-        Returns: { conversacion_id: string; cantidad: number }[]
-      }
-      bandeja_marcar_leida: {
-        Args: { p_conversacion: string; p_mensajes: string[] }
-        Returns: number
-      }
-      adjunto_reintentar: {
-        Args: { p_mensaje: string }
-        Returns: Json
+      adjunto_reintentar: { Args: { p_mensaje: string }; Returns: Json }
+      agenda_trabar_fecha: { Args: { p_fecha: string }; Returns: undefined }
+      analista_relevo: {
+        Args: { p_fecha: string; p_relevo: number }
+        Returns: undefined
       }
       atencion_resolver: {
         Args: { p_accion: string; p_conversacion: string }
         Returns: Json
       }
-      cola_absorber: {
-        Args: { p_hasta: string; p_trabajo: string }
+      bandeja_marcar_leida: {
+        Args: { p_conversacion: string; p_mensajes: string[] }
         Returns: number
       }
-      cola_rescatar_trabados: { Args: never; Returns: number }
-      cola_terminar: {
-        Args: { p_error?: string; p_id: string; p_ok: boolean }
-        Returns: undefined
-      }
-      cola_tomar_uno: {
-        Args: { p_worker: string }
+      bandeja_no_leidos: {
+        Args: { p_ids: string[] }
         Returns: {
+          cantidad: number
           conversacion_id: string
-          creado_at: string
-          estado: string
-          id: string
-          intentos: number
-          payload: Json
-          procesado_at: string | null
-          tomado_at: string | null
-          tomado_por: string | null
         }[]
-        SetofOptions: {
-          from: "*"
-          to: "cola_trabajos"
-          isOneToOne: false
-          isSetofReturn: true
-        }
       }
       cambiar_rol: {
         Args: { p_perfil: string; p_rol: string }
@@ -1468,6 +1708,41 @@ export type Database = {
           to: "perfiles"
           isOneToOne: true
           isSetofReturn: false
+        }
+      }
+      cola_absorber: {
+        Args: { p_hasta: string; p_trabajo: string }
+        Returns: number
+      }
+      cola_derivar_por_fallo: {
+        Args: { p_conversacion: string; p_detalle: string }
+        Returns: undefined
+      }
+      cola_rescatar_trabados: { Args: never; Returns: number }
+      cola_terminar: {
+        Args: { p_error?: string; p_id: string; p_ok: boolean }
+        Returns: undefined
+      }
+      cola_tomar_uno: {
+        Args: { p_worker: string }
+        Returns: {
+          conversacion_id: string
+          creado_at: string
+          estado: string
+          id: string
+          intentos: number
+          payload: Json
+          procesado_at: string | null
+          reintentar_despues_de: string | null
+          respondido_at: string | null
+          tomado_at: string | null
+          tomado_por: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "cola_trabajos"
+          isOneToOne: false
+          isSetofReturn: true
         }
       }
       completar_alta_admin: {
@@ -1487,6 +1762,16 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      conversacion_abierta_de: { Args: { p_cliente: string }; Returns: string }
+      correccion_descartar: { Args: { p_correccion: string }; Returns: boolean }
+      corrector_aplicar: {
+        Args: { p_correccion: string; p_hash_archivo: string; p_quien: string }
+        Returns: Json
+      }
+      corrector_rechazar: {
+        Args: { p_correccion: string; p_motivo: string }
+        Returns: boolean
+      }
       crear_invitacion: {
         Args: { p_email: string; p_rol: string }
         Returns: {
@@ -1503,8 +1788,8 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      conversacion_abierta_de: { Args: { p_cliente: string }; Returns: string }
       dar_ok_aviso_turno: { Args: { p_turno: string }; Returns: Json }
+      despertar_worker: { Args: never; Returns: undefined }
       envio_disponible: {
         Args: { p_referencia: string; p_tipo: string }
         Returns: boolean
@@ -1558,14 +1843,24 @@ export type Database = {
         }
       }
       immutable_unaccent: { Args: { "": string }; Returns: string }
+      instrucciones_volver: { Args: { p_version?: number }; Returns: Json }
       mostrador_enviar: {
         Args: { p_conversacion: string; p_texto: string }
         Returns: Json
       }
       mostrador_enviar_foto: {
-        Args: { p_conversacion: string; p_epigrafe?: string | null; p_storage_path: string }
+        Args: {
+          p_conversacion: string
+          p_epigrafe?: string
+          p_storage_path: string
+        }
         Returns: Json
       }
+      negocio_tz: { Args: never; Returns: string }
+      prompt_normalizar_contexto: { Args: { p_valor: string }; Returns: string }
+      prompt_reglas_numeradas: { Args: never; Returns: string }
+      prompt_sin_comentarios: { Args: { p_texto: string }; Returns: string }
+      prompt_vigente: { Args: never; Returns: string }
       registrar_mensaje_entrante: {
         Args: {
           p_contenido: string
@@ -1730,8 +2025,10 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
 } as const
-

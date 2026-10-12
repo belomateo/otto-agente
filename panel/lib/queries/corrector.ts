@@ -4,11 +4,6 @@ import { dolares, fechaEnZona, hora } from '@/lib/formato';
 import { faltaLaTabla } from './bloqueos';
 import type { ClienteDb } from './comun';
 
-// Las tablas del corrector (0104) no están en los tipos generados de Supabase: se aplicaron en
-// producción pero los tipos no se regeneraron. Las consultas pasan por type assertions hasta que
-// se regeneren (es seguro: la RLS de 0104 exige ser admin, y los campos se validan manualmente).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SinTipar = any;
 
 export type EstadoCorreccion = 'analizada' | 'probando' | 'aplicada' | 'rechazada' | 'descartada';
 
@@ -126,7 +121,7 @@ function aResumen(f: {
 }
 
 export async function listarCorrecciones(db: ClienteDb): Promise<ListaCorrecciones> {
-  const { data, error } = await (db as SinTipar)
+  const { data, error } = await db
     .from('correcciones_lucia')
     .select('id, pedido, estado, destino, resultado, pruebas_total, pruebas_ok, costo_usd, pedida_por, creada_at, terminada_at')
     .order('creada_at', { ascending: false })
@@ -139,13 +134,12 @@ export async function listarCorrecciones(db: ClienteDb): Promise<ListaCorreccion
 }
 
 export async function leerCorreccionConPruebas(db: ClienteDb, id: string): Promise<CorreccionDetalle | null> {
-  const dbSinTipar = db as SinTipar;
   const [correccion, pruebas] = await Promise.all([
-    dbSinTipar.from('correcciones_lucia')
+    db.from('correcciones_lucia')
       .select('id, pedido, estado, analisis, destino, cambio, resultado, pruebas_total, pruebas_ok, costo_usd, modelo, pedida_por, creada_at, terminada_at')
       .eq('id', id)
       .maybeSingle(),
-    dbSinTipar.from('correcciones_pruebas')
+    db.from('correcciones_pruebas')
       .select('id, orden, nombre, estado, debe, no_debe, motivo, charla, veredicto')
       .eq('correccion_id', id)
       .order('orden', { ascending: true }),
@@ -163,14 +157,14 @@ export async function leerCorreccionConPruebas(db: ClienteDb, id: string): Promi
     analisis: (f.analisis ?? {}) as AnalisisCorrector,
     cambio: (f.cambio ?? null) as Record<string, unknown> | null,
     modelo: f.modelo ?? null,
-    pruebas: (pruebas.data ?? []).map((p: SinTipar) => ({
-      id: p.id as string,
-      orden: p.orden as number,
-      nombre: p.nombre as string,
-      estado: p.estado as string,
+    pruebas: (pruebas.data ?? []).map((p) => ({
+      id: p.id,
+      orden: p.orden,
+      nombre: p.nombre,
+      estado: p.estado,
       debe: Array.isArray(p.debe) ? (p.debe as string[]) : [],
       noDebe: Array.isArray(p.no_debe) ? (p.no_debe as string[]) : [],
-      motivo: (p.motivo as string | null) ?? null,
+      motivo: p.motivo ?? null,
       charla: Array.isArray(p.charla) ? (p.charla as unknown[]) : null,
       veredicto: p.veredicto ?? null,
     })),
@@ -178,7 +172,7 @@ export async function leerCorreccionConPruebas(db: ClienteDb, id: string): Promi
 }
 
 export async function descartarCorreccion(sesion: Sesion, id: string): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await (sesion.supabase as SinTipar).rpc('correccion_descartar', { p_correccion: id });
+  const { error } = await sesion.supabase.rpc('correccion_descartar', { p_correccion: id });
   if (error) {
     if (faltaLaTabla(error)) return { ok: false, error: 'El corrector todavía no está activado' };
     if (error.code === '55000') return { ok: false, error: 'Esa corrección ya estaba cerrada' };
