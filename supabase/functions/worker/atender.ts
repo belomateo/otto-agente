@@ -216,6 +216,7 @@ async function mandarFotos(
       const waMessageId = simulado ? null : await conReintento(d, () => enviarImagen(d.wa, telefono, f.contenido, d.fetcher));
       if (waMessageId) await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [f.id, waMessageId]);
       enviadas++;
+      if (enviadas < filas.length) await d.dormir(300);
     } catch (e) {
       await evento(db, conversacionId, "error", { etapa: "envio-foto", foto: f.contenido, error: mensajeDeError(e) });
     }
@@ -267,6 +268,7 @@ async function mandarBurbujas(db: Db, d: Dependencias, conversacionId: string, t
       const waMessageId = await conReintento(d, () => enviarTexto(d.wa, telefono, texto, d.fetcher));
       if (id) await db.consulta("update mensajes set wa_message_id = $2 where id = $1::uuid", [id, waMessageId]);
       enviadas++;
+      if (enviadas < burbujas.length) await d.dormir(300);
     } catch (e) {
       if (id) await db.consulta("update mensajes set enviando_at = null where id = $1::uuid", [id]);
       await evento(db, conversacionId, "error", { etapa: "envio", error: mensajeDeError(e), sin_enviar: burbujas.slice(enviadas) });
@@ -358,6 +360,7 @@ async function entregar(db: Db, d: Dependencias, conversacionId: string, telefon
   const filasDeFotos = await anotarFotos(db, conversacionId, r.imagenes.map((foto) => urlDeFoto(d.baseFotos, foto)));
   if (!simulado) await mandarBurbujas(db, d, conversacionId, telefono, burbujas);
 
+  if (!simulado && burbujas.length > 0 && filasDeFotos.length > 0) await d.dormir(300);
   const fotosEnviadas = await mandarFotos(db, d, conversacionId, telefono, filasDeFotos, simulado);
 
   return { ...resumen, enviadas: burbujas.length, fotos_enviadas: fotosEnviadas, ...(simulado ? { simulado: true } : {}) };
