@@ -11,6 +11,7 @@ import { usePathname } from 'next/navigation';
 const PESTANAS = [
   { href: '/bitacora', label: 'Actividad' },
   { href: '/bitacora/analista', label: 'Analista' },
+  { href: '/bitacora/corrector', label: 'Corrector' },
 ];
 
 export function SubpestanasBitacora() {
