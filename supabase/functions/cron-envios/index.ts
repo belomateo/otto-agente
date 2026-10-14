@@ -10,6 +10,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { enlaceDeTipo } from "../_shared/herramientas/enlaces.ts";
 import type { Db } from "../_shared/db.ts";
+import { costoUsd } from "../_shared/llm/precios.ts";
+import { charlaParaRecontacto, decidirRecontacto, type DecisionRecontacto, type MensajeDeLaCharla } from "../_shared/llm/recontacto.ts";
 import { enviarPlantilla } from "../_shared/whatsapp/enviar.ts";
 import { armarPlantilla, esTipoEnvio, NOMBRE_PLANTILLA, primerNombre, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
 import { igualesEnTiempoConstante } from "../_shared/whatsapp/firma.ts";
@@ -92,6 +94,38 @@ async function motivosDeDerivacion(ids: string[]): Promise<Map<string, string>> 
   return new Map((data ?? []).map((f) => [String(f.id), String(f.motivo)]));
 }
 
+// null = se manda. Un texto = por qué no. La decisión queda en la Bitácora de la charla (pensamiento,
+// etapa recontacto) y lo que costó, en consumo_llm. Si no se puede leer la charla o el modelo no
+// contesta, no se manda: perder un recontacto cuesta menos que molestar a quien ya dijo que no.
+async function motivoParaNoRecontactar(conversacionId: string): Promise<string | null> {
+  const { data, error } = await supabase.from("mensajes").select("direccion, contenido, transcripcion")
+    .eq("conversacion_id", conversacionId).order("enviado_at", { ascending: false }).limit(20);
+  if (error) return `no se pudo leer la charla para ver si quiere seguir (${error.message}): no se manda`;
+  let d: DecisionRecontacto | null = null;
+  try {
+    d = await decidirRecontacto(charlaParaRecontacto(((data ?? []) as MensajeDeLaCharla[]).reverse()));
+  } catch (e) {
+    console.error("decidirRecontacto", e);
+  }
+  const detalle = d
+    ? { etapa: "recontacto", mandar: d.mandar, motivo: d.motivo }
+    : { etapa: "recontacto", mandar: false, motivo: "no se pudo revisar si el cliente quiere seguir: por las dudas no se manda" };
+  const ev = await supabase.from("eventos_agente").insert({ conversacion_id: conversacionId, tipo: "pensamiento", detalle });
+  if (ev.error) console.error("eventos_agente (recontacto)", ev.error.message);
+  if (d) {
+    const co = await supabase.from("consumo_llm").insert({
+      conversacion_id: conversacionId,
+      modelo: d.modelo,
+      tokens_in: d.uso.tokensIn,
+      tokens_out: d.uso.tokensOut,
+      costo_usd: costoUsd(d.modelo, d.uso.tokensIn, d.uso.tokensOut, d.uso.tokensCacheados),
+    });
+    if (co.error) console.error("consumo_llm (recontacto)", co.error.message);
+  }
+  if (detalle.mandar) return null;
+  return d ? `el cliente no quiere seguir por ahora: ${d.motivo}` : detalle.motivo;
+}
+
 async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
   if (tipo === "recontacto_2" && !(await plantillaAprobada(NOMBRE_PLANTILLA.recontacto_2))) {
     return {
@@ -138,6 +172,16 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
     if ("falta" in plantilla) {
       r.omitidos.push(`${c.referencia}: falta ${plantilla.falta}`);
       continue;
+    }
+    // Recontacto (Mateo, 13/10): antes de mandarlo, ¿el cliente dijo que no quiere seguir por ahora?
+    // Ver _shared/llm/recontacto.ts. Si no sale el primero, el segundo tampoco (envios_pendientes
+    // pide que el primero haya salido).
+    if (tipo === "recontacto_1" || tipo === "recontacto_2") {
+      const porQueNo = await motivoParaNoRecontactar(c.referencia);
+      if (porQueNo) {
+        r.omitidos.push(`${c.referencia}: ${porQueNo}`);
+        continue;
+      }
     }
     const { data: id, error: errReserva } = await supabase.rpc("envio_reservar", {
       p_tipo: tipo,

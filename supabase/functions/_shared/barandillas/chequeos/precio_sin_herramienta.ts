@@ -45,7 +45,12 @@ const CONTEXTOS_QUE_NO_SON_PRECIO: RegExp[] = [
   // Talles y edades de chicos (5/10, repitiendo una charla con preguntas por un nene): "talles 14
   // y 16", "en talle 14 o 16", "un chico de 12", "le puede ir un 14" se leían como precios.
   /\btalles?\s+\d{1,3}(?:\s*(?:,|y|o|[-–/])\s*(?:el\s+)?\d{1,3})+\b/g,
-  /\b(?:chicos?|chicas?|nenes?|nenas?|ninos?|ninas?|hijos?|hijas?|pibes?)\s+de\s+\d{1,2}(?:\s+a\s+\d{1,2})?\b/g,
+  /\b(?:chicos?|chicas?|nenes?|nenas?|ninos?|ninas?|hijos?|hijas?|pibes?)\s+de\s+\d{1,2}(?:\s+a\s+\d{1,2}|(?:\s*(?:,|y|e)\s*\d{1,2})+)?\b/g,
+  // Varias edades juntas (Natalia, 13/10): «tres chicos de 15, 13 y 11 años» dejaba suelto el 13 del
+  // medio, se leyó como $13 y, sin nada más en el mensaje, la charla de 4 trajes terminó derivada.
+  // También «el de 13» o «uno de 15», como lo escriben los clientes.
+  /\b\d{1,2}(?:\s*(?:,|y|e)\s*\d{1,2})+\s+anos\b/g,
+  /\b(?:el|la|uno|una|otro|otra)\s+de\s*\d{1,2}(?:\s*(?:,|y|e)\s*(?:(?:el|la|otro|otra)\s+de\s*)?\d{1,2})*\b(?!\s*(?:mil|lucas|k|%|pesos|\.\d))/g,
   /\b(?:usa|usaria|calza|ir|va|iria|queda|quedaria)\s+(?:un|el)\s+\d{1,2}(?:\s+o\s+(?:un\s+|el\s+)?\d{1,2})?\b/g,
   /\btalle\s+\d{1,3}\b/g, // "talle 4" o "talle 48"
   // Talles dichos con palabras en el medio (ensayo del 10/10): «anoté tu talle aproximado de
@@ -205,14 +210,16 @@ function sinElTotal(texto: string, totales: number[], respaldados: Set<number>, 
 // lo diga y lo volvió a decir). Trabajo 2, decisión D13 (10/10): antes el segundo intento pasaba la
 // charla con «Prefiero que te lo confirme alguien del equipo» y apagaba a Lucía (24 de las 29 veces
 // que pasó en 11 días fueron por precios; caso típico, el cliente hace su propia cuenta —«90 más
-// 150»— y Lucía repite sus números). Ahora sale el resto del mensaje; si no queda nada, el texto
-// vacío lo trata index.ts como antes.
+// 150»— y Lucía repite sus números). Ahora sale el resto del mensaje. Si no queda nada (Natalia,
+// 13/10: el mensaje entero era la oración cortada), una pregunta neutra para seguir, igual que
+// horario_sin_herramienta: un texto vacío terminaba en barandilla_doble y la charla, derivada.
+const PREGUNTA_NEUTRA = "Querés que te busque un turno para venir a probarte?";
 function sinLosMontos(texto: string, fuera: number[], nombreCliente?: string | null): string {
   const linea = (l: string) =>
     l.split(/(?<=[.!?…])\s+/).filter((o) => !montos(o, nombreCliente).some((m) => fuera.includes(m))).join(" ").trim();
   const resultado = texto.split(/(\n+)/).map((b) => (/^\n+$/.test(b) ? b : linea(b))).join("")
     .replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
-  return letras(resultado) < 15 ? "" : resultado;
+  return letras(resultado) < 15 ? PREGUNTA_NEUTRA : resultado;
 }
 
 export const precioSinHerramienta: Barandilla = {

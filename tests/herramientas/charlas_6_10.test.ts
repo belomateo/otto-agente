@@ -77,8 +77,11 @@ prueba("caso parecido: una hora que nadie ofreció sigue frenando (la barandilla
     clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
     calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: fetcherCon(() => RESPUESTA_CON_LA_HORA),
   });
-  assert(r.derivo, "con la hora inventada dos veces, termina en barandilla_doble");
-  assertEquals(r.motivoDerivacion, "barandilla_doble");
+  // Desde el 11/10 (8f6c7be) el segundo intento saca la oración con la hora en vez de pasar la charla;
+  // como no queda nada, sale la pregunta neutra. La hora inventada igual no llega al cliente.
+  assertEquals(r.derivo, false, "con la hora inventada dos veces, se saca la oración y no se pasa la charla");
+  assertEquals(r.mensajesAlCliente.join(" ").includes("15:30"), false, r.mensajesAlCliente.join(" | "));
+  assertMatch(r.mensajesAlCliente.join(" "), /qué día te queda mejor/);
   // Y queda en la bitácora lo que quiso decir (el borrador), para poder revisarlo.
   const conBorrador = await contar(
     sql,

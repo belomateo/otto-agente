@@ -126,8 +126,11 @@ export const confirmacionDoble: Barandilla = {
     const clausulas = partirEnClausulas(os);
     const esConfirmacion = clausulas.map((c) => esConfirmacionDeReserva(c.texto) ||
       (traza.resumenTurnoEmitido && /\b(actualic|actualiz|resumen)/.test(normalizar(c.texto))));
+    // La cortesía suelta tiene que arrancar su oración: a Valeria (13/10) le llegó «lo recibe limpio,
+    // planchado» porque «listo para usar», lo que quedaba después del « y », se leyó como un «¡Listo!».
     const mantener = clausulas.map((c, i) =>
-      !esConfirmacion[i] && !(esSaludoDeApertura(c.texto) && esConfirmacion[i + 1] === true) && !esCortesiaSuelta(c.texto)
+      !esConfirmacion[i] && !(esSaludoDeApertura(c.texto) && esConfirmacion[i + 1] === true) &&
+      !(c.separadorPrevio === "" && esCortesiaSuelta(c.texto))
     );
     if (mantener.every(Boolean) && sinLista === texto) return NO_SALTA;
 

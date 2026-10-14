@@ -365,11 +365,11 @@ prueba("si el modelo se queda sin tiempo, contesta con el último intento y no l
   assertEquals(await contar(sql, "select count(*)::int as n from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = 'extraer' and detalle->>'nota' like 'salteado%'", [conversacionId]), 1);
 });
 
-// Verificación pedida por logica, 16/9: cuando una barandilla de "rehacer" (acá,
-// precio_sin_herramienta) vuelve a saltar después del reintento, ¿el turno manda un texto vacío
-// sin avisarle a nadie, o deriva de verdad? Fuerza al principal a decir SIEMPRE un precio sin
-// haber llamado a consultar_catalogo, así precio_sin_herramienta salta en el primer intento y
-// otra vez en el reintento — el camino de aplicarBarandillas hacia barandilla_doble.
+// Verificación pedida por logica, 16/9: cuando una barandilla de "rehacer" (acá, menciona_ia;
+// hasta el 14/10, precio_sin_herramienta) vuelve a saltar después del reintento, ¿el turno manda un texto vacío
+// sin avisarle a nadie, o deriva de verdad? Fuerza al principal a contar SIEMPRE cómo funciona
+// por dentro, así menciona_ia salta en el primer intento y otra vez en el reintento — el camino
+// de aplicarBarandillas hacia barandilla_doble.
 // Pedido de Mateo, 19/9: barandilla_doble es un problema DEL SISTEMA (Lucía no logró escribir
 // algo que pasara las barandillas), no del cliente — texto fijo propio (texto_derivacion_fallo,
 // con tono de disculpa), reemplaza el [] de antes.
@@ -390,9 +390,12 @@ prueba("dos saltos del mismo turno derivan barandilla_doble de verdad: fila en d
         }),
       }));
     }
-    // El principal: siempre un precio sin consultar_catalogo, en el primer intento y en el
-    // reintento — nunca corrige lo que la barandilla le pide.
-    return Promise.resolve(respuestaChat({ contenido: "Un traje cuesta 230, con todo incluido." }));
+    // El principal: siempre cuenta cómo funciona por dentro (menciona_ia), en el primer intento y
+    // en el reintento — nunca corrige lo que la barandilla le pide. Hasta el 14/10 era un precio
+    // inventado; desde entonces precio_sin_herramienta, en el segundo intento, saca la oración y
+    // manda una pregunta neutra en vez de pasar la charla (Natalia, 13/10), así que ya no sirve
+    // para llegar a barandilla_doble.
+    return Promise.resolve(respuestaChat({ contenido: "Eso no figura en el sistema." }));
   }) as unknown as typeof fetch;
 
   const resultado = await correrTurno(ctx.db, {

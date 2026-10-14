@@ -319,7 +319,9 @@ prueba("espera 4 s de quietud desde el último mensaje antes de correr el turno"
   const { d, turno, reloj: r } = armar(c, { desdeSeg: 1 });
 
   await atenderCola(c.db, d, "worker-prueba");
-  assertEquals(r.dormidas, [QUIETUD_RAFAGA_MS - 1_000]);
+  // La primera espera es la de la ráfaga; las de 300 ms que siguen son la pausa entre burbujas (12/10).
+  assertEquals(r.dormidas[0], QUIETUD_RAFAGA_MS - 1_000);
+  assert(r.dormidas.slice(1).every((ms) => ms === 300), String(r.dormidas));
   assertEquals(turno.llamadas[0].ahora.getTime(), c.t0.getTime() + QUIETUD_RAFAGA_MS);
 });
 

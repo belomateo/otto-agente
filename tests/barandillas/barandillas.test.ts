@@ -268,9 +268,22 @@ Deno.test("precio_sin_herramienta: en el segundo intento saca la oración con el
   );
   const todo = await aplicarBarandillas({ ...entrada(texto, { traza: conPrecios }) }, { saltosPrevios: 1 });
   assertEquals(todo.decision, "enviar");
-  // Caso parecido: si el monto era todo el mensaje, no queda nada y termina como antes.
+  // Caso parecido: si el monto era todo el mensaje, desde el 14/10 sale una pregunta neutra en vez de
+  // pasar la charla (Natalia, 13/10: «tres chicos de 15, 13 y 11 años» terminó derivada).
   const solo = await aplicarBarandillas(entrada("Te sale $90.000.", { traza: conPrecios }), { saltosPrevios: 1 });
-  assertEquals([solo.decision, solo.motivoDerivacion], ["derivar", "barandilla_doble"]);
+  assertEquals([solo.decision, solo.texto], ["enviar", "Querés que te busque un turno para venir a probarte?"]);
+});
+
+Deno.test("precio_sin_herramienta: varias edades juntas no son precios (Natalia, 13/10)", async () => {
+  assertEquals(montos("Perfecto, Natalia: un adulto y tres chicos de 15, 13 y 11 años."), []);
+  assertEquals(montos("Tengo uno de 15 años el de13 y 11"), []);
+  assertEquals(montos("los chicos de 10 y 12"), []);
+  // El borrador real, en el turno: ya no salta.
+  const r = await aplicarBarandillas(entrada("Perfecto, Natalia: un adulto y tres chicos de 15, 13 y 11 años. Querés que busquemos un turno para que vengan los cuatro?"));
+  assertEquals(r.decision, "enviar");
+  // Un precio de verdad sigue saltando.
+  assertEquals(montos("el de 15 sale 90 mil"), [90000]);
+  assertEquals(montos("el traje sale 120"), [120]);
 });
 
 Deno.test("precio_sin_herramienta lee bien un precio seguido de una coma (6/10: $33.500, se leía $33)", () => {

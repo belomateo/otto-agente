@@ -87,3 +87,14 @@ Deno.test("la cortesía suelta antes del resumen del turno se saca; lo que dice 
   // Sin una confirmación armada en código, la cortesía no se toca.
   assertEquals((await confirmacionDoble.evaluar(entrada("¡Te esperamos, Jaz!"))).salta, false);
 });
+
+Deno.test("«listo para usar» al final de una oración no es un «¡Listo!» de cierre (Valeria, 13/10)", async () => {
+  const confirmo = { traza: traza({ herramientas: ["cambiar_turno:confirmar"] }) };
+  const texto = "Valeria, el alquiler es *a partir de $150.000* e incluye saco y pantalón, los ajustes de sastrería y la " +
+    "tintorería antes y después del evento: lo recibe limpio, planchado y listo para usar.";
+  const r = await confirmacionDoble.evaluar(entrada(texto, confirmo));
+  assertEquals(r.salta, false, r.salta ? r.texto : "");
+  // La cortesía que arranca su propia oración se sigue sacando.
+  const conCortesia = await confirmacionDoble.evaluar(entrada(`${texto} ¡Te esperamos, Valeria!`, confirmo));
+  assertEquals(conCortesia.salta && conCortesia.texto, texto);
+});
