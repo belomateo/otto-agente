@@ -47,6 +47,8 @@ export const ESQUEMA_ALTA_TURNO = z
     pisar_urgencia: z.boolean().optional(),
     /** Explícito: el evento es hoy o mañana y lo resuelve quien agenda (ver huecosPara). */
     aceptar_evento_inminente: z.boolean().optional(),
+    /** Explícito: el cliente ya tiene otro turno a menos de 3 días y se quiere cargar este igual (15/10). */
+    aceptar_turno_cercano: z.boolean().optional(),
     // Modo B — panel con hora libre (admin agenda sin pasar por la lista de huecos):
     // el admin elige la hora directamente y cuántos probadores quiere ocupar. No valida
     // contra calcularHuecos; la constraint GiST de la base impide solapamientos reales.
@@ -77,6 +79,30 @@ const fechaEnZonaDe = (d: Date, tz: string) => {
   const partes = Object.fromEntries(p.map((x) => [x.type, x.value]));
   return `${partes.year}-${partes.month}-${partes.day}`;
 };
+
+// Turno cargado dos veces por error (Adrian, 15/10: el local cargó el sábado 17 y, minutos después, un viernes 16
+// de la misma hora; el recordatorio salió para el que no era). Antes de cargar un turno para un cliente que ya
+// existe, se mira si tiene otro activo a menos de 3 días: si lo tiene, se frena con el detalle y quien agenda
+// lo confirma tildando aceptar_turno_cercano. Un turno doble legítimo (prueba final, dos personas) se puede
+// cargar igual: solo pide una confirmación más.
+export const DIAS_TURNO_CERCANO = 3;
+
+export async function turnosCercanosDelCliente(sesion: Sesion, clienteId: string, inicio: Date) {
+  const margen = DIAS_TURNO_CERCANO * 24 * 3_600_000;
+  const { data, error: e } = await sesion.supabase
+    .from('turnos')
+    .select('id, inicio, estado')
+    .eq('cliente_id', clienteId)
+    .in('estado', ['sin-confirmar', 'confirmado'])
+    .gte('inicio', new Date(inicio.getTime() - margen).toISOString())
+    .lte('inicio', new Date(inicio.getTime() + margen).toISOString())
+    .order('inicio');
+  return { data: data ?? [], error: e };
+}
+
+function respuestaTurnoCercano(turnos: { id: string; inicio: string; estado: string }[]) {
+  return error(409, 'Este cliente ya tiene un turno cerca de ese día', { motivo: 'turno_cercano', turnos });
+}
 
 export async function altaTurno(sesion: Sesion, request: Request) {
   let cuerpo: unknown;
@@ -123,6 +149,11 @@ export async function altaTurno(sesion: Sesion, request: Request) {
   const inicio = new Date(datos.inicio!);
   const fin = new Date(inicio.getTime() + duracion.duracion_min * 60_000);
   const fecha = fechaEnZonaDe(inicio, ZONA_NEGOCIO);
+  if (datos.cliente_id && !datos.aceptar_turno_cercano) {
+    const cercanos = await turnosCercanosDelCliente(sesion, clienteId, inicio);
+    if (cercanos.error) return desdeErrorDeBase(cercanos.error);
+    if (cercanos.data.length) return respuestaTurnoCercano(cercanos.data as { id: string; inicio: string; estado: string }[]);
+  }
   const opciones = { pisarUrgencia: Boolean(datos.pisar_urgencia), aceptarInminente: Boolean(datos.aceptar_evento_inminente) };
 
   // Paso 3: la agenda real — las mismas reglas que calculan los huecos que Lucía ofrece. Un
@@ -286,6 +317,11 @@ async function altaTurnoLibre(
   const inicio = new Date(`${datos.fecha_libre}T${datos.hora_libre}:00${OFFSET_NEGOCIO}`);
   if (Number.isNaN(inicio.getTime())) return error(400, 'La fecha y hora no son válidas');
   const fin = new Date(inicio.getTime() + duracion.duracion_min * 60_000);
+  if (datos.cliente_id && !datos.aceptar_turno_cercano) {
+    const cercanos = await turnosCercanosDelCliente(sesion, clienteId, inicio);
+    if (cercanos.error) return desdeErrorDeBase(cercanos.error);
+    if (cercanos.data.length) return respuestaTurnoCercano(cercanos.data as { id: string; inicio: string; estado: string }[]);
+  }
 
   // Probadores libres en ese rango (máximo 3, en orden)
   const MAX_PROBADORES = 3;
