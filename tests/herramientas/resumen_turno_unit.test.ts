@@ -62,3 +62,18 @@ Deno.test("sin resumen emitido no se borra una actualización de ficha", async (
   const r = await confirmacionDoble.evaluar(entrada("Ya actualicé tus datos.", { traza: trazaNueva() }));
   assertEquals(r.salta, false);
 });
+
+Deno.test("«ya guardé tu correo» del modelo no queda pegado al resumen (Pisu, 14/10)", async () => {
+  const traza = trazaNueva();
+  traza.resumenTurnoEmitido = true;
+  const r = await confirmacionDoble.evaluar(entrada("Listo, Pisu, ya guardé tu correo.", { traza }));
+  assertEquals(r.salta, true);
+  if (r.salta) assertEquals(r.texto, "");
+});
+
+Deno.test("caso parecido: una respuesta distinta que nombra el correo se conserva", async () => {
+  const traza = trazaNueva();
+  traza.resumenTurnoEmitido = true;
+  const r = await confirmacionDoble.evaluar(entrada("Te llega un aviso al correo el día anterior.", { traza }));
+  assertEquals(r.salta, false);
+});

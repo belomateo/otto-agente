@@ -40,6 +40,11 @@ export function horasNombradas(crudo: string): number[] {
   }
   // «1530», «1145», «930»: solo con minutos de agenda (00/15/30/45), así un año o un precio no cuentan.
   for (const x of n.matchAll(/(?<![\d.,:$])([01]?\d|2[0-3])(00|15|30|45)(?![\d.,])/g)) res.add(deLaTarde(Number(x[1])) * 60 + Number(x[2]));
+  // «hoy 14 30», «mañana 10 15» (Fabri, 14/10): la hora con un espacio en vez de los dos puntos. Solo con minutos de
+  // agenda y sin una unidad pegada atrás, para que «15 30 personas» o «20 15 mil» no cuenten.
+  for (const x of n.matchAll(/(?<![\d.,:$])([01]?\d|2[0-3])\s(00|15|30|45)(?![\d.,]|\s*(?:personas?|anos?|mil|lucas|pesos|%|k\b))/g)) {
+    res.add(deLaTarde(Number(x[1])) * 60 + Number(x[2]));
+  }
   // «las 3», «las 17» sin el «a» adelante.
   for (const x of n.matchAll(/\blas?\s+([01]?\d|2[0-3])\b(?!\s*[:.]\d|\s+(?:personas?|de\s+(?:la\s+)?(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)))/g)) {
     res.add(deLaTarde(Number(x[1])) * 60);

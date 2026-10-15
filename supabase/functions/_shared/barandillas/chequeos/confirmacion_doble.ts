@@ -85,7 +85,17 @@ function esCortesiaSuelta(clausula: string): boolean {
       .test(n);
 }
 
-const SEPARADOR_CLAUSULA = /(;\s*| y | pero | aparte )/;
+// «Listo, Pisu, ya guardé tu correo» / «Ya quedó actualizado tu mail»: avisa que guardó un dato, y eso ya lo dice
+// el resumen que armó el código. Sin sacarla, quedaba pegada al «¡Listo!» del resumen y salía un «Listo!» suelto
+// (Pisu, Nico y Marilú, 14/10).
+function avisaQueGuardoUnDato(clausula: string): boolean {
+  const n = normalizar(clausula);
+  if (/\b(actualic|actualiz|resumen)/.test(n)) return true;
+  return /\b(guard|registr|anot|quedo (?:guardad|actualizad|anotad|registrad))\w*/.test(n) &&
+    /\b(correo|mail|email|gmail|datos|nombre|numero)\b/.test(n);
+}
+
+const SEPARADOR_CLAUSULA =/(;\s*| y | pero | aparte )/;
 
 type Clausula = { oracionIdx: number; texto: string; separadorPrevio: string };
 
@@ -125,7 +135,7 @@ export const confirmacionDoble: Barandilla = {
     const os = oraciones(sinLista);
     const clausulas = partirEnClausulas(os);
     const esConfirmacion = clausulas.map((c) => esConfirmacionDeReserva(c.texto) ||
-      (traza.resumenTurnoEmitido && /\b(actualic|actualiz|resumen)/.test(normalizar(c.texto))));
+      (traza.resumenTurnoEmitido && avisaQueGuardoUnDato(c.texto)));
     // La cortesía suelta tiene que arrancar su oración: a Valeria (13/10) le llegó «lo recibe limpio,
     // planchado» porque «listo para usar», lo que quedaba después del « y », se leyó como un «¡Listo!».
     const mantener = clausulas.map((c, i) =>

@@ -132,9 +132,10 @@ Deno.test("horasNombradas entiende cómo escriben los clientes la hora (casos re
     ["Te puedo pedir el que me habías dicho antes por favor? 10.45", "10:45"],
     ["a las 3 está bien", "15:00"],
     ["mejor 3 y media", "15:30"],
+    ["hoy 14 30 podría llegar", "14:30"],
   ];
   for (const [t, h] of casos) assert(horasNombradas(t).map(hm).includes(h), `${t} → ${horasNombradas(t).map(hm)}`);
-  for (const t of ["Ah perdón, el lunes 12 me dijiste por la mañana, pero es feriado, trabajan igual?", "Llegaron a instalar una maquina en el galpón", "somos las 2 personas", "el 2026 fue duro"]) {
+  for (const t of ["Ah perdón, el lunes 12 me dijiste por la mañana, pero es feriado, trabajan igual?", "Llegaron a instalar una maquina en el galpón", "somos las 2 personas", "el 2026 fue duro", "somos 15 30 personas", "salió 20 15 mil"]) {
     assertEquals(horasNombradas(t), [], t);
   }
 });
