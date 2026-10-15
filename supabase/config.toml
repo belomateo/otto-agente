@@ -24,3 +24,8 @@ verify_jwt = false
 [functions.analista]
 verify_jwt = false
 static_files = ["./functions/_shared/prompt.md"]
+
+# La subida de turnos (0105): la llama el cron de 0105 a las 00:00 y 01:00 con x-worker-secret, sin JWT
+# (como analista y cron-envios). Sin esto, Supabase la rechaza con 401 antes de entrar a la función.
+[functions.subida-turnos]
+verify_jwt = false
