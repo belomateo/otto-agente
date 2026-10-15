@@ -60,9 +60,10 @@ import { armarContextoDelTurno, UMBRAL_DIAS_REPRESENTACION } from "./contexto.ts
 import { derivacionDuraPorEventoInminente } from "./derivacion_dura.ts";
 import { leerHistorial, ultimoMensajeAntesDe, type MensajeChat } from "./historial.ts";
 import { pidePersonaPorPalabraClave } from "./pide_persona.ts";
+import { CLAVE_TEXTO_COMO_FUNCIONA, pideInformacionGeneral, saludoDeLucia, TEXTO_COMO_FUNCIONA_RESPALDO } from "./informacion_general.ts";
 import { agruparRafaga, MAXIMO_CARACTERES_RAFAGA } from "./rafaga.ts";
 import { eventosDeLaTraza, registrarConsumo, registrarEventos, type EventoAgente } from "./bitacora.ts";
-import { prepararParaEnviar } from "../whatsapp/preparar.ts";
+import { prepararParaEnviar, sinSignosDeApertura } from "../whatsapp/preparar.ts";
 
 // Pedido de Mateo (9/10): «si tiene que tardar un minuto o un minuto y medio no pasa nada». El
 // modelo piensa (gpt-6.1-sol) y tiene hasta LIMITE_TURNO_MS para consultar y contestar; si no le
@@ -368,6 +369,22 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     // sin hablar se trata igual que el primer mensaje — se presenta de nuevo, y presentacion_
     // repetida.ts ya no se lo corta (usa este mismo booleano, sin tocar su código).
     const esPrimerMensaje = historial.length === 0 || (diasDesdeUltimoMensaje !== null && diasDesdeUltimoMensaje >= UMBRAL_DIAS_REPRESENTACION);
+
+    // Pedido de Mateo, 15/10: cuando el primer mensaje pide información en general («quisiera más información»,
+    // «¿cómo es el alquiler?»), no se le manda todo junto: un saludo corto y el texto de cómo funciona el alquiler,
+    // fijo y sin pasar por el modelo. Una pregunta puntual (precio, turno, dirección…) sigue contestándose directo.
+    if (esPrimerMensaje && !hayImagenes && pideInformacionGeneral(mensaje)) {
+      eventos.push({ tipo: "pensamiento", detalle: { etapa: "informacion-general", nota: "primer mensaje de información general: saludo y texto fijo de cómo funciona el alquiler, sin pasar por el modelo" } });
+      const texto = (await textoDeContexto(db, CLAVE_TEXTO_COMO_FUNCIONA)) ?? TEXTO_COMO_FUNCIONA_RESPALDO;
+      resultado = {
+        // Dos mensajes tal cual: el saludo y, aparte, el texto con la lista de pasos entera (no se re-parte).
+        mensajesAlCliente: [saludoDeLucia(ficha.nombre), sinSignosDeApertura(texto)],
+        imagenes: [],
+        derivo: false,
+        bloqueadoPorVentana: false,
+      };
+      return resultado;
+    }
 
     // Paso 5 — armar contexto, y paso 6 — el principal con herramientas.
     const [contexto, prompt, herramientas, enlaces] = await Promise.all([
