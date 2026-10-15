@@ -121,3 +121,14 @@ prueba("si el modelo no pudo leer la charla, no carga nada", async (e) => {
   assertEquals(r.dudosos.length, 1);
   assertEquals((await turnosDe(e.sql, e.clienteId)).length, 0);
 });
+
+prueba("acordó y después canceló ese turno: no se vuelve a cargar y va a revisión (Berina, 15/10)", async (e) => {
+  await prepararTabla(e.sql);
+  await charlaConAcuerdo(e.sql, e.conversacionId);
+  const id = await crearTurno(e.sql, { clienteId: e.clienteId, inicio: local(MIERCOLES, "15:00"), estado: "cancelado" });
+  assert(id);
+  const r = await correr(e, "real", acuerdo());
+  assertEquals(r.cargados.length, 0);
+  assertEquals(r.dudosos.length, 1);
+  assertEquals((await turnosDe(e.sql, e.clienteId)).filter((t) => t.estado !== "cancelado").length, 0);
+});

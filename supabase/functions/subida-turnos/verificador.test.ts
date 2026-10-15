@@ -90,3 +90,13 @@ Deno.test("esDiaYHoraReal y fraseEstaEnLaCharla", () => {
   assertEquals(fraseEstaEnLaCharla("Ya te agende", ["perfecto! ya te agende Marcos"]), true);
   assertEquals(fraseEstaEnLaCharla("nada", ["nada"]), false);
 });
+
+Deno.test("acordó y después canceló ese mismo turno: no se vuelve a cargar (Berina, 15/10)", () => {
+  const d = verificar({ ...base, acuerdo: acuerdo(), turnosCancelados: [{ inicio: new Date("2026-10-15T16:30:00Z") }] });
+  assertEquals(d.accion, "dudoso");
+});
+
+Deno.test("caso parecido: un turno cancelado de otro horario no frena el acuerdo nuevo", () => {
+  const d = verificar({ ...base, acuerdo: acuerdo(), turnosCancelados: [{ inicio: new Date("2026-10-20T16:30:00Z") }] });
+  assertEquals(d.accion, "cargar");
+});

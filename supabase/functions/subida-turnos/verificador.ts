@@ -7,6 +7,8 @@ import type { Acuerdo } from "./lector.ts";
 
 export type TurnoDelCliente = { id: string; inicio: Date; estado: string };
 
+export type TurnoCancelado = { inicio: Date };
+
 export type Decision =
   | { accion: "cargar"; inicio: Date }
   | { accion: "mover"; inicio: Date; turnoId: string }
@@ -43,6 +45,8 @@ export type EntradaVerificador = {
   acuerdo: Acuerdo | null;
   textos: string[]; // lo que dice la charla, para comprobar la frase
   turnosDelCliente: TurnoDelCliente[]; // activos (sin-confirmar / confirmado), a futuro
+  // Los que el cliente ya canceló: si lo acordado coincide con uno, se canceló después de acordarlo (Berina, 15/10).
+  turnosCancelados?: TurnoCancelado[];
   ahora: Date;
   tz: string;
   // Domingos, feriados y días cerrados: viene resuelto de afuera (diasSinTurnos).
@@ -72,6 +76,11 @@ export function verificar(e: EntradaVerificador): Decision {
 
   const cerrado = e.diaSinTurnos(a.dia!);
   if (cerrado) return { accion: "dudoso", motivo: `el ${DIA_SEMANA(inicio, e.tz)} ${a.dia}: ${cerrado}` };
+
+  // Lo acordado coincide con un turno que el cliente canceló: acordó y después se arrepintió. No se vuelve a cargar.
+  if ((e.turnosCancelados ?? []).some((t) => Math.abs(t.inicio.getTime() - inicio.getTime()) < 60_000)) {
+    return { accion: "dudoso", motivo: "ese turno ya lo canceló el cliente después de acordarlo: no se vuelve a cargar" };
+  }
 
   // Ya está cargado (misma hora, con un minuto de margen)
   if (e.turnosDelCliente.some((t) => Math.abs(t.inicio.getTime() - inicio.getTime()) < 60_000)) return { accion: "ya_esta", inicio };

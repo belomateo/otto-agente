@@ -15,7 +15,7 @@ import { leerFicha } from "../_shared/herramientas/ficha.ts";
 import { fechaLocal, instanteLocal, sumarDias } from "../_shared/tiempo.ts";
 import { cargarTurno, duracionDelTipo, moverTurno } from "./cargador.ts";
 import { type Acuerdo, charlaParaElLector, leerAcuerdo, type MensajeDeLaCharla } from "./lector.ts";
-import { type Decision, type TurnoDelCliente, verificar } from "./verificador.ts";
+import { type Decision, type TurnoCancelado, type TurnoDelCliente, verificar } from "./verificador.ts";
 
 export const ETIQUETA_FALTA_DATOS = "Falta datos para agendar";
 export type Modo = "prueba" | "real";
@@ -103,8 +103,14 @@ export async function correrNoche(db: Db, deps: DepsNoche): Promise<ResumenNoche
         [ch.clienteId, deps.ahora.toISOString()],
       )).map((t): TurnoDelCliente => ({ id: t.id, inicio: new Date(t.inicio), estado: t.estado }));
 
+      const cancelados = (await db.consulta<{ inicio: string }>(
+        `select inicio from turnos where cliente_id = $1::uuid and estado = 'cancelado' and inicio > $2::timestamptz`,
+        [ch.clienteId, deps.ahora.toISOString()],
+      )).map((t): TurnoCancelado => ({ inicio: new Date(t.inicio) }));
+
       const decision = verificar({
         acuerdo,
+        turnosCancelados: cancelados,
         textos: mensajes.map((m) => (m.contenido ?? "") + " " + (m.transcripcion ?? "")),
         turnosDelCliente: turnos,
         ahora: deps.ahora,
