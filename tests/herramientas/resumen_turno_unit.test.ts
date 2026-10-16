@@ -77,3 +77,13 @@ Deno.test("caso parecido: una respuesta distinta que nombra el correo se conserv
   const r = await confirmacionDoble.evaluar(entrada("Te llega un aviso al correo el día anterior.", { traza }));
   assertEquals(r.salta, false);
 });
+
+Deno.test("«ya agregué tu correo a la reserva» tampoco queda pegado al resumen (Cesar, 16/10)", async () => {
+  for (const frase of ["Listo, Cesar, ya agregué tu correo a la reserva.", "Perfecto, ya sumé tu mail.", "Listo, ya añadí tu correo.", "Tu correo quedó agregado."]) {
+    const traza = trazaNueva();
+    traza.resumenTurnoEmitido = true;
+    const r = await confirmacionDoble.evaluar(entrada(frase, { traza }));
+    assertEquals(r.salta, true, frase);
+    if (r.salta) assertEquals(r.texto, "", frase);
+  }
+});

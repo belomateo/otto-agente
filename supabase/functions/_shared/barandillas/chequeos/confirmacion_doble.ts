@@ -91,7 +91,9 @@ function esCortesiaSuelta(clausula: string): boolean {
 function avisaQueGuardoUnDato(clausula: string): boolean {
   const n = normalizar(clausula);
   if (/\b(actualic|actualiz|resumen)/.test(n)) return true;
-  return /\b(guard|registr|anot|quedo (?:guardad|actualizad|anotad|registrad))\w*/.test(n) &&
+  // «guardé», «registré», «anoté», «agregué» (Cesar, 16/10: «ya agregué tu correo a la reserva»), «sumé», «cargué»,
+  // «añadí» (sin tilde ni eñe queda «anadi»), «dejé anotado».
+  return /\b(guard|registr|anot|agreg|anad|sume|sumo|cargue|carga|incorpor|quedo (?:guardad|actualizad|anotad|registrad|agregad|cargad))\w*/.test(n) &&
     /\b(correo|mail|email|gmail|datos|nombre|numero)\b/.test(n);
 }
 
