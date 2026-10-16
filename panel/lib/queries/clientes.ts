@@ -65,7 +65,7 @@ export async function listarClientes(
 }
 
 /** Un cliente para elegir en «Nuevo turno»: lo justo para reconocerlo. */
-export type ClienteParaTurno = { id: string; n: string; tel: string };
+export type ClienteParaTurno = { id: string; n: string; tel: string; nombre: string | null; turnos: { id: string; inicio: string; estado: string }[] };
 
 const MAX_PARA_TURNO = 8;
 
@@ -84,7 +84,21 @@ export async function buscarParaTurno(db: ClienteDb, texto: string): Promise<{ c
     .order('creado_at', { ascending: false })
     .limit(MAX_PARA_TURNO);
   if (error) throw error;
-  return { clientes: (data ?? []).map((c) => ({ id: c.id, n: nombreDe(c), tel: telefonoLegible(c.telefono) })) };
+  // Sus turnos por venir (pedido de Mateo, 16/10): «Nuevo turno» avisa apenas se elige a alguien que ya tiene uno.
+  const ids = (data ?? []).map((c) => c.id);
+  const { data: turnos, error: eT } = ids.length
+    ? await db.from('turnos').select('id, cliente_id, inicio, estado').in('cliente_id', ids).in('estado', ['sin-confirmar', 'confirmado']).gt('inicio', new Date().toISOString()).order('inicio')
+    : { data: [], error: null };
+  if (eT) throw eT;
+  return {
+    clientes: (data ?? []).map((c) => ({
+      id: c.id,
+      n: nombreDe(c),
+      tel: telefonoLegible(c.telefono),
+      nombre: c.nombre,
+      turnos: (turnos ?? []).filter((t) => t.cliente_id === c.id).map((t) => ({ id: t.id, inicio: t.inicio, estado: t.estado })),
+    })),
+  };
 }
 
 export type FichaDeCliente = {

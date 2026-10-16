@@ -3,7 +3,8 @@
 -- llevar a la prueba, retiro anticipado). Idempotente: cada cambio se aplica solo si la ficha todavía no lo dice,
 -- y no pisa una edición hecha desde el panel.
 --
--- NO incluye el precio de los smokings: la dueña escribió «desde $290.00» y hay que confirmar si son $290.000.
+-- Smoking: «desde $290.000» (la dueña escribió $290.00; Mateo confirmó el 16/10 que es a partir de $290.000 y de ahí
+-- para arriba según el modelo).
 
 -- 1. Pago y garantía: todas las tarjetas, y el documento es para el pago.
 update fragmentos
@@ -62,3 +63,13 @@ update fragmentos
        editado_por = 'claude-code 16/10: retiro anticipado hasta 2 días antes, sin costo (dueña)'
  where id = 'a9f10000-0000-4000-8000-000000000201'
    and texto like '%Si viajás o no podés retirarlo ese día, se coordina el retiro uno o dos días antes.%';
+
+-- 8. Smoking: a partir de $290.000; según el modelo puede costar más.
+update fragmentos
+   set texto = texto || E'
+
+El alquiler de un smoking arranca a partir de $290.000; según el modelo puede costar más. El precio de cada modelo se ve en el local.',
+       version = version + 1,
+       editado_por = 'claude-code 16/10: smoking desde $290.000 (dueña)'
+ where id = 'a9f10000-0000-4000-8000-000000000101'
+   and texto not like '%smoking arranca a partir de%';

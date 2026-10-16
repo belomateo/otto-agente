@@ -47,8 +47,8 @@ export const ESQUEMA_ALTA_TURNO = z
     pisar_urgencia: z.boolean().optional(),
     /** Explícito: el evento es hoy o mañana y lo resuelve quien agenda (ver huecosPara). */
     aceptar_evento_inminente: z.boolean().optional(),
-    /** Explícito: el cliente ya tiene otro turno a menos de 3 días y se quiere cargar este igual (15/10). */
-    aceptar_turno_cercano: z.boolean().optional(),
+    /** Explícito: el cliente ya tiene otro turno por venir y se quiere cargar este igual (15/10 y 16/10). */
+    aceptar_turno_existente: z.boolean().optional(),
     // Modo B — panel con hora libre (admin agenda sin pasar por la lista de huecos):
     // el admin elige la hora directamente y cuántos probadores quiere ocupar. No valida
     // contra calcularHuecos; la constraint GiST de la base impide solapamientos reales.
@@ -81,27 +81,55 @@ const fechaEnZonaDe = (d: Date, tz: string) => {
 };
 
 // Turno cargado dos veces por error (Adrian, 15/10: el local cargó el sábado 17 y, minutos después, un viernes 16
-// de la misma hora; el recordatorio salió para el que no era). Antes de cargar un turno para un cliente que ya
-// existe, se mira si tiene otro activo a menos de 3 días: si lo tiene, se frena con el detalle y quien agenda
-// lo confirma tildando aceptar_turno_cercano. Un turno doble legítimo (prueba final, dos personas) se puede
-// cargar igual: solo pide una confirmación más.
-export const DIAS_TURNO_CERCANO = 3;
+// de la misma hora; el recordatorio salió para el que no era). Pedido de Mateo (16/10): si el cliente ya tiene
+// cualquier turno por venir, quien agenda tiene que verlo — día, hora, teléfono y nombre — antes de cargar otro.
+// Se frena con un 409 y se carga igual solo tildando aceptar_turno_existente: un turno doble legítimo (prueba
+// final, dos personas) sigue siendo posible.
+//
+// Y el mismo cliente cargado como «nuevo» con el teléfono escrito de otra forma (sin el 549, con espacios): se
+// busca por los últimos 10 dígitos y, si ya existe, se devuelve ese cliente en vez de crear uno duplicado.
+type TurnoExistente = { id: string; inicio: string; estado: string };
+type ContactoConTurnos = { id: string; nombre: string | null; tel: string; turnos: TurnoExistente[] };
 
-export async function turnosCercanosDelCliente(sesion: Sesion, clienteId: string, inicio: Date) {
-  const margen = DIAS_TURNO_CERCANO * 24 * 3_600_000;
+async function turnosPorVenir(sesion: Sesion, clienteId: string) {
   const { data, error: e } = await sesion.supabase
     .from('turnos')
     .select('id, inicio, estado')
     .eq('cliente_id', clienteId)
     .in('estado', ['sin-confirmar', 'confirmado'])
-    .gte('inicio', new Date(inicio.getTime() - margen).toISOString())
-    .lte('inicio', new Date(inicio.getTime() + margen).toISOString())
+    .gt('inicio', new Date().toISOString())
     .order('inicio');
-  return { data: data ?? [], error: e };
+  return { turnos: (data ?? []) as TurnoExistente[], error: e };
 }
 
-function respuestaTurnoCercano(turnos: { id: string; inicio: string; estado: string }[]) {
-  return error(409, 'Este cliente ya tiene un turno cerca de ese día', { motivo: 'turno_cercano', turnos });
+async function contacto(sesion: Sesion, clienteId: string): Promise<ContactoConTurnos | Response> {
+  const { data: c, error: eC } = await sesion.supabase.from('clientes').select('id, nombre, telefono').eq('id', clienteId).maybeSingle();
+  if (eC) return desdeErrorDeBase(eC);
+  if (!c) return error(409, 'Ese cliente no existe', { motivo: 'cliente_no_existe' });
+  const t = await turnosPorVenir(sesion, clienteId);
+  if (t.error) return desdeErrorDeBase(t.error);
+  return { id: c.id as string, nombre: (c.nombre as string | null) ?? null, tel: c.telefono as string, turnos: t.turnos };
+}
+
+/** Frena el alta si el cliente ya tiene un turno por venir y no se tildó cargarlo igual. null = puede seguir. */
+async function frenoPorTurnoExistente(sesion: Sesion, clienteId: string, aceptado: boolean | undefined): Promise<Response | null> {
+  if (aceptado) return null;
+  const c = await contacto(sesion, clienteId);
+  if (c instanceof Response) return c;
+  if (!c.turnos.length) return null;
+  return error(409, 'Este contacto ya tiene un turno', { motivo: 'turno_existente', cliente: { id: c.id, nombre: c.nombre, tel: c.tel }, turnos: c.turnos });
+}
+
+/** «Cliente nuevo» con un teléfono que ya está cargado (aunque escrito distinto): devuelve ese cliente. null = no existe. */
+async function frenoPorClienteExistente(sesion: Sesion, telefono: string): Promise<Response | null> {
+  const digitos = telefono.replace(/\D/g, '');
+  if (digitos.length < 10) return null;
+  const { data, error: e } = await sesion.supabase.from('clientes').select('id').like('telefono', `%${digitos.slice(-10)}`).limit(1);
+  if (e) return desdeErrorDeBase(e);
+  if (!data?.length) return null;
+  const c = await contacto(sesion, data[0].id as string);
+  if (c instanceof Response) return c;
+  return error(409, 'Ese teléfono ya es de un cliente', { motivo: 'cliente_existente', cliente: { id: c.id, nombre: c.nombre, tel: c.tel }, turnos: c.turnos });
 }
 
 export async function altaTurno(sesion: Sesion, request: Request) {
@@ -125,6 +153,8 @@ export async function altaTurno(sesion: Sesion, request: Request) {
   let clienteId: string;
   let fechaEvento: string | null;
   if (datos.cliente_nuevo) {
+    const yaExiste = await frenoPorClienteExistente(sesion, datos.cliente_nuevo.telefono);
+    if (yaExiste) return yaExiste;
     const { data, error: eCliente } = await sesion.supabase
       .from('clientes')
       .insert({ telefono: datos.cliente_nuevo.telefono, nombre: datos.cliente_nuevo.nombre ?? null })
@@ -149,10 +179,9 @@ export async function altaTurno(sesion: Sesion, request: Request) {
   const inicio = new Date(datos.inicio!);
   const fin = new Date(inicio.getTime() + duracion.duracion_min * 60_000);
   const fecha = fechaEnZonaDe(inicio, ZONA_NEGOCIO);
-  if (datos.cliente_id && !datos.aceptar_turno_cercano) {
-    const cercanos = await turnosCercanosDelCliente(sesion, clienteId, inicio);
-    if (cercanos.error) return desdeErrorDeBase(cercanos.error);
-    if (cercanos.data.length) return respuestaTurnoCercano(cercanos.data as { id: string; inicio: string; estado: string }[]);
+  if (datos.cliente_id) {
+    const freno = await frenoPorTurnoExistente(sesion, clienteId, datos.aceptar_turno_existente);
+    if (freno) return freno;
   }
   const opciones = { pisarUrgencia: Boolean(datos.pisar_urgencia), aceptarInminente: Boolean(datos.aceptar_evento_inminente) };
 
@@ -295,6 +324,8 @@ async function altaTurnoLibre(
   // Cliente
   let clienteId: string;
   if (datos.cliente_nuevo) {
+    const yaExiste = await frenoPorClienteExistente(sesion, datos.cliente_nuevo.telefono);
+    if (yaExiste) return yaExiste;
     const { data, error: eC } = await sesion.supabase
       .from('clientes')
       .insert({ telefono: datos.cliente_nuevo.telefono, nombre: datos.cliente_nuevo.nombre ?? null })
@@ -317,10 +348,9 @@ async function altaTurnoLibre(
   const inicio = new Date(`${datos.fecha_libre}T${datos.hora_libre}:00${OFFSET_NEGOCIO}`);
   if (Number.isNaN(inicio.getTime())) return error(400, 'La fecha y hora no son válidas');
   const fin = new Date(inicio.getTime() + duracion.duracion_min * 60_000);
-  if (datos.cliente_id && !datos.aceptar_turno_cercano) {
-    const cercanos = await turnosCercanosDelCliente(sesion, clienteId, inicio);
-    if (cercanos.error) return desdeErrorDeBase(cercanos.error);
-    if (cercanos.data.length) return respuestaTurnoCercano(cercanos.data as { id: string; inicio: string; estado: string }[]);
+  if (datos.cliente_id) {
+    const freno = await frenoPorTurnoExistente(sesion, clienteId, datos.aceptar_turno_existente);
+    if (freno) return freno;
   }
 
   // Probadores libres en ese rango (máximo 3, en orden)
@@ -368,9 +398,13 @@ async function altaTurnoLibre(
 // WORKER_SECRET, el turno ya quedó en la base y no se pierde nada —el cron de recordatorio
 // de 18h lo manda igual antes del turno.
 function dispararConfirmacion(turnoId: string): void {
-  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const workerSecret = process.env.WORKER_SECRET;
-  if (!supabaseUrl || !workerSecret) return;
+  if (!supabaseUrl || !workerSecret) {
+    // 16/10: faltaba WORKER_SECRET en Vercel y ningún turno cargado desde el panel le avisaba al cliente.
+    console.error('[turnos] no se mandó la confirmación al cliente: falta WORKER_SECRET (o la URL de Supabase) en el panel');
+    return;
+  }
   fetch(`${supabaseUrl}/functions/v1/cron-envios`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-worker-secret': workerSecret },

@@ -43,29 +43,56 @@ export const CAMPO = 'w-full rounded-otto border border-borde px-2.5 py-2 text-s
 export const esEventoInminente = (e: unknown) =>
   e instanceof ErrorApi && (e.detalle as { motivo?: string } | undefined)?.motivo === 'evento_inminente';
 
-/** El 409 del POST cuando el cliente ya tiene otro turno a menos de 3 días (turno cargado dos veces por error). */
-export type TurnoCercano = { id: string; inicio: string; estado: string };
-export const turnosCercanosDe = (e: unknown): TurnoCercano[] | null => {
+/** Un turno por venir del cliente elegido (búsqueda o 409 del POST). */
+export type TurnoExistente = { id: string; inicio: string; estado: string };
+export type ClienteElegido = { id: string; nombre: string; tel: string; turnos: TurnoExistente[] };
+
+/** El 409 del POST: el contacto ya tiene un turno por venir, o el teléfono «nuevo» ya es de un cliente. */
+export function contactoDe409(e: unknown): { motivo: 'turno_existente' | 'cliente_existente'; cliente: ClienteElegido } | null {
   if (!(e instanceof ErrorApi)) return null;
-  const d = e.detalle as { motivo?: string; turnos?: TurnoCercano[] } | undefined;
-  return d?.motivo === 'turno_cercano' ? (d.turnos ?? []) : null;
-};
+  const d = e.detalle as { motivo?: string; cliente?: { id: string; nombre: string | null; tel: string }; turnos?: TurnoExistente[] } | undefined;
+  if ((d?.motivo !== 'turno_existente' && d?.motivo !== 'cliente_existente') || !d.cliente) return null;
+  return {
+    motivo: d.motivo,
+    cliente: { id: d.cliente.id, nombre: d.cliente.nombre?.trim() || telefonoParaMostrar(d.cliente.tel), tel: telefonoParaMostrar(d.cliente.tel), turnos: d.turnos ?? [] },
+  };
+}
+
+// '5493415140196' → '341 514-0196' (mismo criterio que telefonoLegible del servidor, que es server-only).
+function telefonoParaMostrar(tel: string): string {
+  let d = tel.replace(/\D/g, '');
+  if (d.startsWith('54')) d = d.slice(2);
+  if (d.startsWith('9') && d.length === 11) d = d.slice(1);
+  if (d.length !== 10) return tel;
+  return d.startsWith('11') ? `11 ${d.slice(2, 6)}-${d.slice(6)}` : `${d.slice(0, 3)} ${d.slice(3, 6)}-${d.slice(6)}`;
+}
 
 const ESTADO_LEGIBLE: Record<string, string> = { 'sin-confirmar': 'sin confirmar', confirmado: 'confirmado' };
-const cuando = (iso: string) =>
-  new Date(iso).toLocaleString('es-AR', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+const diaDe = (iso: string) => new Date(iso).toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: '2-digit' });
+const horaDe = (iso: string) => new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
 
-/** Aviso al cargar un turno para alguien que ya tiene otro cerca: hay que tildarlo para cargar este igual. */
-export function AceptarTurnoCercano({ turnos, aceptado, onCambio }: { turnos: TurnoCercano[]; aceptado: boolean; onCambio: (v: boolean) => void }) {
+/**
+ * El cartel (pedido de Mateo, 16/10): «este contacto ya tiene un turno para el día…, hora…, teléfono…, nombre…».
+ * Sale apenas se elige al cliente; para cargar otro igual hay que tildarlo.
+ */
+export function AvisoTurnoExistente({ cliente, aceptado, onCambio }: { cliente: ClienteElegido; aceptado: boolean; onCambio: (v: boolean) => void }) {
   return (
-    <label className="flex items-start gap-2 rounded-otto border border-ambar bg-ambar-suave p-2.5 text-[13px] leading-[1.4] text-ambar">
-      <input type="checkbox" checked={aceptado} onChange={(e) => onCambio(e.target.checked)} className="mt-0.5" />
-      <span>
-        Este cliente ya tiene {turnos.length === 1 ? 'un turno' : 'turnos'} cerca de ese día:{' '}
-        {turnos.map((t) => `${cuando(t.inicio)} (${ESTADO_LEGIBLE[t.estado] ?? t.estado})`).join(' · ')}. Si ese es el que querías, cancelá esto y
-        movelo desde la lista. Si de verdad es otro turno, tildá acá para cargarlo igual.
-      </span>
-    </label>
+    <div className="rounded-otto border border-ambar bg-ambar-suave p-3 text-[13px] leading-[1.45] text-ambar">
+      <div className="mb-1.5 font-semibold">⚠ Este contacto ya tiene {cliente.turnos.length === 1 ? 'un turno' : `${cliente.turnos.length} turnos`}</div>
+      {cliente.turnos.map((t) => (
+        <div key={t.id} className="mb-1">
+          <span className="font-medium">Día:</span> {diaDe(t.inicio)} · <span className="font-medium">Hora:</span> {horaDe(t.inicio)} · {ESTADO_LEGIBLE[t.estado] ?? t.estado}
+        </div>
+      ))}
+      <div>
+        <span className="font-medium">Teléfono:</span> {cliente.tel} · <span className="font-medium">Nombre:</span> {cliente.nombre}
+      </div>
+      <div className="mt-1.5">Si te pide cambiar el día, cancelá esto y mové ese turno desde la lista.</div>
+      <label className="mt-2 flex items-start gap-2 font-medium">
+        <input type="checkbox" checked={aceptado} onChange={(e) => onCambio(e.target.checked)} className="mt-0.5" />
+        Es otro turno distinto: cargarlo igual
+      </label>
+    </div>
   );
 }
 
@@ -124,14 +151,18 @@ function BuscadorCliente({
   onTelefono,
   onNombre,
 }: {
-  clienteElegido: { id: string; nombre: string } | null;
-  onElegirCliente: (c: { id: string; nombre: string } | null) => void;
+  clienteElegido: ClienteElegido | null;
+  onElegirCliente: (c: ClienteElegido | null) => void;
   telefono: string;
   nombre: string;
   onTelefono: (v: string) => void;
   onNombre: (v: string) => void;
 }) {
   const [modo, setModo] = useState<'buscar' | 'nuevo'>('buscar');
+  // El POST dijo que el teléfono «nuevo» ya era de un cliente y lo eligió solo: se muestra como elegido.
+  useEffect(() => {
+    if (clienteElegido && modo === 'nuevo') setModo('buscar');
+  }, [clienteElegido, modo]);
   const [busqueda, setBusqueda] = useState('');
   const [resultados, setResultados] = useState<ClienteParaTurno[] | null>(null);
   const [buscando, setBuscando] = useState(false);
@@ -209,12 +240,13 @@ function BuscadorCliente({
                     key={c.id}
                     type="button"
                     onClick={() => {
-                      onElegirCliente({ id: c.id, nombre: c.n });
+                      onElegirCliente({ id: c.id, nombre: c.n, tel: c.tel, turnos: c.turnos ?? [] });
                       setBusqueda('');
                     }}
                     className="rounded px-2 py-1.5 text-left text-[13px] hover:bg-hueso"
                   >
                     <span className="font-medium">{c.n}</span> <span className="text-grafito">· {c.tel}</span>
+                    {c.turnos?.length > 0 && <span className="text-ambar"> · ya tiene turno</span>}
                   </button>
                 ))
               ) : (
@@ -236,7 +268,7 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
   const [errorHuecos, setErrorHuecos] = useState<string | null>(null);
   const [huecoElegido, setHuecoElegido] = useState<Hueco | null>(null);
   const [pisarUrgencia, setPisarUrgencia] = useState(false);
-  const [clienteElegido, setClienteElegido] = useState<{ id: string; nombre: string } | null>(null);
+  const [clienteElegido, setClienteElegido] = useState<ClienteElegido | null>(null);
   const [telefono, setTelefono] = useState('');
   const [nombreNuevo, setNombreNuevo] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -245,23 +277,16 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
   // El POST dijo que el evento de este cliente es hoy o mañana: se puede dar igual, tildándolo.
   const [inminente, setInminente] = useState(false);
   const [aceptarInminente, setAceptarInminente] = useState(false);
-  // El POST dijo que este cliente ya tiene otro turno a menos de 3 días: se carga igual solo si se tilda.
-  const [turnosCercanos, setTurnosCercanos] = useState<TurnoCercano[] | null>(null);
-  const [aceptarCercano, setAceptarCercano] = useState(false);
+  // El contacto elegido ya tiene un turno por venir: se carga otro solo si se tilda (cartel, 16/10).
+  const [aceptarExistente, setAceptarExistente] = useState(false);
+  const tieneTurno = Boolean(clienteElegido?.turnos.length);
 
   // Otro cliente, otra fecha de evento: lo que dijo el POST del anterior ya no vale.
   useEffect(() => {
     setInminente(false);
     setAceptarInminente(false);
-    setTurnosCercanos(null);
-    setAceptarCercano(false);
+    setAceptarExistente(false);
   }, [clienteElegido, telefono]);
-
-  // Otro horario o día: el aviso de «turno cercano» se vuelve a calcular en el POST.
-  useEffect(() => {
-    setTurnosCercanos(null);
-    setAceptarCercano(false);
-  }, [huecoElegido, tipo, fecha]);
 
   useEffect(() => {
     setHuecoElegido(null);
@@ -290,7 +315,7 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
       (clienteElegido || (telefono.trim() && telefonoLimpio.length >= 8)) &&
       (!huecoElegido.dentro_urgencia || pisarUrgencia || aceptarInminente) &&
       (!inminente || aceptarInminente) &&
-      (!turnosCercanos || aceptarCercano)
+      (!tieneTurno || aceptarExistente)
   );
 
   async function confirmar(hueco: Hueco) {
@@ -305,16 +330,20 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
         inicio: hueco.inicio,
         ...(hueco.dentro_urgencia ? { pisar_urgencia: true } : {}),
         ...(aceptarInminente ? { aceptar_evento_inminente: true } : {}),
-        ...(aceptarCercano ? { aceptar_turno_cercano: true } : {}),
+        ...(aceptarExistente ? { aceptar_turno_existente: true } : {}),
       });
       onCreado();
       onCerrar();
     } catch (e) {
-      const cercanos = turnosCercanosDe(e);
+      const contacto = contactoDe409(e);
       if (esEventoInminente(e)) {
         setInminente(true);
-      } else if (cercanos) {
-        setTurnosCercanos(cercanos);
+      } else if (contacto) {
+        // Ya tiene turno, o el teléfono «nuevo» ya era de un cliente: queda elegido ese cliente y sale el cartel.
+        setTelefono('');
+        setNombreNuevo('');
+        setClienteElegido(contacto.cliente);
+        if (contacto.motivo === 'cliente_existente' && !contacto.cliente.turnos.length) setError('Ese teléfono ya es de un cliente: quedó elegido. Revisá y volvé a tocar «Crear turno».');
       } else if (e instanceof ErrorApi) {
         // Si es un 400 de validación, el detalle trae los mensajes por campo — mostrar
         // esos en vez del genérico "Datos inválidos" que no le dice nada a nadie.
@@ -395,7 +424,7 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
 
           {inminente && <AceptarInminente aceptado={aceptarInminente} onCambio={setAceptarInminente} />}
 
-          {turnosCercanos && <AceptarTurnoCercano turnos={turnosCercanos} aceptado={aceptarCercano} onCambio={setAceptarCercano} />}
+          {clienteElegido && tieneTurno && <AvisoTurnoExistente cliente={clienteElegido} aceptado={aceptarExistente} onCambio={setAceptarExistente} />}
 
           {error && (
             <div className="text-[13px] text-ladrillo">
