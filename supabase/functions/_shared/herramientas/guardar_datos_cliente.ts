@@ -11,6 +11,7 @@ import { AUTOR_LUCIA, DIA_O_NOCHE, ESTADOS_TURNO_ACTIVO, EVENTOS, ROLES_CLIENTE 
 import { diasSinTurnos } from "../agenda/huecos.ts";
 import { fechaLarga, fechaLocal, horaLocal } from "../tiempo.ts";
 import { resumenTurno } from "./confirmacion.ts";
+import { fechaEventoCreible } from "./fecha_evento.ts";
 import { actualizarFicha, CAMPOS_FICHA, formatoDeEmailValido, leerFicha, type Ficha } from "./ficha.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
@@ -29,7 +30,7 @@ export const guardarDatosCliente: Herramienta<Args> = {
   parametros: objeto({
     nombre: { type: ["string", "null"], maxLength: 80, description: "Nombre, como lo dijo." },
     evento: { type: ["string", "null"], enum: [...EVENTOS, null], description: "Para qué evento es." },
-    fecha_evento: { type: ["string", "null"], format: "date", description: "Fecha del evento, AAAA-MM-DD." },
+    fecha_evento: { type: ["string", "null"], format: "date", description: "Fecha del evento, AAAA-MM-DD, solo si el cliente dijo el día exacto: con solo el mes, null. «Un 15» es la fiesta de quince, no el día 15." },
     // Revisión del 4/10: "es para mi novio" (la pareja, que se gradúa) quedó como novio, y a un
     // invitado de un casamiento de noche le guardó novio sin que lo dijera.
     rol: {
@@ -57,6 +58,7 @@ export const guardarDatosCliente: Herramienta<Args> = {
     },
   }),
   async ejecutar(args, ctx) {
+    args = { ...args, fecha_evento: await fechaEventoCreible(ctx, args.fecha_evento) };
     const nota = limpio(args.nota);
     if (!CAMPOS_FICHA.some((c) => limpio(args[c])) && !nota) {
       return rechazo("sin_datos", "No mandaste ningún dato para guardar.");
@@ -109,7 +111,7 @@ export const guardarDatosCliente: Herramienta<Args> = {
         return {
           ok: true,
           datos: { guardado: escritos, turno_id: turno.id, nota: "Datos actualizados en la misma reserva. El resumen y la pregunta por datos faltantes salen solos; no los repitas ni agendes otro turno." },
-          efectos: { resumenTurnoId: turno.id, mensajesAlCliente: [resumenTurno({ nombre: ficha.nombre, email: ficha.email, telefono: ctx.cliente.telefono, inicio, tz: ctx.tz, actualizado: true })] },
+          efectos: { resumenTurnoId: turno.id, mensajesAlCliente: [resumenTurno({ nombre: ficha.nombre, email: ficha.email, telefono: ctx.cliente.telefono, inicio, tz: ctx.tz, actualizado: true, guardado: escritos })] },
         };
       }
     }

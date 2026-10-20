@@ -23,6 +23,7 @@ import { fechaLarga, fechaLocal, horaLocal } from "../tiempo.ts";
 import { armarConfirmacion } from "./confirmacion.ts";
 import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
 import { eligioElHorario } from "./eleccion.ts";
+import { fechaEventoCreible } from "./fecha_evento.ts";
 import { actualizarFicha, leerFicha } from "./ficha.ts";
 import { dentroDeFranja, leerFranjas } from "./horario_laboral.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
@@ -62,9 +63,10 @@ export const agendarTurno: Herramienta<Args> = {
     tipo: { type: ["string", "null"], enum: [...TIPOS_TURNO, null], description: "El mismo tipo que usaste en buscar_horarios; null si no se conoce." },
     nombre: { type: ["string", "null"], maxLength: 80, description: "Nombre del cliente." },
     evento: { type: ["string", "null"], enum: [...EVENTOS, null], description: "Para qué evento es." },
-    fecha_evento: { type: ["string", "null"], format: "date", description: "Fecha del evento, AAAA-MM-DD." },
+    fecha_evento: { type: ["string", "null"], format: "date", description: "Fecha del evento, AAAA-MM-DD, solo si el cliente dijo el día exacto: con solo el mes, null. «Un 15» es la fiesta de quince, no el día 15." },
   }),
   async ejecutar(args, ctx) {
+    args = { ...args, fecha_evento: await fechaEventoCreible(ctx, args.fecha_evento) };
     const tipo = args.tipo ?? "invitado";
     const inicio = new Date(args.fecha_hora);
     if (!(inicio > ctx.ahora)) {

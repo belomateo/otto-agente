@@ -28,6 +28,7 @@ import {
   sumarDias,
 } from "../tiempo.ts";
 import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
+import { fechaEventoCreible } from "./fecha_evento.ts";
 import { actualizarFicha, leerFicha } from "./ficha.ts";
 import { dentroDeFranja, type Franja, leerFranjas } from "./horario_laboral.ts";
 import { type ContextoHerramienta, type Herramienta, type Hueco, objeto, rechazo } from "./tipos.ts";
@@ -96,10 +97,11 @@ export const buscarHorarios: Herramienta<Args> = {
     fecha_evento: {
       type: ["string", "null"],
       format: "date",
-      description: "Fecha del evento, AAAA-MM-DD, si la sabés (si ya está en su libreta, podés mandarla igual).",
+      description: "Fecha del evento, AAAA-MM-DD, si el cliente dijo el día exacto (si ya está en su libreta, podés mandarla igual). Con solo el mes, null. «Un 15» es la fiesta de quince, no el día 15.",
     },
   }),
   async ejecutar(args, ctx) {
+    args = { ...args, fecha_evento: await fechaEventoCreible(ctx, args.fecha_evento) };
     const tipo = args.tipo_turno ?? "invitado";
     const elegido = args.fecha_hora ? new Date(args.fecha_hora) : null;
     const hoy = fechaLocal(ctx.ahora, ctx.tz);

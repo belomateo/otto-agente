@@ -179,3 +179,40 @@ prueba("el contexto trae los próximos 14 días, con el día cerrado que cargó 
   assertMatch(c.texto, /- sábado 8\/6: abre de 9:30 a 18:30/);
   assertEquals((c.texto.match(/^- \S+ \d+\/\d+/gm) ?? []).length, 14);
 });
+
+// ── 18-19/10: dos casos reales en que Lucía le pidió confirmar de nuevo algo que el cliente ya había dicho ──
+
+prueba("agendar_turno: «Siii.!!» a una única propuesta reserva (Mariana, 19/10)", async ({ ctx, sql, clienteId, conversacionId, agenda }) => {
+  await fichaCompleta(sql, clienteId);
+  await mensaje(sql, conversacionId, "saliente", "Sí, Mariana, hay lugar el jueves 6 de junio a las 17:00. Te lo reservo?", 5);
+  await mensaje(sql, conversacionId, "entrante", "Siii.!!", 1);
+  agenda.lista = [hueco(JUEVES, "17:00", 45)];
+  esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
+  esOk(await agendar(ctx, JUEVES, "17:00", "invitado"));
+  assertEquals(await contar(sql, turnosDe, [clienteId]), 1);
+});
+
+prueba("agendar_turno: «Dale perfecto el jueves» elige el jueves cuando los dos días comparten la hora (Maxi, 18/10)", async ({ ctx, sql, clienteId, conversacionId, agenda }) => {
+  await fichaCompleta(sql, clienteId);
+  agenda.lista = [hueco(JUEVES, "17:00", 45), hueco(SABADO, "17:00", 45)];
+  await mensaje(sql, conversacionId, "saliente", "Sí, tenemos lugar el jueves 6 o el sábado 8 de junio a las 17:00. Cuál te queda mejor?", 5);
+  await mensaje(sql, conversacionId, "entrante", "Dale perfecto el jueves", 1);
+  esOk(await buscar(ctx, JUEVES, SABADO, "invitado"));
+  esOk(await agendar(ctx, JUEVES, "17:00", "invitado"));
+  assertEquals(await contar(sql, turnosDe, [clienteId]), 1);
+  // el «sí» solo, con dos días, sigue sin alcanzar
+  await sql.query("delete from turnos where cliente_id = $1", [clienteId]);
+  await sql.query("delete from mensajes where conversacion_id = $1 and direccion = 'entrante'", [conversacionId]);
+  await mensaje(sql, conversacionId, "entrante", "Dale perfecto", 0);
+  esRechazo(await agendar(ctx, JUEVES, "17:00", "invitado"), "horario_no_elegido");
+});
+
+prueba("agendar_turno: «17y30» es nombrar la hora, como el «14y45» de Claudia (17/10)", async ({ ctx, sql, clienteId, conversacionId, agenda }) => {
+  await fichaCompleta(sql, clienteId);
+  agenda.lista = [hueco(JUEVES, "11:00", 45), hueco(JUEVES, "17:30", 45)];
+  await mensaje(sql, conversacionId, "saliente", "El jueves 6 hay lugar a las 11:00 o a las 17:30. Cuál te queda mejor?", 5);
+  await mensaje(sql, conversacionId, "entrante", "17y30", 1);
+  esOk(await buscar(ctx, JUEVES, JUEVES, "invitado"));
+  esOk(await agendar(ctx, JUEVES, "17:30", "invitado"));
+  assertEquals(await contar(sql, turnosDe, [clienteId]), 1);
+});

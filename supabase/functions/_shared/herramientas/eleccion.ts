@@ -45,8 +45,14 @@ export function horasNombradas(crudo: string): number[] {
   for (const x of n.matchAll(/(?<![\d.,:$])([01]?\d|2[0-3])\s(00|15|30|45)(?![\d.,]|\s*(?:personas?|anos?|mil|lucas|pesos|%|k\b))/g)) {
     res.add(deLaTarde(Number(x[1])) * 60 + Number(x[2]));
   }
+  // «14y45» (Claudia, 17/10): la hora con una «y» en vez de los dos puntos. Pegada («14y45») vale con cualquier minuto
+  // de agenda; con espacios («14 y 45») solo con 30 o 45, porque «los días 14 y 15» no es una hora.
+  for (const x of n.matchAll(/(?<![\d.,:$])([01]?\d|2[0-3])y(00|15|30|45)(?![\d.,])/g)) res.add(deLaTarde(Number(x[1])) * 60 + Number(x[2]));
+  for (const x of n.matchAll(/(?<![\d.,:$])([01]?\d|2[0-3])\s+y\s+(30|45)(?![\d.,]|\s*(?:personas?|anos?|mil|lucas|pesos|%|k\b|de\s+[a-z]))/g)) {
+    res.add(deLaTarde(Number(x[1])) * 60 + Number(x[2]));
+  }
   // «las 3», «las 17» sin el «a» adelante.
-  for (const x of n.matchAll(/\blas?\s+([01]?\d|2[0-3])\b(?!\s*[:.]\d|\s+(?:personas?|de\s+(?:la\s+)?(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)))/g)) {
+  for (const x of n.matchAll(/\blas?\s+([01]?\d|2[0-3])\b(?!\s*[:.]\d|\s+y\s+(?:30|45)\b|\s+(?:personas?|de\s+(?:la\s+)?(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)))/g)) {
     res.add(deLaTarde(Number(x[1])) * 60);
   }
   // «3 y media», «11 y cuarto», «4 menos cuarto».
@@ -55,7 +61,7 @@ export function horasNombradas(crudo: string): number[] {
   return [...res];
 }
 
-const SI = /\b(?:si|sii|dale|ok|okay|oka|okey|perfecto|perfecta|listo|bueno|genial|joya|barbaro|excelente|buenisimo|de una|me sirve|me queda|me viene|ese|esa|confirmo|confirmado|reserva\w*|agenda\w*|anotame|va)\b/;
+const SI = /\b(?:si+|sip|claro|por supuesto|dale|ok|okay|oka|okey|perfecto|perfecta|listo|bueno|genial|joya|barbaro|excelente|buenisimo|de una|me sirve|me queda|me viene|ese|esa|confirmo|confirmado|reserva\w*|agenda\w*|anotame|va)\b/;
 const ORDINAL = /\b(primer\w*|segund\w*|ultim\w*)\b/;
 // Un reparo no es elegir, aunque nombre el día («pero el lunes», «es feriado», «no puedo»).
 const REPARO = /\b(?:pero|feriado|imposible|no (?:puedo|podemos|puede|llego|me (?:sirve|queda|viene))|complica\w*|complicad\w*)\b/;
@@ -65,16 +71,30 @@ const DIAS = "lunes|martes|miercoles|jueves|viernes|sabado|domingo";
 // sábado 8 a las 17» → jueves 6 a las 11, sábado 8 a las 17). Una hora sin día nombrado antes
 // queda con día null y vale para cualquiera.
 type Oferta = { dia: string | null; numero: number | null; minutos: number };
+// «el martes 20 o el miércoles 21 de octubre a las 16» (Maxi, 18/10): el martes no tiene hora propia, la comparte con
+// el día que sigue. Solo cuando entre un día y el otro hay nada más que «de octubre», «/10», «o» o «y».
+const MESES = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre";
+const SOLO_UNION = new RegExp(`^\\s*(?:/\\d{1,2}\\s*)?(?:de\\s+(?:${MESES})\\s*)?[,;.]?\\s*(?:o|y|u|e)?\\s*(?:el\\s+)?$`);
+
 export function ofertasEn(nuestro: string): Oferta[] {
   const res: Oferta[] = [];
-  for (const tramo of normalizar(nuestro).split(new RegExp(`(?=\\b(?:${DIAS})\\b)`))) {
+  const tramos = normalizar(nuestro).split(new RegExp(`(?=\\b(?:${DIAS})\\b)`)).map((tramo) => {
     const d = tramo.match(new RegExp(`^(${DIAS})(?:\\s+(\\d{1,2})\\b(?![:.]\\d))?`));
-    const dia = d?.[1] ?? null;
-    const numero = d?.[2] ? Number(d[2]) : null;
-    for (const minutos of horasNombradas(d ? tramo.slice(d[0].length) : tramo)) {
-      if (!res.some((o) => o.dia === dia && o.numero === numero && o.minutos === minutos)) res.push({ dia, numero, minutos });
+    const resto = d ? tramo.slice(d[0].length) : tramo;
+    return { dia: d?.[1] ?? null, numero: d?.[2] ? Number(d[2]) : null, esDia: !!d, resto, horas: horasNombradas(resto) };
+  });
+  tramos.forEach((t, i) => {
+    let horas = t.horas;
+    if (t.esDia && horas.length === 0 && SOLO_UNION.test(t.resto)) {
+      for (let j = i + 1; j < tramos.length; j++) {
+        if (tramos[j].horas.length) { horas = tramos[j].horas; break; }
+        if (!(tramos[j].esDia && SOLO_UNION.test(tramos[j].resto))) break;
+      }
     }
-  }
+    for (const minutos of horas) {
+      if (!res.some((o) => o.dia === t.dia && o.numero === t.numero && o.minutos === minutos)) res.push({ dia: t.dia, numero: t.numero, minutos });
+    }
+  });
   return res;
 }
 

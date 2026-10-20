@@ -19,6 +19,7 @@
 
 import { montos } from "../barandillas/chequeos/precio_sin_herramienta.ts";
 import { DIA_O_NOCHE, EVENTOS, ROLES_CLIENTE } from "../enums.ts";
+import { quinceNoEsUnDia } from "../herramientas/fecha_evento.ts";
 import { CAMPOS_FICHA, formatoDeEmailValido, type Ficha } from "../herramientas/ficha.ts";
 import { esFechaValida } from "../tiempo.ts";
 import { llamarChat } from "./cliente.ts";
@@ -38,6 +39,11 @@ const INSTRUCCION =
   "puntual es null, no un mes suelto. La fecha y hora para visitar el local o probarse NO son la " +
   "fecha ni el momento del evento: no las guardes en fecha_evento ni dia_o_noche. Si solo quiere " +
   "reservar una visita, los campos del evento quedan null. " +
+  "Un «quince» dicho en cifras o en letras («un quince», «los quince», «el quince de mi hija», «cumple de quince») es " +
+  "la fiesta de quince años (evento fiesta) y NUNCA es el día quince del mes: con «marzo 2027» y «es un quince de mi " +
+  "hija», fecha_evento es null. «Promoción», " +
+  "«egreso», «egresado», «colación» o «fin de curso» es graduacion; laboral es solo de trabajo (una presentación, " +
+  "una entrevista). «Padre de la quinceañera» no es casamiento. " +
   "presupuesto_mencionado es cuánto dijo el CLIENTE que quiere o puede gastar, con sus palabras (\"tengo hasta " +
   "cien mil\", \"no quiero gastar mucho\"). Los precios que da Lucía (\"el alquiler arranca a partir de $…\", " +
   "\"la camisa y la corbata salen $…\") NUNCA son el presupuesto del cliente, aunque él los haya pedido. Tampoco " +
@@ -108,6 +114,8 @@ export function validarExtraccion(
     // 6 charlas, "20 de junio" quedó como 2025-06-20 y "25 de octubre" como 2025-10-25, con el
     // cliente pidiendo el turno dos veces y sin conseguirlo nunca.
     if (campo === "fecha_evento" && hoy && valor < hoy) { descartados.push(`fecha_evento="${valor}" (ya pasó: hoy es ${hoy})`); continue; }
+    // Darien (17/10): «marzo 2027» y «es un 15 de mi hija» quedaron como el 15/03/2027. El «15» es la fiesta, no el día.
+    if (campo === "fecha_evento" && origen && quinceNoEsUnDia(valor, origen.cliente)) { descartados.push(`fecha_evento="${valor}" (el «15» es la fiesta de quince, no un día)`); continue; }
     if (campo === "email" && !formatoDeEmailValido(valor)) { descartados.push(`email="${valor}" (no tiene forma de mail)`); continue; }
     if (campo === "presupuesto_mencionado" && origen && esUnPrecioQueDijoLucia(valor, origen)) {
       descartados.push(`presupuesto_mencionado="${valor}" (es un precio que dijo Lucía, no lo que el cliente quiere gastar)`);

@@ -87,3 +87,17 @@ Deno.test("«ya agregué tu correo a la reserva» tampoco queda pegado al resume
     if (r.salta) assertEquals(r.texto, "", frase);
   }
 });
+
+Deno.test("resumenTurno: con el turno completo, el correo solo se confirma en una línea; con el nombre o con datos que faltan, sigue la lista", () => {
+  const base = { nombre: "Aldo", telefono: "5493410000000", email: "aldo@ejemplo.com", inicio: new Date("2030-06-06T20:00:00Z"), tz: "America/Argentina/Buenos_Aires", actualizado: true };
+  assertEquals(resumenTurno({ ...base, guardado: ["email"] }), "¡Listo, ya guardé tu correo! ¡Te esperamos!");
+  assertEquals(resumenTurno({ ...base, guardado: ["email", "fecha_evento"] }), "¡Listo, ya guardé tu correo! ¡Te esperamos!");
+  // si dio el nombre, la lista sale para que lo vea
+  assertMatch(resumenTurno({ ...base, guardado: ["nombre"] }), /Nombre: Aldo/);
+  assertMatch(resumenTurno({ ...base, guardado: ["nombre", "email"] }), /Nombre: Aldo/);
+  // falta el correo: se sigue pidiendo con la lista
+  assertMatch(resumenTurno({ ...base, email: null, guardado: ["nombre"] }), /tu correo electrónico\?/);
+  // sin «guardado» (o solo otros datos) el resumen es el de siempre
+  assertMatch(resumenTurno({ ...base }), /Ya actualicé los datos de tu reserva/);
+  assertMatch(resumenTurno({ ...base, guardado: ["evento"] }), /Ya actualicé los datos de tu reserva/);
+});

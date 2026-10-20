@@ -11,11 +11,18 @@ export type DatosResumenTurno = {
   inicio: Date;
   tz: string;
   actualizado?: boolean;
+  // Lo que se guardó recién (nombre, email…). Con un turno ya completo y solo eso nuevo, el mensaje es corto.
+  guardado?: string[];
 };
 
 export function resumenTurno(p: DatosResumenTurno): string {
   const linea = (v: string | null) => v?.replace(/\s+/g, " ").trim() || "No especificado";
   const faltantes = [!p.nombre?.trim() ? "nombre" : null, !p.email?.trim() ? "correo electrónico" : null].filter(Boolean);
+  // 14/10 (Mateo): al mandar solo el correo no hace falta repetir toda la lista del turno que ya le llegó. Si dio el
+  // nombre, la lista sí sale: así lo ve y puede corregirlo.
+  if (p.actualizado && faltantes.length === 0 && p.guardado?.includes("email") && !p.guardado.includes("nombre")) {
+    return "¡Listo, ya guardé tu correo! ¡Te esperamos!";
+  }
   const cabeza = p.actualizado ? "¡Listo! Ya actualicé los datos de tu reserva:" : "¡Listo! Tu turno ya quedó agendado. Este es el resumen:";
   const lista = [
     `- Nombre: ${linea(p.nombre)}`,

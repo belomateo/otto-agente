@@ -147,3 +147,22 @@ Deno.test("ofertasEn lee cada hora con su día, en el orden en que Lucía las of
   assertEquals(ver("Tengo estos turnos: Sábado 10/10 a las 11:45 y Sábado 10/10 a las 12:30."), ["sabado 10 11:45", "sabado 10 12:30"]);
   assertEquals(ver("Tengo a las 17:00, ¿te lo reservo?"), ["- - 17:00"]);
 });
+
+Deno.test("horasNombradas entiende «14y45» y «14 y 45» (Claudia, 17/10) sin confundir días ni cantidades", () => {
+  for (const t of ["14y45", "Dale, 14y45", "a las 14 y 45", "16y30 está bien"]) assert(horasNombradas(t).length === 1, `${t} → ${horasNombradas(t).map(hm)}`);
+  assertEquals(horasNombradas("14y45").map(hm), ["14:45"]);
+  assertEquals(horasNombradas("16 y 30").map(hm), ["16:30"]);
+  for (const t of ["los días 14 y 15", "podemos el 14 y 15 de noviembre", "somos 10 y 30 personas", "tiene 14 y 30 años", "ni 2 y 15 mil", "somos 8 y 45 de octubre"]) {
+    assertEquals(horasNombradas(t), [], t);
+  }
+});
+
+Deno.test("ofertasEn: dos días que comparten la hora (Maxi, 18/10: «el martes 20 o el miércoles 21 a las 16:15»)", () => {
+  const ver = (t: string) => ofertasEn(t).map((o) => `${o.dia ?? "-"} ${o.numero ?? "-"} ${hm(o.minutos)}`);
+  assertEquals(ver("Sí, tenemos lugar el martes 20 o el miércoles 21 de octubre a las 16:15. Cuál te queda mejor?"), ["martes 20 16:15", "miercoles 21 16:15"]);
+  assertEquals(ver("Tengo el martes 20/10 o el miércoles 21/10 a las 16:15, cuál preferís?"), ["martes 20 16:15", "miercoles 21 16:15"]);
+  assertEquals(ver("Tengo el lunes 26, el martes 27 o el jueves 29 a las 14:15."), ["lunes 26 14:15", "martes 27 14:15", "jueves 29 14:15"]);
+  // lo que no comparte: un día que se dice sin lugar, o con su propia hora, queda como estaba
+  assertEquals(ver("El martes no tengo lugar. El miércoles 21 a las 16:15."), ["miercoles 21 16:15"]);
+  assertEquals(ver("El lunes 12 a las 14:00 o el martes 13 a las 13:00."), ["lunes 12 14:00", "martes 13 13:00"]);
+});

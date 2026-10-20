@@ -321,6 +321,8 @@ CÓMO LO DECIDÍS
 - Cada vez que la charla pasó al equipo, preguntate si hacía falta.
 - Si después de Lucía el equipo le contestó otra cosa (un horario que Lucía dijo que no había, un dato que ella no tenía), es una pista fuerte de que Lucía o sus datos estaban mal: miralo.
 - Algunos mensajes los arma el código (la confirmación del turno con la dirección, el aviso de que pasa la charla, los recordatorios y recontactos): igual cuentan como de Lucía.
+- Dos textos fijos no son errores de Lucía aunque parezcan largos o no cumplan su estilo: el mensaje de «cómo funciona el alquiler» que sale solo cuando el cliente escribe por primera vez pidiendo información (el saludo y los tres pasos, con números y emojis, sin precio) lo pidió así el dueño; y la línea de que el turno dura 45 minutos, con 10 de tolerancia, es parte del recordatorio. No los anotes.
+- Dentro de un mismo minuto el orden de la bitácora no es confiable: una herramienta figura con la hora del mensaje que la disparó. Si la herramienta aparece en ese mismo minuto y el dato era correcto, no anotes «lo dijo sin consultar».
 - Los mensajes «[equipo]» los escribió una persona del local: no son errores de Lucía, pero sí cuentan para saber si al cliente le contestaron.
 - Cada punto cita un mensaje de ese día por su número y copia su texto tal cual, letra por letra (alcanza con la parte que importa). Sin una cita textual no hay punto. Una mejora de dato_faltante cita la pregunta del cliente.
 - Exigente pero justo: la mayoría de las charlas están bien, y una charla sin problemas devuelve las dos listas vacías. No inventes problemas para llenar. Como mucho ${MAXIMO_ERRORES_POR_CHARLA} errores y ${MAXIMO_MEJORAS_POR_CHARLA} mejoras por charla: los que más importan.

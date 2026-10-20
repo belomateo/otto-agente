@@ -25,10 +25,8 @@ prueba("sin nombre ni correo reserva y después actualiza la misma visita", asyn
   esOk(correo);
   assertEquals(correo.datos.turno_id, agendado.datos.turno_id);
   const actualizado = correo.efectos?.mensajesAlCliente?.[0] ?? "";
-  assertMatch(actualizado, /Ya actualicé los datos de tu reserva/);
-  assertMatch(actualizado, /Gmail: aldo@ejemplo.com/);
-  assertEquals(actualizado.includes("No especificado"), false);
-  assertEquals(actualizado.includes("¿"), false);
+  // Solo faltaba el correo: el mensaje es corto, sin repetir toda la lista del turno (14/10, Mateo).
+  assertEquals(actualizado, "¡Listo, ya guardé tu correo! ¡Te esperamos!");
   assertEquals(await fila(sql, "select id, inicio, fin, estado, probador from turnos where cliente_id = $1", [clienteId]), antes);
   assertEquals(await contar(sql, "select count(*)::int n from turnos where cliente_id = $1", [clienteId]), 1);
   assertEquals(mensajesDeEfectos([agendado.efectos!, nombre.efectos!, correo.efectos!]), [actualizado]);

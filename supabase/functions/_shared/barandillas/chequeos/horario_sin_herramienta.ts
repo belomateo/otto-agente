@@ -26,7 +26,8 @@ export function horas(t: string): string[] {
   const res = new Set<string>();
   for (const x of n.matchAll(/(?<![\d.,])([01]?\d|2[0-3])[:.]([0-5]\d)(?![\d.,]*\d)/g)) res.add(hora(x[1], x[2]));
   for (const x of n.matchAll(/(?<![\d:.])([01]?\d|2[0-3])\s*(?:hs|h|horas)\b/g)) res.add(hora(x[1]));
-  for (const x of n.matchAll(/\ba\s+las?\s+([01]?\d|2[0-3])\b(?!\s*[:.]\d)/g)) res.add(hora(x[1]));
+  // «a las 14 y 45» es las 14:45, no las 14:00 (Claudia, 17/10).
+  for (const x of n.matchAll(/\ba\s+las?\s+([01]?\d|2[0-3])\b(?!\s*[:.]\d|\s+y\s+(?:30|45)\b)/g)) res.add(hora(x[1]));
   for (const x of n.matchAll(new RegExp(`\\ba\\s+las?\\s+(${HORAS_EN_PALABRAS})\\b(?:\\s+de\\s+la\\s+(manana|tarde|noche))?`, "g"))) {
     let h = PALABRA_A_NUMERO[x[1]];
     if ((x[2] === "tarde" || x[2] === "noche") && h < 12) h += 12;
