@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
 
   const modelo = modeloDelCorrector();
   if (!modelo) return Response.json({ error: "falta LLM_CORRECTOR (o LLM_ANALISTA o LLM_PRINCIPAL)" }, { status: 500 });
-  try { apiKey(); } catch (e) {
+  try { apiKey(modelo); } catch (e) {
     return Response.json({ error: String((e as Error)?.message ?? e) }, { status: 500 });
   }
 

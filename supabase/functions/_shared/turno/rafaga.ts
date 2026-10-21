@@ -52,6 +52,9 @@ export const MAXIMO_CARACTERES_RAFAGA = 2500;
 // descarga; este tope es el mismo número del lado de la lectura, para que los números conversen.
 export const MAXIMO_ADJUNTOS_LEGIBLES_POR_RAFAGA = 4;
 
+// Cuántos textos fijos de demora seguidos se saltean para volver a contestar lo que quedó sin respuesta.
+export const MAXIMO_DEMORAS_REINTENTADAS = 3;
+
 export type ImagenParaElModelo = { url: string; epigrafe: string | null };
 
 export type Rafaga = {
@@ -63,6 +66,9 @@ export type Rafaga = {
   // como el mensaje actual. Sin este corte, el mensaje de ahora aparecería dos veces.
   desde: Date;
   ultimoEnviadoAt: Date | null; // para la barandilla fuera_ventana_meta
+  // Lo último que salió, demora incluida: la respuesta se guarda después, así en el CRM no queda
+  // intercalada con un «Perdón la demora» que se mandó antes (21/10).
+  ultimaSalienteAt?: Date | null;
   // Supuesto #33: si no hay NADA legible (ni texto, ni imagen, ni audio transcripto) pero SÍ
   // hubo algo entrante en la ventana, no es lo mismo que "no pasó nada" — turno.ts contesta con
   // el texto fijo de contexto_agente en vez de quedarse en silencio.
@@ -97,12 +103,20 @@ const CLAVE_MODELO_TRANSCRIPCION = () => Deno.env.get("LLM_TRANSCRIPCION") ?? ""
 // prompt, no por lógica frágil tratando de detectar una transcripción "dudosa".
 export const etiquetaDeAudio = (texto: string) => `Cliente (audio, transcripción automática, puede tener errores): ${texto}`;
 
+export const AUDIO_SIN_ESCUCHAR =
+  "(El cliente mandó un audio. En este momento no podés escuchar audios: decile «En este momento no puedo escuchar audios» y pedile que te lo escriba.)";
+
 async function resolverAdjunto(
   db: Db,
   acceso: AccesoStorage,
   fila: { id: string; tipo: string },
   fetcher: typeof fetch,
 ): Promise<{ texto: string | null; imagenUrl: string | null; pendiente: boolean; noLegible: boolean; llamadaLlm: LlamadaLlm | null }> {
+  // Pedido de Mateo (21/10): solo modelos de Anthropic, que no transcriben audio. Sin
+  // LLM_TRANSCRIPCION no se llama a OpenAI: Lucía avisa que ahora no puede escuchar audios.
+  if (fila.tipo === "audio" && !CLAVE_MODELO_TRANSCRIPCION()) {
+    return { texto: AUDIO_SIN_ESCUCHAR, imagenUrl: null, pendiente: false, noLegible: false, llamadaLlm: null };
+  }
   const adjunto = await leerAdjunto(db, acceso, fila.id, fetcher);
   if (adjunto.estado !== "listo") {
     return adjunto.estado === "pendiente"
@@ -133,11 +147,21 @@ export async function agruparRafaga(
   ahora: Date,
   opciones: { acceso?: AccesoStorage; fetcher?: typeof fetch } = {},
 ): Promise<Rafaga> {
-  const ultimoSaliente = await db.consulta<{ enviado_at: string }>(
-    `select enviado_at from mensajes where conversacion_id = $1 and direccion = 'saliente' order by enviado_at desc limit 1`,
+  // El texto fijo de demora (último intento de turno.ts) no contesta nada: le pide al cliente que
+  // vuelva a escribir. Si contara como lo último que dijo Lucía, lo que el cliente había preguntado
+  // antes no volvería a entrar en ninguna ráfaga (21/10: OpenAI caído desde las 00:20, 17 charlas).
+  // Se compara sin «¿»/«¡», que prepararParaEnviar saca antes de guardar. Hasta tres demoras seguidas:
+  // si a la cuarta la misma ráfaga sigue fallando (una foto que el modelo rechaza siempre), se deja de
+  // reintentar y lo nuevo arranca después de la última (revisión del 21/10).
+  const salientes = await db.consulta<{ enviado_at: string; demora: boolean }>(
+    `select enviado_at, coalesce(contenido = (select translate(valor, '¿¡', '') from contexto_agente where clave = 'texto_demora'), false) as demora
+       from mensajes where conversacion_id = $1 and direccion = 'saliente'
+      order by enviado_at desc limit ${MAXIMO_DEMORAS_REINTENTADAS + 1}`,
     [conversacionId],
   );
-  const desdeIso = ultimoSaliente[0]?.enviado_at ?? "1970-01-01T00:00:00Z";
+  const corte = salientes.find((s) => !s.demora) ?? (salientes.length > MAXIMO_DEMORAS_REINTENTADAS ? salientes[0] : undefined);
+  const desdeIso = corte?.enviado_at ?? "1970-01-01T00:00:00Z";
+  const ultimaSalienteAt = salientes[0] ? new Date(salientes[0].enviado_at) : null;
   const filas = await db.consulta<{ id: string; contenido: string | null; tipo: string; enviado_at: string }>(
     `select id::text as id, contenido, tipo, enviado_at from mensajes
       where conversacion_id = $1 and direccion = 'entrante' and tipo = any($2::text[])
@@ -162,6 +186,7 @@ export async function agruparRafaga(
       mensajeIds: [],
       desde: new Date(desdeIso),
       ultimoEnviadoAt,
+      ultimaSalienteAt,
       soloNoTexto: n > 0,
       soloStickers: n > 0 && (otros?.stickers ?? 0) === n,
       hayAdjuntoPendiente: false,
@@ -230,6 +255,7 @@ export async function agruparRafaga(
     mensajeIds: filas.filter((f) => TIPOS_QUE_SON_TEXTO.includes(f.tipo)).map((f) => String(f.id)),
     desde: new Date(desdeIso),
     ultimoEnviadoAt,
+    ultimaSalienteAt,
     soloNoTexto: texto === "" && imagenes.length === 0,
     soloStickers: false,
     hayAdjuntoPendiente,

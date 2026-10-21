@@ -23,7 +23,7 @@ import type { Efectos } from "../herramientas/tipos.ts";
 import { ejecutarHerramienta } from "../herramientas/index.ts";
 import type { ContextoHerramienta } from "../herramientas/tipos.ts";
 import type { DefinicionParaModelo } from "../herramientas/index.ts";
-import { llamarChat, llamarRespuestas, type PeticionRespuestas, type Uso } from "./cliente.ts";
+import { esClaude, llamarChat, llamarClaude, llamarRespuestas, type PeticionClaude, type PeticionRespuestas, type Uso } from "./cliente.ts";
 
 // Bloque de contenido de un mensaje "user" con imágenes (pedido de Mateo, 19/9: que Lucía vea
 // fotos). Se arma en formato de Chat Completions (un array de bloques en vez de un string; la url
@@ -128,6 +128,12 @@ function peticionRespuestas(modelo: string, mensajes: MensajeLlm[], herramientas
   };
 }
 
+// Desde el 21/10 (Mateo): con un LLM_PRINCIPAL "claude-..." los mensajes van tal cual a Anthropic,
+// pensando con el mismo LLM_RAZONAMIENTO.
+function peticionClaude(modelo: string, mensajes: MensajeLlm[], herramientas: DefinicionParaModelo[], toolChoice: "auto" | "none"): PeticionClaude {
+  return { model: modelo, mensajes, herramientas, tool_choice: toolChoice, esfuerzo: razonamiento(), max_tokens: MAXIMO_SALIDA_RESPUESTAS };
+}
+
 export async function correrPrincipal(p: {
   mensajes: MensajeLlm[];
   herramientas: DefinicionParaModelo[];
@@ -155,6 +161,8 @@ export async function correrPrincipal(p: {
         { model: modelo, messages: mensajes, tools: toolsChat, tool_choice: "auto", reasoning_effort: "none", max_completion_tokens: 700 },
         p.fetcher,
       )
+      : esClaude(modelo)
+      ? await llamarClaude(peticionClaude(modelo, mensajes, p.herramientas, "auto"), { hastaMs: p.limiteMs, fetcher: p.fetcher })
       : await llamarRespuestas(peticionRespuestas(modelo, mensajes, p.herramientas, "auto"), { hastaMs: p.limiteMs, fetcher: p.fetcher });
     if (!r) {
       // Sin respuesta y ya sin tiempo: es un corte por tiempo, no un error del modelo.
@@ -215,6 +223,8 @@ export async function contestarSinHerramientas(p: {
       { model: modelo, messages: mensajes, tools: p.herramientas.map(comoHerramientaChat), tool_choice: "none", reasoning_effort: "none", max_completion_tokens: 700 },
       p.fetcher,
     )
+    : esClaude(modelo)
+    ? await llamarClaude(peticionClaude(modelo, mensajes, p.herramientas, "none"), { hastaMs: p.hastaMs, fetcher: p.fetcher })
     : await llamarRespuestas(peticionRespuestas(modelo, mensajes, p.herramientas, "none"), { hastaMs: p.hastaMs, fetcher: p.fetcher });
   if (!r) return { texto: null, llamada: null };
   return { texto: r.contenido?.trim() || null, llamada: { modelo, uso: r.uso, ms: r.ms } };

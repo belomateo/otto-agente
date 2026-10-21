@@ -14,7 +14,7 @@ import { assert, assertEquals, assertRejects, assertStringIncludes } from "jsr:@
 import { calendarioDeEnsayo } from "../../supabase/functions/_shared/herramientas/tipos.ts";
 import { costoTranscripcionUsd } from "../../supabase/functions/_shared/llm/precios.ts";
 import { transcribir } from "../../supabase/functions/_shared/llm/transcripcion.ts";
-import { agruparRafaga, etiquetaDeAudio } from "../../supabase/functions/_shared/turno/rafaga.ts";
+import { agruparRafaga, AUDIO_SIN_ESCUCHAR, etiquetaDeAudio } from "../../supabase/functions/_shared/turno/rafaga.ts";
 import { correrTurno } from "../../supabase/functions/_shared/turno/turno.ts";
 import type { AccesoStorage } from "../../supabase/functions/_shared/whatsapp/medios.ts";
 import { prepararParaEnviar } from "../../supabase/functions/_shared/whatsapp/preparar.ts";
@@ -25,6 +25,8 @@ const URL_TRANSCRIPCIONES = "https://api.openai.com/v1/audio/transcriptions";
 const AHORA = new Date("2026-10-10T15:00:00-03:00");
 const TZ = "America/Argentina/Cordoba";
 const BYTES = () => new Uint8Array([79, 103, 103, 83, 0, 2, 0, 0]); // "OggS…": alcanza, nadie lo decodifica
+// Desde el 21/10 (rafaga.ts), sin LLM_TRANSCRIPCION no se transcribe: estas pruebas son del transcriptor prendido.
+if (!Deno.env.get("LLM_TRANSCRIPCION")) Deno.env.set("LLM_TRANSCRIPCION", "gpt-4o-mini-transcribe");
 
 type PedidoAudio = { url: string; init: RequestInit; form: FormData };
 function openaiDeAudio(contestar: (n: number) => Response | Promise<Response>): { fetcher: typeof fetch; pedidos: PedidoAudio[] } {
@@ -198,6 +200,22 @@ simulada("ráfaga: si el audio no está en el bucket, ni se llama al transcripto
   assertEquals(llamadas(), { alBucket: 1, aOpenAI: 0 });
 });
 
+simulada("ráfaga: sin LLM_TRANSCRIPCION (solo Anthropic, 21/10) el audio no se baja ni se transcribe: Lucía avisa que no puede escucharlo", async () => {
+  const antes = Deno.env.get("LLM_TRANSCRIPCION");
+  Deno.env.delete("LLM_TRANSCRIPCION");
+  try {
+    const db = new BaseEnMemoria();
+    conAudio(db);
+    const { fetcher, llamadas } = storageY(() => texto("no tendría que llegar acá"));
+    const r = await agruparRafaga(db, CHARLA, AHORA, { acceso: ACCESO, fetcher });
+    assertEquals(r.texto, AUDIO_SIN_ESCUCHAR);
+    assertEquals([r.soloNoTexto, r.hayAdjuntoNoLegible], [false, false]);
+    assertEquals(llamadas(), { alBucket: 0, aOpenAI: 0 });
+  } finally {
+    if (antes !== undefined) Deno.env.set("LLM_TRANSCRIPCION", antes);
+  }
+});
+
 simulada("ráfaga (caso parecido): audio que falla + un texto en la misma ráfaga → se contesta el texto", async () => {
   const db = new BaseEnMemoria();
   conAudio(db, { hace: 2000 });
@@ -206,6 +224,31 @@ simulada("ráfaga (caso parecido): audio que falla + un texto en la misma ráfag
   const r = await agruparRafaga(db, CHARLA, AHORA, { acceso: ACCESO, fetcher });
   assertEquals(r.texto, "te mandé un audio");
   assertEquals([r.soloNoTexto, r.hayAdjuntoNoLegible], [false, true]);
+});
+
+simulada("ráfaga: el texto fijo de demora no cuenta como respuesta, lo que el cliente preguntó antes entra igual (21/10)", async () => {
+  const db = new BaseEnMemoria();
+  db.textos.texto_demora = "Perdón la demora. ¿Me lo escribís de nuevo?";
+  const hace = (s: number) => new Date(AHORA.getTime() - s * 1000).toISOString();
+  db.agregarMensaje({ direccion: "entrante", tipo: "texto", contenido: "cuánto sale el alquiler?", enviado_at: hace(3) });
+  db.agregarMensaje({ direccion: "saliente", tipo: "texto", contenido: "Perdón la demora. Me lo escribís de nuevo?", enviado_at: hace(2) });
+  db.agregarMensaje({ direccion: "entrante", tipo: "texto", contenido: "hola?", enviado_at: hace(1) });
+  const r = await agruparRafaga(db, CHARLA, AHORA);
+  assertEquals(r.texto, "cuánto sale el alquiler?\nhola?");
+  // La respuesta se guarda después de la demora, no intercalada con ella en el CRM.
+  assertEquals(r.ultimaSalienteAt?.toISOString(), hace(2));
+});
+
+simulada("ráfaga: con cuatro demoras seguidas deja de reintentar lo viejo (una foto que falla siempre no la traba para siempre)", async () => {
+  const db = new BaseEnMemoria();
+  db.textos.texto_demora = "Perdón la demora. ¿Me lo escribís de nuevo?";
+  const hace = (s: number) => new Date(AHORA.getTime() - s * 1000).toISOString();
+  const ida = (contenido: string, s: number) => db.agregarMensaje({ direccion: "entrante", tipo: "texto", contenido, enviado_at: hace(s) });
+  const demora = (s: number) => db.agregarMensaje({ direccion: "saliente", tipo: "texto", contenido: "Perdón la demora. Me lo escribís de nuevo?", enviado_at: hace(s) });
+  ida("uno", 9), demora(8), ida("dos", 7), demora(6), ida("tres", 5), demora(4);
+  assertEquals((await agruparRafaga(db, CHARLA, AHORA)).texto, "uno\ndos\ntres"); // tres demoras: se reintenta todo
+  ida("cuatro", 3), demora(2), ida("cinco", 1);
+  assertEquals((await agruparRafaga(db, CHARLA, AHORA)).texto, "cinco"); // la cuarta: arranca después de ella
 });
 
 const turno = (db: BaseEnMemoria, fetcher: typeof fetch) =>

@@ -124,6 +124,13 @@ export class BaseEnMemoria implements Db {
       const s = this.mensajes.filter((m) => m.direccion === "saliente").sort((a, b) => ms(b.enviado_at) - ms(a.enviado_at));
       return s.length ? [{ enviado_at: s[0].enviado_at }] : [];
     }
+    // agruparRafaga (21/10): las últimas salientes, marcando cuáles son el texto fijo de demora.
+    if (sql.startsWith("select enviado_at, coalesce(contenido = (select translate(valor")) {
+      const demora = this.textos.texto_demora?.replace(/[¿¡]/g, "");
+      const tope = Number(sql.match(/limit (\d+)/)?.[1] ?? 1);
+      return this.mensajes.filter((m) => m.direccion === "saliente").sort((a, b) => ms(b.enviado_at) - ms(a.enviado_at))
+        .slice(0, tope).map((m) => ({ enviado_at: m.enviado_at, demora: demora !== undefined && m.contenido === demora }));
+    }
     if (sql.startsWith("select id::text as id, contenido, tipo, enviado_at from mensajes")) {
       const tipos = v[1] as string[];
       return this.mensajes

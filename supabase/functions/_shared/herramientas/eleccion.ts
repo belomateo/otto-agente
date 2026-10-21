@@ -151,7 +151,11 @@ export async function eligioElHorario(ctx: ContextoHerramienta, inicio: Date, ho
     const nombraElDia = nombraSemana || nombraNumero;
     const ordinal = n.match(ORDINAL)?.[1];
     if (SI.test(n) || nombraElDia || ordinal) {
-      if (ofertas.length === 1) return { ok: true };
+      // Una sola oferta, o la misma nombrada dos veces («mañana a esa hora hay lugar. ¿Te reservo el viernes
+      // 16 a esa hora?», ensayo con Claude del 21/10: el «sí» se rechazaba cuatro veces seguidas).
+      // shortcut: «hoy/mañana» no se traducen a un día, así que «mañana o el viernes, a la misma hora» (días
+      // distintos) también pasa con un «sí»; si aparece en una charla, resolver hoy/mañana en ofertasEn.
+      if (ofertas.every(esEsta)) return { ok: true };
       // El día elige solo si ese día le ofrecimos un horario solo.
       const deEseDia = ofertas.filter((o) =>
         (!nombraSemana || o.dia === null || o.dia === dia) && (!nombraNumero || o.numero === null || o.numero === partes.dia)

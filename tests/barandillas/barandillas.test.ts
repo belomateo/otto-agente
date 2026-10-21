@@ -689,3 +689,31 @@ Deno.test("fuera_ventana_meta bloquea el texto libre pasadas las 24 hs, o si el 
 Deno.test("fuera_ventana_meta no bloquea a las 23 hs del último mensaje (caso parecido)", async () => {
   await noSalta(fueraVentanaMeta, entrada("¿Seguís interesado?", { ultimoMensajeClienteAt: new Date(AHORA.getTime() - 23 * HORA_MS) }));
 });
+
+Deno.test("confirmacion_doble no deja pedazos colgando de la frase cortada (ensayo con Claude, 21/10)", async () => {
+  const conTraza = traza({ herramientas: ["agendar_turno"] });
+  const r1 = await salta(
+    confirmacionDoble,
+    entrada("Listo, Alejandra, quedaron agendados mañana a las 18:15 en España 764. Los esperamos a vos y a tu hijo.", { traza: conTraza }),
+  );
+  assertEquals(r1.texto, "");
+  const r2 = await salta(
+    confirmacionDoble,
+    entrada("Listo, Zulma, quedó tu turno para el jueves 26 de noviembre a las 13:00, con la prueba final y el retiro. Si todavía no elegiste el traje, conviene venir antes.", { traza: conTraza }),
+  );
+  assertEquals(r2.texto, "Si todavía no elegiste el traje, conviene venir antes.");
+});
+
+Deno.test("confirmacion_doble saca la despedida con los datos del turno, que ya trae el mensaje de código (21/10)", async () => {
+  const r1 = await salta(
+    confirmacionDoble,
+    entrada("Listo, Natalia, quedó reservado el lunes 26 a las 14:00. Te esperamos el lunes 26 a las 14:00 en España 764 con tu hijo.", { traza: traza({ herramientas: ["agendar_turno"] }) }),
+  );
+  assertEquals(r1.texto, "");
+  // Una pregunta después de la despedida se queda.
+  const r2 = await salta(
+    confirmacionDoble,
+    entrada("Los esperamos mañana a las 18:15 en España 764. ¿Para qué fecha es el evento de tu hijo?", { traza: traza({ herramientas: ["agendar_turno"] }) }),
+  );
+  assertEquals(r2.texto, "¿Para qué fecha es el evento de tu hijo?");
+});

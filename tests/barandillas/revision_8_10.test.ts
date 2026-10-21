@@ -5,7 +5,8 @@ import { aplicarBarandillas } from "../../supabase/functions/_shared/barandillas
 import { montos, precioSinHerramienta } from "../../supabase/functions/_shared/barandillas/chequeos/precio_sin_herramienta.ts";
 import { sinRelleno } from "../../supabase/functions/_shared/barandillas/chequeos/sin_relleno.ts";
 import { ventaSinResolver } from "../../supabase/functions/_shared/barandillas/chequeos/venta_sin_resolver.ts";
-import { horasNombradas, ofertasEn } from "../../supabase/functions/_shared/herramientas/eleccion.ts";
+import { eligioElHorario, horasNombradas, ofertasEn } from "../../supabase/functions/_shared/herramientas/eleccion.ts";
+import type { ContextoHerramienta } from "../../supabase/functions/_shared/herramientas/tipos.ts";
 import { esSoloCierreOAsentimiento } from "../../supabase/functions/_shared/turno/cierre_cortes.ts";
 import { entrada, traza } from "./_ayuda.ts";
 
@@ -165,4 +166,15 @@ Deno.test("ofertasEn: dos días que comparten la hora (Maxi, 18/10: «el martes 
   // lo que no comparte: un día que se dice sin lugar, o con su propia hora, queda como estaba
   assertEquals(ver("El martes no tengo lugar. El miércoles 21 a las 16:15."), ["miercoles 21 16:15"]);
   assertEquals(ver("El lunes 12 a las 14:00 o el martes 13 a las 13:00."), ["lunes 12 14:00", "martes 13 13:00"]);
+});
+
+Deno.test("eligioElHorario: un «sí» vale si Lucía nombró dos veces el mismo horario (ensayo con Claude, 21/10)", async () => {
+  const ctx = (rafaga: string, nuestro: string) =>
+    ({ db: { consulta: () => Promise.resolve([{ rafaga, nuestro }]) }, tz: "America/Argentina/Cordoba", conversacionId: "x" }) as unknown as ContextoHerramienta;
+  const viernes1815 = new Date("2026-10-16T18:15:00-03:00");
+  const misma = "Alejandra, mañana a las 18:15 hay lugar con asesor para ustedes. Te reservo el viernes 16 de octubre a las 18:15?";
+  assertEquals(await eligioElHorario(ctx("Si,te agradezco!!!!! Nos vemos mañana", misma), viernes1815), { ok: true });
+  // Dos horarios de verdad distintos: el «sí» solo sigue sin alcanzar.
+  const dos = "Tengo el viernes 16 a las 18:15 o el sábado 17 a las 18:15. Cuál preferís?";
+  assertEquals((await eligioElHorario(ctx("si", dos), viernes1815)).ok, false);
 });

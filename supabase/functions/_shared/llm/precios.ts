@@ -10,6 +10,10 @@
 export type PrecioModelo = { entradaPorMillon: number; entradaCacheadaPorMillon: number; salidaPorMillon: number };
 
 export const PRECIOS: Record<string, PrecioModelo> = {
+  // Anthropic (lista del 6/10/2026; Haiku: hasta 100K tokens de entrada, su caché estimado a 0,1×).
+  "claude-opus-5-5": { entradaPorMillon: 4, entradaCacheadaPorMillon: 0.2, salidaPorMillon: 20 },
+  "claude-sonnet-5-5": { entradaPorMillon: 2, entradaCacheadaPorMillon: 0.2, salidaPorMillon: 10 },
+  "claude-haiku-5-5": { entradaPorMillon: 0.1, entradaCacheadaPorMillon: 0.01, salidaPorMillon: 0.5 },
   "gpt-6.1-sol": { entradaPorMillon: 2, entradaCacheadaPorMillon: 0.1, salidaPorMillon: 10 },
   "gpt-6-sol": { entradaPorMillon: 2, entradaCacheadaPorMillon: 0.2, salidaPorMillon: 10 },
   "gpt-6-luna": { entradaPorMillon: 0.1, entradaCacheadaPorMillon: 0.01, salidaPorMillon: 0.5 },

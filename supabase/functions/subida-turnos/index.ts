@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
   }
   if (!Deno.env.get("LLM_EXTRACTOR")) return Response.json({ error: "falta LLM_EXTRACTOR: no hay con qué leer las charlas" }, { status: 500 });
   try {
-    apiKey();
+    apiKey(Deno.env.get("LLM_EXTRACTOR"));
   } catch (e) {
     return Response.json({ error: String((e as Error)?.message ?? e) }, { status: 500 });
   }

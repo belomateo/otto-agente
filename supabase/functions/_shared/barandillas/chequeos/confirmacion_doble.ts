@@ -85,6 +85,14 @@ function esCortesiaSuelta(clausula: string): boolean {
       .test(n);
 }
 
+// «Te esperamos el lunes 26 a las 14:00 en España 764»: la despedida con los datos del turno, que el mensaje de
+// código ya cierra con su «¡Te esperamos!». Con Claude salía siempre y dejaba un «Listo!» suelto entre las dos
+// (ensayo del 21/10). Una pregunta no es despedida y se queda.
+function esDespedidaConElTurno(clausula: string): boolean {
+  const n = normalizar(clausula).replace(/^[¡!¿\s]+/, "");
+  return /^(?:te|los|las) esperamos\b|^nos vemos\b/.test(n) && !/[?¿]/.test(clausula);
+}
+
 // «Listo, Pisu, ya guardé tu correo» / «Ya quedó actualizado tu mail»: avisa que guardó un dato, y eso ya lo dice
 // el resumen que armó el código. Sin sacarla, quedaba pegada al «¡Listo!» del resumen y salía un «Listo!» suelto
 // (Pisu, Nico y Marilú, 14/10).
@@ -142,8 +150,18 @@ export const confirmacionDoble: Barandilla = {
     // planchado» porque «listo para usar», lo que quedaba después del « y », se leyó como un «¡Listo!».
     const mantener = clausulas.map((c, i) =>
       !esConfirmacion[i] && !(esSaludoDeApertura(c.texto) && esConfirmacion[i + 1] === true) &&
-      !(c.separadorPrevio === "" && esCortesiaSuelta(c.texto))
+      !(c.separadorPrevio === "" && (esCortesiaSuelta(c.texto) || esDespedidaConElTurno(c.texto)))
     );
+    // Lo que queda colgando de una cláusula cortada («Los esperamos a vos y a tu hijo» → «A tu hijo.»; «…con la
+    // prueba final y el retiro» → «El retiro.»: ensayo con Claude, 21/10) es parte de ella, no contenido propio.
+    for (let i = 1; i < clausulas.length; i++) {
+      const n = normalizar(clausulas[i].texto);
+      if (
+        mantener[i] && !mantener[i - 1] && clausulas[i - 1].oracionIdx === clausulas[i].oracionIdx &&
+        clausulas[i].separadorPrevio === " y " && n.split(/\s+/).length <= 3 &&
+        /^(?:a|al|el|la|los|las|un|una|con|de|del|para|en|tu|tus|su|sus)\b/.test(n)
+      ) mantener[i] = false;
+    }
     if (mantener.every(Boolean) && sinLista === texto) return NO_SALTA;
 
     const cortadas = clausulas.filter((_, i) => !mantener[i]).map((c) => c.texto).join(" ");

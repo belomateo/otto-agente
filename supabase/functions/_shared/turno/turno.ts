@@ -630,7 +630,7 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
     // que repetirlo. Pegada al último mensaje leído, cualquier cosa que haya entrado después —aunque
     // WhatsApp la entregue con demora— queda después de la respuesta, y el próximo turno la contesta.
     if (resultado && resultado.mensajesAlCliente.length) {
-      let t = (rafaga.ultimoEnviadoAt ?? p.ahora).getTime();
+      let t = Math.max((rafaga.ultimoEnviadoAt ?? p.ahora).getTime(), rafaga.ultimaSalienteAt?.getTime() ?? 0);
       for (const texto of resultado.mensajesAlCliente) {
         t += 10;
         await db.consulta(

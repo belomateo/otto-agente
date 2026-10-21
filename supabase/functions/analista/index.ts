@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
   const modelo = modeloDelAnalista(Deno.env.get("LLM_ANALISTA"), Deno.env.get("LLM_PRINCIPAL"));
   if (!modelo) return Response.json({ error: "falta LLM_ANALISTA (o LLM_PRINCIPAL): no hay con qué analizar" }, { status: 500 });
   try {
-    apiKey();
+    apiKey(modelo);
   } catch (e) {
     return Response.json({ error: String((e as Error)?.message ?? e) }, { status: 500 });
   }

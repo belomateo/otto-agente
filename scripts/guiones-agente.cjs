@@ -198,8 +198,8 @@ function crearGuiones() {
       mensajes: ["hola, alquilan zapatos y cinturon tambien o solo el traje"],
       async verificar(sql, telefono) {
         const convId = await conversacionDe(sql, telefono);
-        const usoTool = (await fila(sql, "select 1 from eventos_agente where conversacion_id=$1 and tipo='herramienta' and detalle->>'herramienta'='consultar_accesorios' and (detalle->>'ok')::boolean", [convId])).length > 0;
-        return [[usoTool, "llamó a consultar_accesorios antes de contestar sobre zapatos/cinturón"]];
+        const usoTool = (await fila(sql, "select 1 from eventos_agente where conversacion_id=$1 and tipo='herramienta' and (detalle->>'ok')::boolean and (detalle->>'herramienta'='consultar_accesorios' or (detalle->>'herramienta'='consultar_catalogo' and (detalle->'argumentos'->>'accesorios')::boolean))", [convId])).length > 0;
+        return [[usoTool, "llamó a consultar_catalogo con accesorios (antes consultar_accesorios, 9/10) antes de contestar sobre zapatos/cinturón"]];
       },
     },
 
