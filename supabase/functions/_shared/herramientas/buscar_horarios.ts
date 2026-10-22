@@ -70,7 +70,8 @@ export const buscarHorarios: Herramienta<Args> = {
     "alternativas. tipo_turno: graduado, novio o invitado según quién se viste. Dos personas que " +
     "se prueban entran en un mismo turno: usá ese tipo, no doble; triple solo si son tres. Para sumar a alguien a un " +
     "turno que ya tiene no hace falta buscar: viene en ese mismo turno. prueba_final solo para la prueba del día " +
-    "anterior al evento. Mandá la fecha " +
+    "anterior al evento (también para retirar el traje): mandá la fecha del evento y el día y los horarios los pone " +
+    "la agenda (el último día abierto antes del evento, en el horario de prueba final); no ofrezcas otro día. Mandá la fecha " +
     "del evento si la sabés. Si el evento es hoy, mañana o pasado mañana, no devuelve huecos: el sistema le pasa solo el teléfono " +
     "del local para que lo resuelva directo, y vos no escribís nada más. Pedí como mucho dos semanas por vez. Si el cliente eligió día y hora, " +
     "mandalos en fecha_hora: se comprueba ese horario exacto y no se pide mail. Si está libre, ejecutá " +

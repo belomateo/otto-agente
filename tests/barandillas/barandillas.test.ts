@@ -699,7 +699,7 @@ Deno.test("confirmacion_doble no deja pedazos colgando de la frase cortada (ensa
   assertEquals(r1.texto, "");
   const r2 = await salta(
     confirmacionDoble,
-    entrada("Listo, Zulma, quedó tu turno para el jueves 26 de noviembre a las 13:00, con la prueba final y el retiro. Si todavía no elegiste el traje, conviene venir antes.", { traza: conTraza }),
+    entrada("Listo, Zulma, quedó tu turno para el jueves 26 de noviembre a las 13:00, con la prueba final y el retiro del traje. Si todavía no elegiste el traje, conviene venir antes.", { traza: conTraza }),
   );
   assertEquals(r2.texto, "Si todavía no elegiste el traje, conviene venir antes.");
 });

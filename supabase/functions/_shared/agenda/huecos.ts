@@ -54,6 +54,11 @@ export type ReglasAgenda = {
   // confección (decisión de Mateo, el dieciséis de septiembre). Un día es solo "nada el día del
   // evento", que es lo de siempre y lo que corresponde a la prueba final, donde ya no se arregla.
   diasConfeccion: number;
+  // Prueba final (pedido de Sofía, 22/10): solo el último día abierto antes del evento (evento el lunes →
+  // sábado) y arrancando entre las 11:00 y las 17:30, así si hay arreglos los sastres llegan en el día.
+  // Opcional: lo prende Lucía (leerReglas, de configuracion_agenda, 0108); el panel no lo manda y el equipo
+  // carga a cualquier hora. En minutos desde medianoche.
+  pruebaFinal?: { desde: number; hasta: number } | null;
   // Días de la semana (0=dom..6=sáb) donde los probadores no se escalonan: ambos atienden a la
   // misma hora. Pedido de Mateo, 29/9: el sábado el horario es acotado y conviene que los dos
   // probadores estén disponibles en cada slot. En esos días el paso entre slots es la duración
@@ -128,6 +133,14 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
     if (!urgente && primerDia < finDeLaReserva) primerDia = finDeLaReserva;
   }
 
+  // Prueba final: un solo día, el último abierto antes del evento (se saltean domingos y cierres).
+  if (reglas.pruebaFinal && p.fechaEvento !== null) {
+    let dia = sumarDias(p.fechaEvento, -1);
+    while (dia >= hoy && (p.cerrados.has(dia) || !reglas.franjas.some((f) => f.diaSemana === diaDeLaSemana(dia)))) dia = sumarDias(dia, -1);
+    primerDia = dia;
+    ultimoDia = dia;
+  }
+
   // El evento recortó lo pedido (10/10): buscar_horarios lo usa para decir que ese día queda
   // pegado al evento, y no que está completo, cuando ofrece los días de antes.
   const recortadoPorEvento = p.fechaEvento !== null && ultimoDia < p.hasta;
@@ -148,6 +161,7 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
     const franjas = reglas.franjas.filter((f) => f.diaSemana === semana).sort((a, b) => a.desde - b.desde);
     for (const f of franjas) {
       for (let min = f.desde; min + reglas.duracionMin <= f.hasta; min += paso) {
+        if (reglas.pruebaFinal && (min < reglas.pruebaFinal.desde || min > reglas.pruebaFinal.hasta)) continue;
         const inicio = instanteLocal(dia, aHora(min), p.tz);
         if (inicio <= p.ahora) continue;
         // Filtro de escalonado: en días normales, dos turnos nunca arrancan a menos de
@@ -200,6 +214,22 @@ async function diasConfeccion(db: Db, tipo: TipoTurno): Promise<number> {
   return Number.isFinite(n) && n >= 1 ? Math.trunc(n) : DIAS_CONFECCION_POR_DEFECTO;
 }
 
+const aMinutos = (t: unknown) => {
+  const [hh, mm] = String(t).split(":").map(Number);
+  return hh * MINUTOS_POR_HORA + mm;
+};
+
+// La ventana de la prueba final (0108). Sin la migración aplicada, no se recorta el horario (solo el día).
+async function ventanaPruebaFinal(db: Db): Promise<{ desde: number; hasta: number }> {
+  const [col] = await db.consulta(
+    `select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'configuracion_agenda' and column_name = 'prueba_final_desde'`,
+  );
+  if (!col) return { desde: 0, hasta: MINUTOS_POR_HORA * MINUTOS_POR_HORA };
+  const [f] = await db.consulta("select prueba_final_desde, prueba_final_hasta from configuracion_agenda limit 1");
+  return { desde: aMinutos(f.prueba_final_desde), hasta: aMinutos(f.prueba_final_hasta) };
+}
+
 async function leerReglas(db: Db, tipo: TipoTurno): Promise<ReglasAgenda> {
   const [config] = await db.consulta(
     "select escalonado_min, dias_reserva_urgencia from configuracion_agenda limit 1",
@@ -244,6 +274,7 @@ async function leerReglas(db: Db, tipo: TipoTurno): Promise<ReglasAgenda> {
     duracionMin: Number(duracion.duracion_min),
     diasConfeccion: await diasConfeccion(db, tipo),
     diasSimultaneos,
+    pruebaFinal: tipo === "prueba_final" ? await ventanaPruebaFinal(db) : null,
   };
 }
 

@@ -158,7 +158,7 @@ export const confirmacionDoble: Barandilla = {
       const n = normalizar(clausulas[i].texto);
       if (
         mantener[i] && !mantener[i - 1] && clausulas[i - 1].oracionIdx === clausulas[i].oracionIdx &&
-        clausulas[i].separadorPrevio === " y " && n.split(/\s+/).length <= 3 &&
+        clausulas[i].separadorPrevio === " y " && n.split(/\s+/).length <= 4 &&
         /^(?:a|al|el|la|los|las|un|una|con|de|del|para|en|tu|tus|su|sus)\b/.test(n)
       ) mantener[i] = false;
     }
