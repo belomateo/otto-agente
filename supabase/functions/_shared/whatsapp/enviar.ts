@@ -111,3 +111,14 @@ export function enviarImagenPorId(
 ): Promise<string> {
   return mandar(cfg, { to: para, type: "image", image: { id: mediaId } }, fetcher);
 }
+
+// Audio grabado en el panel (pedido de Sofía, 22/10): mismo camino que la foto, subido antes a
+// /media con subirMedia. WhatsApp acepta aac, amr, mpeg, mp4 y ogg/opus (no webm).
+export function enviarAudioPorId(
+  cfg: ConfigWhatsapp,
+  para: string,
+  mediaId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<string> {
+  return mandar(cfg, { to: para, type: "audio", audio: { id: mediaId } }, fetcher);
+}

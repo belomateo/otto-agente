@@ -10,7 +10,7 @@ import type { Db } from "../_shared/db.ts";
 import type { Calendario } from "../_shared/herramientas/tipos.ts";
 import { LIMITE_TURNO_MS, type ParametrosTurno, type ResultadoTurno, ULTIMO_INTENTO_MS } from "../_shared/turno/turno.ts";
 import { botonDeTurno } from "../_shared/whatsapp/botones.ts";
-import { type ConfigWhatsapp, enviarImagen, enviarImagenPorId, enviarTexto, subirMedia } from "../_shared/whatsapp/enviar.ts";
+import { type ConfigWhatsapp, enviarAudioPorId, enviarImagen, enviarImagenPorId, enviarTexto, subirMedia } from "../_shared/whatsapp/enviar.ts";
 import { type Adjuntos, bajarAdjunto, nombreDeArchivo } from "./adjuntos.ts";
 import {
   bajarMedioDeMeta,
@@ -507,6 +507,55 @@ async function enviarFotoDelMostrador(db: Db, d: Dependencias, t: Trabajo, telef
   });
 }
 
+// Un audio grabado por el equipo en el panel (0109, pedido de Sofía 22/10). Mismo camino y
+// mismas reglas que la foto: del bucket privado a /media y por media_id; fuera de las 24 hs se
+// marca ventana_cerrada; a un teléfono ficticio no sale; si ya tiene wa_message_id no se repite.
+// El media id real de Meta pisa el 'mostrador' que dejó la base (0055 exige uno).
+async function enviarAudioDelMostrador(db: Db, d: Dependencias, t: Trabajo, telefono: string) {
+  const mensajeId = String(t.payload?.mensaje_id ?? "");
+  const ruta = String(t.payload?.storage_path ?? "");
+  const mime = String(t.payload?.mime ?? "audio/ogg");
+
+  const [audio] = await db.consulta<{ wa_message_id: string | null }>(
+    "select wa_message_id from mensajes where id = $1::uuid and conversacion_id = $2::uuid and direccion = 'saliente'",
+    [mensajeId, t.conversacion_id],
+  );
+  if (!audio) {
+    await evento(db, t.conversacion_id, "error", { etapa: "mostrador-audio", mensaje_id: mensajeId, error: "el audio no está en la charla" });
+    return;
+  }
+  if (audio.wa_message_id) return;
+
+  if (!puedeTextoLibre(await ultimoMensajeDelCliente(db, t.conversacion_id), d.ahora())) {
+    await db.consulta("update mensajes set no_enviado_motivo = 'ventana_cerrada' where id = $1::uuid", [mensajeId]);
+    await evento(db, t.conversacion_id, "error", {
+      etapa: "mostrador-audio",
+      mensaje_id: mensajeId,
+      error: "fuera de la ventana de 24 hs: solo se puede mandar una plantilla",
+      no_enviado_motivo: "ventana_cerrada",
+    });
+    return;
+  }
+
+  const simulado = esTelefonoFicticio(telefono);
+  let waAudio: string | null = null;
+  if (!simulado) {
+    const archivo = await conReintento(d, () => bajarAdjunto(d.adjuntos, ruta, mime, d.fetcher));
+    const mediaId = await conReintento(d, () => subirMedia(d.wa, archivo, nombreDeArchivo(ruta), d.fetcher));
+    waAudio = await conReintento(d, () => enviarAudioPorId(d.wa, telefono, mediaId, d.fetcher));
+    await db.consulta("update mensajes set wa_message_id = $2, adjunto_media_id = $3 where id = $1::uuid", [mensajeId, waAudio, mediaId]);
+  }
+
+  await evento(db, t.conversacion_id, "ok", {
+    etapa: "mostrador-audio",
+    mensaje_id: mensajeId,
+    audio: ruta,
+    autor: t.payload?.autor ?? null,
+    wa_message_id: waAudio,
+    ...(simulado ? { simulado: true } : {}),
+  });
+}
+
 async function estadoDeLaCharla(db: Db, conversacionId: string) {
   const [f] = await db.consulta<{ estado: string; cliente_id: string; telefono: string; lucia_activa: boolean }>(
     `select c.estado, c.cliente_id::text as cliente_id, cl.telefono, c.lucia_activa
@@ -593,6 +642,7 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
 
   if (t.payload?.tipo === "mostrador") return await enviarDelMostrador(db, d, t, conv.telefono);
   if (t.payload?.tipo === "mostrador_foto") return await enviarFotoDelMostrador(db, d, t, conv.telefono);
+  if (t.payload?.tipo === "mostrador_audio") return await enviarAudioDelMostrador(db, d, t, conv.telefono);
   // Alguien del local apretó "reintentar" sobre un adjunto que no se pudo bajar (0058). Solo se
   // baja lo que quedó pendiente y se termina: Lucía NO piensa ni contesta. El cliente no dijo
   // nada nuevo, así que mandarle un mensaje porque alguien tocó un botón sería escribirle sin

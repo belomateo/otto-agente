@@ -50,12 +50,13 @@ export function useAccionesCharla(conversacionId: string | null) {
   // Multipart, no pasa por cliente.ts (enviar() solo manda JSON): mismo camino que
   // catalogo/EdicionModelo.tsx (SubirFoto) — subida + envío en un solo paso, del lado de
   // paneles (control 8, bucket `adjuntos`, no `catalogo`: ese es público y solo-admin).
-  async function subirFoto(id: string, archivo: File) {
+  // El audio (pedido de Sofía, 22/10) usa el mismo camino: /api/bandeja/<id>/audio.
+  async function subir(id: string, que: 'foto' | 'audio', archivo: Blob, nombre: string) {
     const form = new FormData();
-    form.append('archivo', archivo);
-    const r = await fetch(`/api/bandeja/${id}/foto`, { method: 'POST', body: form });
+    form.append('archivo', archivo, nombre);
+    const r = await fetch(`/api/bandeja/${id}/${que}`, { method: 'POST', body: form });
     const cuerpo = await r.json().catch(() => null);
-    if (!r.ok) throw new ErrorApi(r.status, cuerpo?.error ?? 'No se pudo enviar la foto', cuerpo?.detalle);
+    if (!r.ok) throw new ErrorApi(r.status, cuerpo?.error ?? `No se pudo enviar ${que === 'foto' ? 'la foto' : 'el audio'}`, cuerpo?.detalle);
     return cuerpo;
   }
 
@@ -67,7 +68,8 @@ export function useAccionesCharla(conversacionId: string | null) {
     devolver: () => correr((id) => enviar(`/api/bandeja/${id}/devolver`, 'POST')),
     cerrar: () => correr((id) => enviar(`/api/bandeja/${id}/cerrar`, 'POST')),
     responder: (texto: string) => correr((id) => enviar(`/api/bandeja/${id}/mensajes`, 'POST', { texto })),
-    enviarFoto: (archivo: File) => correr((id) => subirFoto(id, archivo)),
+    enviarFoto: (archivo: File) => correr((id) => subir(id, 'foto', archivo, archivo.name)),
+    enviarAudio: (audio: Blob) => correr((id) => subir(id, 'audio', audio, 'audio')),
     reabrir: () => correr((id) => enviar(`/api/bandeja/${id}/reabrir`, 'POST')),
     toggleLucia: (activa: boolean) => correr((id) => enviar(`/api/bandeja/${id}/lucia`, 'PATCH', { activa })),
     agregarEtiqueta: (etiqueta: string) => correr((id) => enviar(`/api/bandeja/${id}/etiqueta`, 'PATCH', { agregar: etiqueta })),

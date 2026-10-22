@@ -15,22 +15,28 @@
 // listo y nunca conectado, auditoría del 22/9): cada mensaje trae `adjunto` cuando tiene uno
 // (entrante o mandado desde acá), con su estado — ContenidoAdjunto (Adjunto.tsx) decide qué
 // mostrar y pide la URL firmada de /api/medios/<id> recién al abrir la foto o darle play al
-// audio. El de audio SALIENTE (grabar y mandar desde el mostrador) sigue sin conectar, no era
-// parte de ninguno de los dos pedidos.
+// audio.
+//
+// Pedido de Sofía (22/10): grabar y mandar audios desde acá (GrabarAudio.tsx, POST
+// /api/bandeja/<id>/audio, mismas reglas que la foto) y respuestas rápidas con "/": al escribir
+// "/" al principio o después de un espacio se abre la lista (Configuración › Respuestas rápidas)
+// filtrada por lo que se sigue escribiendo; Enter/clic la inserta en el cuadro, no la manda.
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ContenidoAdjunto } from './Adjunto';
+import { GrabarAudio } from './GrabarAudio';
 import { BurbujaCliente, BurbujaLucia, BurbujaMostrador } from '@/components/ui-otto/Burbuja';
 import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
-import { IconAudio, IconFoto } from '@/components/nav/icons';
+import { IconFoto } from '@/components/nav/icons';
 import { useUsuario } from '@/components/nav/UsuarioContext';
 import { SONDEO_BANDEJA_MS, useDatos } from '@/components/api/useDatos';
 import { useAccionesCharla } from '@/components/api/useAccionesCharla';
 import { enviar } from '@/components/api/cliente';
 import { fechaEnZona } from '@/lib/formato';
+import { atajoEnCurso, filtrarRespuestas, insertarRespuesta, type RespuestaRapida } from '@/lib/respuestas-rapidas';
 import type { Charla, MensajeCharla } from '@/lib/queries/bandeja';
 
 // La ventana de WhatsApp se puede cerrar entre que se escribe un mensaje y que el worker lo
@@ -93,8 +99,13 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
   const compacto = variante === 'mobile';
   const esAdmin = useUsuario()?.rol === 'admin';
   const { datos: charla, cargando, error, recargar } = useDatos<Charla>(conversacionId ? `/api/bandeja/${conversacionId}` : null, { sondeoMs: SONDEO_BANDEJA_MS });
-  const { enviando, error: errorAccion, motivo: motivoAccion, tomar, devolver, cerrar, responder, enviarFoto, reabrir, toggleLucia, agregarEtiqueta, quitarEtiqueta } = useAccionesCharla(conversacionId);
+  const { enviando, error: errorAccion, motivo: motivoAccion, tomar, devolver, cerrar, responder, enviarFoto, enviarAudio, reabrir, toggleLucia, agregarEtiqueta, quitarEtiqueta } = useAccionesCharla(conversacionId);
   const [texto, setTexto] = useState('');
+  const [avisoAudio, setAvisoAudio] = useState<string | null>(null);
+  const { datos: rapidas } = useDatos<{ respuestas: RespuestaRapida[] }>(conversacionId ? '/api/configuracion/respuestas' : null);
+  const [atajo, setAtajo] = useState<{ inicio: number; consulta: string; cursor: number } | null>(null);
+  const [elegida, setElegida] = useState(0);
+  const inputTextoRef = useRef<HTMLInputElement>(null);
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
   const [editandoEtiqueta, setEditandoEtiqueta] = useState(false);
   const inputFotoRef = useRef<HTMLInputElement>(null);
@@ -207,6 +218,30 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
       recargar();
       irAlFondo();
     }
+  }
+
+  async function onAudioListo(audio: Blob) {
+    setAvisoAudio(null);
+    if (await enviarAudio(audio)) {
+      recargar();
+      irAlFondo();
+    }
+  }
+
+  const opciones = atajo ? filtrarRespuestas(rapidas?.respuestas ?? [], atajo.consulta) : [];
+  function onCambioTexto(e: React.ChangeEvent<HTMLInputElement>) {
+    setTexto(e.target.value);
+    const cursor = e.target.selectionStart ?? e.target.value.length;
+    const a = atajoEnCurso(e.target.value, cursor);
+    setAtajo(a ? { ...a, cursor } : null);
+    setElegida(0);
+  }
+  function insertar(r: RespuestaRapida) {
+    if (!atajo) return;
+    const n = insertarRespuesta(texto, atajo.cursor, atajo.inicio, r.texto);
+    setTexto(n.texto);
+    setAtajo(null);
+    requestAnimationFrame(() => inputTextoRef.current?.setSelectionRange(n.cursor, n.cursor));
   }
 
   let fechaAnterior = '';
@@ -401,6 +436,7 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
         )}
       </div>
 
+      {avisoAudio && <div className={`text-[14px] text-ladrillo md:text-[13px] ${compacto ? 'px-3.5 pt-2' : 'px-6 pt-2'}`}>{avisoAudio}</div>}
       {errorAccion && (
         <div className={`text-[14px] text-ladrillo md:text-[13px] ${compacto ? 'px-3.5 pt-2' : 'px-6 pt-2'}`}>
           <div>{errorAccion}</div>
@@ -421,35 +457,67 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
             >
               <IconFoto className="text-grafito" />
             </button>
-            <span className="flex h-[42px] w-[42px] flex-none items-center justify-center rounded-otto border border-borde opacity-45">
-              <IconAudio className="text-grafito" />
-            </span>
+            <GrabarAudio compacto={false} deshabilitado={charla.estado !== 'derivada' || enviando} onListo={onAudioListo} onAviso={setAvisoAudio} />
           </>
         ) : (
           <>
             <button type="button" onClick={() => inputFotoRef.current?.click()} disabled={charla.estado !== 'derivada' || enviando} aria-label="Mandar una foto" className="flex-none disabled:opacity-50">
               <IconFoto className="text-grafito" width={20} height={20} />
             </button>
-            <span className="flex-none opacity-50">
-              <IconAudio className="text-grafito" width={20} height={20} />
-            </span>
+            <GrabarAudio compacto deshabilitado={charla.estado !== 'derivada' || enviando} onListo={onAudioListo} onAviso={setAvisoAudio} />
           </>
         )}
         {charla.estado === 'derivada' ? (
+          <div className="relative flex min-w-0 flex-1">
+          {opciones.length > 0 && (
+            <ul role="listbox" aria-label="Respuestas rápidas" className="absolute bottom-full left-0 right-0 z-10 mb-1.5 max-h-64 overflow-y-auto rounded-otto border border-borde bg-lino shadow-lg">
+              {opciones.map((r, i) => (
+                <li
+                  key={r.id}
+                  role="option"
+                  aria-selected={i === elegida}
+                  onMouseDown={(e) => { e.preventDefault(); insertar(r); }}
+                  className={`cursor-pointer px-3 py-2 text-[14px] md:text-[13px] ${i === elegida ? 'bg-hueso' : ''}`}
+                >
+                  <span className="font-medium text-cobre">/{r.atajo}</span>
+                  <span className="ml-2 text-grafito">{r.texto.length > 90 ? `${r.texto.slice(0, 90)}…` : r.texto}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           <input
+            ref={inputTextoRef}
             value={texto}
-            onChange={(e) => setTexto(e.target.value)}
+            onChange={onCambioTexto}
+            onBlur={() => setAtajo(null)}
             onKeyDown={(e) => {
+              if (opciones.length > 0) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setElegida((i) => (i + (e.key === 'ArrowDown' ? 1 : opciones.length - 1)) % opciones.length);
+                  return;
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault();
+                  insertar(opciones[Math.min(elegida, opciones.length - 1)]);
+                  return;
+                }
+                if (e.key === 'Escape') {
+                  setAtajo(null);
+                  return;
+                }
+              }
               if (e.key === 'Enter') {
                 e.preventDefault();
                 onResponder();
               }
             }}
             disabled={enviando}
-            placeholder="Escribí tu respuesta — sale marcada «mostrador»"
+            placeholder="Escribí tu respuesta (/ para respuestas rápidas)"
             aria-label="Respuesta del equipo"
             className={`min-w-0 flex-1 border border-borde bg-lino outline-none focus:border-cobre disabled:bg-hueso disabled:text-[#8A8578] ${compacto ? 'rounded-pill px-3.5 py-2.5 text-[14px] md:text-[13.5px]' : 'rounded-otto px-3.5 py-2.5 text-sm'}`}
           />
+          </div>
         ) : (
           <div
             className={`min-w-0 flex-1 truncate text-[#8A8D94] ${compacto ? 'rounded-pill px-3.5 py-2.5 text-[14px] md:text-[13.5px]' : 'rounded-otto px-3.5 py-2.5 text-sm'}`}

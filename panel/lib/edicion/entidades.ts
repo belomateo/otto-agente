@@ -376,6 +376,14 @@ export const ENTIDADES = {
     { obligatorios: ['nombre', 'url'] }
   ),
 
+  // Configuración › Respuestas rápidas (0109, pedido de Sofía 22/10): las que el equipo inserta
+  // con "/" en la Bandeja. Las lee cualquier aprobado; las edita, ordena y borra un admin.
+  respuestas: definir(
+    'respuestas_rapidas',
+    { atajo: texto(40), texto: texto(4000), orden: entero(0, 10_000), activo: z.boolean() },
+    { obligatorios: ['atajo', 'texto'], borrable: true }
+  ),
+
   // Turnos: los 5 estados que marca el asesor desde la pestaña Turnos (PROCESOS.md § 2, "En el
   // local" y "Retiro y devolución"). sin-confirmar/confirmado no se tocan por acá: sin-confirmar
   // es el inicial y confirmado sale del OK del cartel (H1.16) o del botón de WhatsApp del

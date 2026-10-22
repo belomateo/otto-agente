@@ -827,6 +827,42 @@ export type Database = {
         }
         Relationships: []
       }
+      respuestas_rapidas: {
+        Row: {
+          activo: boolean
+          atajo: string
+          creado_at: string
+          editado_at: string
+          editado_por: string | null
+          id: string
+          orden: number
+          texto: string
+          version: number
+        }
+        Insert: {
+          activo?: boolean
+          atajo: string
+          creado_at?: string
+          editado_at?: string
+          editado_por?: string | null
+          id?: string
+          orden?: number
+          texto: string
+          version?: number
+        }
+        Update: {
+          activo?: boolean
+          atajo?: string
+          creado_at?: string
+          editado_at?: string
+          editado_por?: string | null
+          id?: string
+          orden?: number
+          texto?: string
+          version?: number
+        }
+        Relationships: []
+      }
       envios_programados: {
         Row: {
           actualizado_at: string
@@ -1846,6 +1882,10 @@ export type Database = {
       instrucciones_volver: { Args: { p_version?: number }; Returns: Json }
       mostrador_enviar: {
         Args: { p_conversacion: string; p_texto: string }
+        Returns: Json
+      }
+      mostrador_enviar_audio: {
+        Args: { p_conversacion: string; p_storage_path: string }
         Returns: Json
       }
       mostrador_enviar_foto: {

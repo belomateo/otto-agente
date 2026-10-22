@@ -16,6 +16,7 @@ const PESTANAS = [
   { href: '/configuracion/agenda', label: 'Agenda' },
   { href: '/configuracion/herramientas', label: 'Herramientas' },
   { href: '/configuracion/enlaces', label: 'Enlaces' },
+  { href: '/configuracion/respuestas', label: 'Respuestas rápidas' },
   { href: '/configuracion/notas', label: 'Notas' },
   { href: '/configuracion/accesos', label: 'Accesos' },
 ];
