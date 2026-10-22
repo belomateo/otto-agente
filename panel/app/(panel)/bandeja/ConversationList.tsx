@@ -47,7 +47,7 @@ export function ConversationList({
   const [filtro, setFiltro] = useState(0);
   const [busqueda, setBusqueda] = useState('');
   const q = normalizar(busqueda.trim());
-  const lista = conversaciones.filter((c) => FILTROS[filtro].pasa(c) && (!q || normalizar(`${c.n} ${c.m}`).includes(q)));
+  const lista = conversaciones.filter((c) => FILTROS[filtro].pasa(c) && (!q || normalizar(`${c.n} ${c.m} ${c.tel}`).includes(q) || (/^[\d\s()+.-]+$/.test(q) && c.tel.replace(/\D/g, '').includes(q.replace(/\D/g, '')))));
 
   return (
     <div className={variante === 'desktop' ? 'flex w-lista flex-none flex-col border-r border-borde bg-lino' : 'flex min-w-0 flex-1 flex-col bg-lino'}>
@@ -94,6 +94,7 @@ export function ConversationList({
                   <span className="min-w-0 flex-1 truncate font-serif text-[15px] font-semibold">{c.n}</span>
                   <time dateTime={c.ultimo_mensaje_at} className="shrink-0 whitespace-nowrap text-xs tabular-nums text-grafito">{c.h}</time>
                 </div>
+                {c.tel && c.tel !== c.n && <div className="truncate text-[13px] tabular-nums text-grafito md:text-xs">{c.tel}</div>}
                 <div className="mt-1 flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-[14px] text-grafito md:text-[13.5px]"><strong>{c.ultimo_autor === 'cliente' ? 'Cliente: ' : c.ultimo_autor === 'lucia' ? 'Lucía: ' : c.ultimo_autor === 'mostrador' ? 'Equipo: ' : ''}</strong>{c.m}</span>
                   {c.hasTag && <span className="flex-none rounded-pill border border-borde px-2 py-0.5 text-[14px] font-medium text-grafito md:text-[11px]">{c.tag}</span>}

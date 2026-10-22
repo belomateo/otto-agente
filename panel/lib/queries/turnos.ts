@@ -39,6 +39,8 @@ export type FilaTurno = TurnoDelDia & {
   /** Mini ficha del cliente para la tarjeta del turno (pedido de Mateo, 9/10): lo que Lucía fue
    *  guardando de la charla, una línea por tema. [] = no se sabe nada todavía. */
   ficha: string[];
+  /** La línea que escribió Lucía (o el equipo) al agendar; '' = no tiene (0110). */
+  descripcion: string;
 };
 
 type DatosTarjeta = Pick<
@@ -108,7 +110,7 @@ export async function turnosDelDia(
   let q = db
     .from('turnos')
     .select(
-      'id, version, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado, aviso, confirmado_por, aviso_ok_at, aviso_ok_por, urgencia, clientes(nombre, telefono, rol, evento, fecha_evento, dia_o_noche, talle_aprox, color_preferido, presupuesto_mencionado, ciudad, email, notas_libres)'
+      'id, version, cliente_id, tipo, estado, probador, inicio, fin, duracion_min, confirmado, aviso, confirmado_por, aviso_ok_at, aviso_ok_por, urgencia, descripcion, clientes(nombre, telefono, rol, evento, fecha_evento, dia_o_noche, talle_aprox, color_preferido, presupuesto_mencionado, ciudad, email, notas_libres)'
     )
     .gte('inicio', desde)
     .lt('inicio', hasta)
@@ -202,6 +204,7 @@ export async function turnosDelDia(
         conversacion_id: charlaDe.get(t.cliente_id) ?? null,
         telefono: t.clientes ? telefonoLegible(t.clientes.telefono) : '',
         ficha: fichaDeTarjeta(t.clientes),
+        descripcion: t.descripcion ?? '',
         h: hora(t.inicio),
         n: nombreDe(t.clientes),
         t: `${ETIQUETA_TIPO_TURNO[t.tipo] ?? t.tipo} · ${t.duracion_min}’`,

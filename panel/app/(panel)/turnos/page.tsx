@@ -350,10 +350,11 @@ function AccionesTurno({ turno, compacto = false, onCambio }: { turno: FilaTurno
 // Con quién es el turno (pedido de Mateo, 9/10): teléfono y lo que Lucía fue guardando de la
 // charla. La misma caja en la tarjeta de escritorio y en la hoja del celular.
 function DatosCliente({ turno }: { turno: FilaTurno }) {
-  if (!turno.telefono && turno.ficha.length === 0) return null;
+  if (!turno.telefono && !turno.descripcion && turno.ficha.length === 0) return null;
   return (
     <div className="mt-2.5 rounded-otto bg-hueso px-3 py-2 text-[14px] leading-[1.45] text-grafito md:text-[13px]">
       {turno.telefono && <div className="font-medium text-tinta">{turno.telefono}</div>}
+      {turno.descripcion && <div className="font-medium">{turno.descripcion}</div>}
       {turno.ficha.length > 0 ? turno.ficha.map((linea) => <div key={linea}>{linea}</div>) : <div className="text-[#8A8578]">Todavía no hay datos de la charla.</div>}
     </div>
   );
@@ -477,7 +478,7 @@ function Grilla({
                       className="absolute inset-x-1.5 text-left"
                       style={{ top: y(inicioMin(t)) }}
                     >
-                      <BloqueTurno nombre={t.n} detalle={`${t.t} · ${t.e}`} estado={t.estado as EstadoTurno} aviso={t.aviso ?? undefined} />
+                      <BloqueTurno nombre={t.n} detalle={`${t.t} · ${t.e}`} telefono={t.telefono} descripcion={t.duracion_min >= 60 ? t.descripcion : undefined} estado={t.estado as EstadoTurno} aviso={t.aviso ?? undefined} />
                     </button>
                   ) : (
                     <button
@@ -493,6 +494,7 @@ function Grilla({
                     >
                       <span className="font-serif text-[14px] font-semibold md:text-[12.5px]">{t.n}</span>
                       <span className="text-[14px] text-grafito md:text-[11px]">{t.t}</span>
+                      {t.telefono && <span className="truncate text-[14px] text-grafito md:text-[11px]">{t.telefono}</span>}
                     </button>
                   ),
                 )}
@@ -551,8 +553,9 @@ function FilaTurnoLista({ t, onAbrir }: { t: FilaTurno; onAbrir: () => void }) {
       <div className="min-w-0 flex-1">
         <div className="truncate font-serif text-[15px] font-semibold">{t.n}</div>
         <div className="text-[14px] text-grafito">
-          {t.t} · {t.p}
+          {t.t} · {t.p}{t.telefono && ` · ${t.telefono}`}
         </div>
+        {t.descripcion && <div className="line-clamp-2 text-[14px] text-grafito">{t.descripcion}</div>}
         {t.aviso && <div className="mt-0.5 text-[14px] font-medium text-ambar">↻ {t.aviso}</div>}
       </div>
       <span className="flex-none rounded-pill px-[9px] py-[3px] text-[14px] font-medium" style={{ background: t.eb, color: t.ef }}>

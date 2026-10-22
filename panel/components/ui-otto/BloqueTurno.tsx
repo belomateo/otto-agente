@@ -43,12 +43,17 @@ export function BloqueTurno({
   detalle,
   estado,
   aviso,
+  telefono,
+  descripcion,
 }: {
   nombre: string;
   detalle: string;
   estado: EstadoTurno;
   /** Alerta de sincronización (p. ej. "Sin sincronizar con Google Calendar"). Se suma al estado. */
   aviso?: string;
+  telefono?: string;
+  /** La línea de Lucía sobre el turno; una línea; en turnos cortos no entra (entera al abrirlo). */
+  descripcion?: string;
 }) {
   const apagado = APAGADOS.includes(estado);
   const conRotulo = estado === 'cancelado' || estado === 'no-vino';
@@ -74,7 +79,8 @@ export function BloqueTurno({
           </span>
         )}
       </div>
-      <div className={`text-[14px] md:text-xs ${apagado ? 'text-[#8A8578]' : 'text-grafito'}`}>{detalle}</div>
+      <div className={`text-[14px] md:text-xs ${apagado ? 'text-[#8A8578]' : 'text-grafito'}`}>{detalle}{telefono && ` · ${telefono}`}</div>
+      {descripcion && <div className={`truncate text-[14px] md:text-xs ${apagado ? 'text-[#8A8578]' : 'text-grafito'}`}>{descripcion}</div>}
       {aviso && (
         <div className="mt-1 text-[14px] font-medium leading-tight text-ambar md:text-[11.5px]">
           <span aria-hidden>↻ </span>

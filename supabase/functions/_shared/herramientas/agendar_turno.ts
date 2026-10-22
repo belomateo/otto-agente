@@ -42,6 +42,7 @@ type Args = {
   nombre: string | null;
   evento: Evento | null;
   fecha_evento: string | null;
+  descripcion: string | null;
 };
 
 export const agendarTurno: Herramienta<Args> = {
@@ -64,6 +65,12 @@ export const agendarTurno: Herramienta<Args> = {
     nombre: { type: ["string", "null"], maxLength: 80, description: "Nombre del cliente." },
     evento: { type: ["string", "null"], enum: [...EVENTOS, null], description: "Para qué evento es." },
     fecha_evento: { type: ["string", "null"], format: "date", description: "Fecha del evento, AAAA-MM-DD, solo si el cliente dijo el día exacto: con solo el mes, null. «Un 15» es la fiesta de quince, no el día 15." },
+    descripcion: {
+      type: ["string", "null"],
+      maxLength: 200,
+      description: "Una línea para el equipo con lo que se sabe de la charla: para quién es, qué evento, qué busca " +
+        "(color, talle, modelo). Ej: «Primera prueba para el novio, casamiento de noche, busca azul, talle 50». Solo datos que dijo el cliente.",
+    },
   }),
   async ejecutar(args, ctx) {
     args = { ...args, fecha_evento: await fechaEventoCreible(ctx, args.fecha_evento) };
@@ -127,7 +134,7 @@ export const agendarTurno: Herramienta<Args> = {
       return rechazo("duracion_inconsistente", "La duración del hueco no coincide con la del tipo de turno. Volvé a llamar a buscar_horarios.");
     }
 
-    const creado = await insertarEnProbadorLibre(ctx.db, { clienteId: ctx.cliente.id, tipo, inicio, fin, probadores });
+    const creado = await insertarEnProbadorLibre(ctx.db, { clienteId: ctx.cliente.id, tipo, inicio, fin, probadores, descripcion: limpio(args.descripcion)?.slice(0, 200) });
     if (!creado) {
       return rechazo("hueco_ocupado", "Ese horario se acaba de ocupar. Llamá otra vez a buscar_horarios y ofrecé otro.");
     }

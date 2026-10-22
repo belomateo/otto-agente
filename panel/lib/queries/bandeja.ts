@@ -6,7 +6,7 @@ import type { Conversacion } from '@/lib/mock-data';
 import type { Json } from '@/lib/tipos-db';
 import { CHIP_CONVERSACION, ESTILO_MOTIVO, ETIQUETA_EVENTO } from '@/lib/etiquetas';
 import { fechaEnZona, hora } from '@/lib/formato';
-import { autorDeMensaje, nombreDe, normalizar, proximoTurno, resumenFicha, textoDeMensaje, type ClienteDb } from './comun';
+import { autorDeMensaje, nombreDe, normalizar, telefonoLegible, proximoTurno, resumenFicha, textoDeMensaje, type ClienteDb } from './comun';
 
 export const FILTROS_BANDEJA = ['todas', 'lucia', 'persona', 'sin-respuesta'] as const;
 export type FiltroBandeja = (typeof FILTROS_BANDEJA)[number];
@@ -20,6 +20,8 @@ export type FilaBandeja = Conversacion & {
   estado: string;
   /** El último mensaje es del cliente: nadie le contestó todavía. */
   sin_respuesta: boolean;
+  /** '341 785-1686' (pedido de Sofía, 22/10: los vendedores no tenían dónde ver el número). */
+  tel: string;
 };
 
 // Las charlas más recientes. La búsqueda mira nombre, teléfono y último mensaje de estas.
@@ -64,6 +66,7 @@ export async function listarConversaciones(
       ultimo_mensaje_at: ultimo?.enviado_at ?? c.ultimo_mensaje_at ?? c.iniciado_at,
       no_leidos: noLeidos.get(c.id) ?? 0,
       n: nombreDe(c.clientes),
+      tel: c.clientes?.telefono ? telefonoLegible(c.clientes.telefono) : '',
       m: textoDeMensaje(ultimo),
       h: `${fechaEnZona(new Date(ultimo?.enviado_at ?? c.ultimo_mensaje_at ?? c.iniciado_at)).split('-').reverse().join('/')} · ${hora(ultimo?.enviado_at ?? c.ultimo_mensaje_at ?? c.iniciado_at)}`,
       chip: chip.chip,
@@ -76,7 +79,7 @@ export async function listarConversaciones(
   });
   if (o.filtro === 'sin-respuesta') filas = filas.filter((f) => f.sin_respuesta && f.estado !== 'cerrada');
   const b = normalizar(o.busqueda ?? '');
-  if (b) filas = filas.filter((f) => normalizar(`${f.n} ${f.m}`).includes(b));
+  if (b) filas = filas.filter((f) => normalizar(`${f.n} ${f.m}`).includes(b) || (/^[\d\s()+.-]+$/.test(b) && f.tel.replace(/\D/g, '').includes(b.replace(/\D/g, ''))));
   return filas.sort((a, b) => Date.parse(b.ultimo_mensaje_at) - Date.parse(a.ultimo_mensaje_at) || a.id.localeCompare(b.id));
 }
 
@@ -166,7 +169,7 @@ export async function obtenerCharla(db: ClienteDb, id: string): Promise<Charla |
     cliente: {
       id: c.cliente_id,
       nombre: nombreDe(c.clientes),
-      telefono: c.clientes?.telefono ?? '',
+      telefono: c.clientes?.telefono ? telefonoLegible(c.clientes.telefono) : '',
       email: c.clientes?.email ?? null,
       resumen: resumenFicha(c.clientes, turno),
       etiqueta: evento ? (ETIQUETA_EVENTO[evento] ?? '') : '',

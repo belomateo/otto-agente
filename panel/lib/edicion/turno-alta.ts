@@ -39,6 +39,8 @@ export const ESQUEMA_ALTA_TURNO = z
     cliente_id: z.string().refine(esUuid, 'Identificador de cliente inválido').optional(),
     cliente_nuevo: z.strictObject({ telefono: telefonoAlta, nombre: z.string().trim().min(1).max(120).optional() }).optional(),
     tipo: z.enum(TIPOS_TURNO),
+    /** Una línea sobre el turno (0110), la misma que escribe Lucía. */
+    descripcion: z.string().trim().max(200, 'Máximo 200 caracteres').optional(),
     // Modo A — Lucía / por teléfono: inicio ISO explícito, probador opcional
     probador: z.number().int('Tiene que ser un número entero').min(1, 'Mínimo 1').optional(),
     /** ISO, con zona (p. ej. 2026-09-20T13:00:00-03:00 o …Z). */
@@ -198,7 +200,7 @@ export async function altaTurno(sesion: Sesion, request: Request) {
   // choca, no reintentamos el insert (sería books un horario distinto del que pidieron sin
   // avisar): recalculamos los huecos una vez más y devolvemos la alternativa ya lista, en vez
   // de que el operador tenga que arrancar el formulario de cero con la persona esperando.
-  const intento = await insertarTurno(sesion, clienteId, datos.tipo, duracion.duracion_min, probador, inicio, fin);
+  const intento = await insertarTurno(sesion, clienteId, datos.tipo, duracion.duracion_min, probador, inicio, fin, datos.descripcion || null);
   if (intento.ok) {
     dispararConfirmacion(intento.fila.id as string);
     return json({ fila: intento.fila }, 201);
@@ -378,7 +380,7 @@ async function altaTurnoLibre(
   for (const probador of probadoresLibres) {
     const { data, error: eI } = await sesion.supabase
       .from('turnos')
-      .insert({ cliente_id: clienteId, tipo: datos.tipo, duracion_min: duracion.duracion_min, probador, inicio: inicio.toISOString(), fin: fin.toISOString() })
+      .insert({ cliente_id: clienteId, tipo: datos.tipo, duracion_min: duracion.duracion_min, probador, inicio: inicio.toISOString(), fin: fin.toISOString(), descripcion: datos.descripcion || null })
       .select()
       .single();
     if (eI) {
@@ -578,11 +580,12 @@ async function insertarTurno(
   duracionMin: number,
   probador: number,
   inicio: Date,
-  fin: Date
+  fin: Date,
+  descripcion: string | null
 ): Promise<ResultadoInsert> {
   const { data, error: e } = await sesion.supabase
     .from('turnos')
-    .insert({ cliente_id: clienteId, tipo, duracion_min: duracionMin, probador, inicio: inicio.toISOString(), fin: fin.toISOString() })
+    .insert({ cliente_id: clienteId, tipo, duracion_min: duracionMin, probador, inicio: inicio.toISOString(), fin: fin.toISOString(), descripcion })
     .select()
     .single();
   if (e) {

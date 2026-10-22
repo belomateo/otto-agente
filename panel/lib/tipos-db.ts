@@ -1585,6 +1585,7 @@ export type Database = {
           aviso_ok_por: string | null
           cancelado_at: string | null
           cliente_id: string
+          descripcion: string | null
           confirmado: boolean
           confirmado_at: string | null
           confirmado_por: string | null
@@ -1611,6 +1612,7 @@ export type Database = {
           aviso_ok_por?: string | null
           cancelado_at?: string | null
           cliente_id: string
+          descripcion?: string | null
           confirmado?: boolean
           confirmado_at?: string | null
           confirmado_por?: string | null
@@ -1637,6 +1639,7 @@ export type Database = {
           aviso_ok_por?: string | null
           cancelado_at?: string | null
           cliente_id?: string
+          descripcion?: string | null
           confirmado?: boolean
           confirmado_at?: string | null
           confirmado_por?: string | null

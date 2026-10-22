@@ -271,6 +271,7 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
   const [clienteElegido, setClienteElegido] = useState<ClienteElegido | null>(null);
   const [telefono, setTelefono] = useState('');
   const [nombreNuevo, setNombreNuevo] = useState('');
+  const [descripcion, setDescripcion] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [alternativas, setAlternativas] = useState<Hueco[]>([]);
@@ -326,6 +327,7 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
       await enviar('/api/turnos', 'POST', {
         ...(clienteElegido ? { cliente_id: clienteElegido.id } : { cliente_nuevo: { telefono: telefono.trim(), nombre: nombreNuevo.trim() || undefined } }),
         tipo,
+        ...(descripcion.trim() ? { descripcion: descripcion.trim() } : {}),
         probador: hueco.probador,
         inicio: hueco.inicio,
         ...(hueco.dentro_urgencia ? { pisar_urgencia: true } : {}),
@@ -390,6 +392,10 @@ export function NuevoTurnoModal({ fechaInicial, onCerrar, onCreado }: { fechaIni
               <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={CAMPO} />
             </label>
           </div>
+          <label className={ETIQUETA}>
+            Descripción (opcional)
+            <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} maxLength={200} placeholder="Ej: Novio, casamiento de noche, busca azul" className={CAMPO} />
+          </label>
 
           {tipo && fecha && (
             <div>

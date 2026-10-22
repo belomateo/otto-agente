@@ -102,6 +102,12 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
   const { enviando, error: errorAccion, motivo: motivoAccion, tomar, devolver, cerrar, responder, enviarFoto, enviarAudio, reabrir, toggleLucia, agregarEtiqueta, quitarEtiqueta } = useAccionesCharla(conversacionId);
   const [texto, setTexto] = useState('');
   const [avisoAudio, setAvisoAudio] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState(false);
+  useEffect(() => {
+    if (!copiado) return;
+    const t = setTimeout(() => setCopiado(false), 1500);
+    return () => clearTimeout(t);
+  }, [copiado]);
   const { datos: rapidas } = useDatos<{ respuestas: RespuestaRapida[] }>(conversacionId ? '/api/configuracion/respuestas' : null);
   const [atajo, setAtajo] = useState<{ inicio: number; consulta: string; cursor: number } | null>(null);
   const [elegida, setElegida] = useState(0);
@@ -258,11 +264,21 @@ export function ChatThread({ variante, conversacionId }: { variante: 'desktop' |
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-2.5 overflow-hidden whitespace-nowrap">
             <span className="font-serif text-[17px] font-semibold">{charla.cliente.nombre}</span>
+            {charla.cliente.telefono && charla.cliente.telefono !== charla.cliente.nombre && (
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(charla.cliente.telefono.replace(/\D/g, '')).then(() => setCopiado(true), () => {})}
+                title="Copiar el número"
+                className="text-[14px] tabular-nums text-grafito underline decoration-dotted underline-offset-2 md:text-[13px]"
+              >
+                {copiado ? 'Copiado ✓' : charla.cliente.telefono}
+              </button>
+            )}
             {!compacto && charla.cliente.resumen && <span className="text-[14px] text-grafito md:text-[13px]">{charla.cliente.resumen}</span>}
           </div>
           {compacto ? (
             <div className="truncate text-[14px] text-grafito md:text-xs">
-              {charla.cliente.resumen || charla.cliente.telefono}
+              {charla.cliente.resumen}
               {charla.cliente.email && ` · ${charla.cliente.email}`}
             </div>
           ) : (

@@ -79,8 +79,8 @@ export function huecosDeLaTraza(traza: Traza, tipo: TipoTurno, inicio: Date): Hu
 // restricción de la base (turnos_sin_solapamiento, paneles 0011) rechaza la segunda con 23P01
 // y se prueba el probador siguiente.
 const SQL_INSERTAR = `
-  insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin, editado_por)
-  select $1::uuid, $2::text, $3::int, $4::int, $5::timestamptz, $6::timestamptz, $8::text
+  insert into turnos (cliente_id, tipo, duracion_min, probador, inicio, fin, editado_por, descripcion)
+  select $1::uuid, $2::text, $3::int, $4::int, $5::timestamptz, $6::timestamptz, $8::text, $9::text
   where not exists (
     select 1 from turnos t
      where t.probador = $4::int and not (t.estado = any($7::text[]))
@@ -105,13 +105,13 @@ function esChoque(e: unknown): boolean {
 
 export async function insertarEnProbadorLibre(
   db: Db,
-  p: { clienteId: string; tipo: TipoTurno; inicio: Date; fin: Date; probadores: number[] },
+  p: { clienteId: string; tipo: TipoTurno; inicio: Date; fin: Date; probadores: number[]; descripcion?: string | null },
 ): Promise<{ id: string; probador: number } | null> {
   for (const probador of p.probadores) {
     try {
       const filas = await db.consulta(SQL_INSERTAR, [
         p.clienteId, p.tipo, minutosEntre(p.inicio, p.fin), probador,
-        p.inicio.toISOString(), p.fin.toISOString(), [...ESTADOS_QUE_LIBERAN], AUTOR_LUCIA,
+        p.inicio.toISOString(), p.fin.toISOString(), [...ESTADOS_QUE_LIBERAN], AUTOR_LUCIA, p.descripcion ?? null,
       ]);
       if (filas[0]) return { id: String(filas[0].id), probador };
     } catch (e) {
