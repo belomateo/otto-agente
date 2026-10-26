@@ -20,6 +20,9 @@ import {
   TIPOS_QUE_BAJAMOS,
 } from "../_shared/whatsapp/medios.ts";
 import { promptDeLucia } from "./prompt.ts";
+import { decidirRetomar } from "../_shared/llm/retomar.ts";
+import { charlaParaRecontacto } from "../_shared/llm/recontacto.ts";
+import { costoUsd } from "../_shared/llm/precios.ts";
 import { prepararParaEnviar } from "../_shared/whatsapp/preparar.ts";
 import { puedeTextoLibre } from "../_shared/whatsapp/ventana.ts";
 
@@ -556,6 +559,38 @@ async function enviarAudioDelMostrador(db: Db, d: Dependencias, t: Trabajo, tele
   });
 }
 
+// Si el equipo le escribió hace menos que esto, la persona está atendiendo y Lucía no se mete.
+const EQUIPO_ATENDIENDO_MS = 2 * 60 * 60 * 1000;
+
+// Lucía apagada y el cliente pide un turno (Mateo, 26/10, ver retomar.ts): se vuelve a prender en
+// esta charla. La charla sigue derivada, así que no vuelve a derivar. Ante cualquier duda, no retoma.
+async function retomaPorPedidoDeTurno(db: Db, conversacionId: string): Promise<boolean> {
+  const mensajes = await db.consulta<{ direccion: "entrante" | "saliente"; contenido: string | null; transcripcion: string | null; enviado_at: string }>(
+    `select direccion, contenido, transcripcion, enviado_at::text from mensajes
+      where conversacion_id = $1::uuid order by enviado_at desc limit 12`,
+    [conversacionId],
+  );
+  const delEquipo = mensajes.find((m) => m.direccion === "saliente" && m.contenido?.startsWith("[mostrador]"));
+  if (delEquipo && Date.now() - Date.parse(delEquipo.enviado_at) < EQUIPO_ATENDIENDO_MS) return false;
+  if (mensajes[0]?.direccion !== "entrante") return false;
+  const charla = charlaParaRecontacto(mensajes.reverse());
+  let d = null;
+  try {
+    d = await decidirRetomar(charla);
+  } catch (e) {
+    console.error("decidirRetomar", e);
+  }
+  if (d) {
+    await db.consulta("insert into consumo_llm (conversacion_id, modelo, tokens_in, tokens_out, costo_usd) values ($1::uuid, $2, $3, $4, $5)", [
+      conversacionId, d.modelo, d.uso.tokensIn, d.uso.tokensOut, costoUsd(d.modelo, d.uso.tokensIn, d.uso.tokensOut, d.uso.tokensCacheados),
+    ]).catch((e) => console.error("consumo_llm (retomar)", e));
+  }
+  if (!d?.retomar) return false;
+  await db.consulta("update conversaciones set lucia_activa = true where id = $1::uuid", [conversacionId]);
+  await evento(db, conversacionId, "ok", { etapa: "retomar", nota: "Lucía retomó la charla porque el cliente pidió un turno", que_dijo: d.motivo });
+  return true;
+}
+
 async function estadoDeLaCharla(db: Db, conversacionId: string) {
   const [f] = await db.consulta<{ estado: string; cliente_id: string; telefono: string; lucia_activa: boolean }>(
     `select c.estado, c.cliente_id::text as cliente_id, cl.telefono, c.lucia_activa
@@ -682,7 +717,7 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   }
   // Botón on/off de Lucía (Mateo, 30/9): el mostrador puede silenciarla para esta charla sin
   // derivarla. La charla sigue abierta y ellos pueden escribirle al cliente.
-  if (!conv.lucia_activa) {
+  if (!conv.lucia_activa && !(await retomaPorPedidoDeTurno(db, t.conversacion_id))) {
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: "Lucía desactivada para esta charla" });
     return;
   }
