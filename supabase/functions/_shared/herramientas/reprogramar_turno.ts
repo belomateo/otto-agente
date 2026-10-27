@@ -6,7 +6,7 @@
 // después del evento. Actualiza la misma fila (nunca crea otra encima), vuelve a "sin
 // confirmar", mueve el evento de Calendar y manda la confirmación nueva armada en código.
 
-import { esEstadoActivo } from "../enums.ts";
+import { esEstadoActivo, type TipoTurno } from "../enums.ts";
 import { fechaLarga, fechaLocal, horaLocal } from "../tiempo.ts";
 import { armarConfirmacion } from "./confirmacion.ts";
 import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
@@ -16,7 +16,7 @@ import { dentroDeFranja, leerFranjas } from "./horario_laboral.ts";
 import { type Herramienta, objeto, rechazo } from "./tipos.ts";
 import { alCalendario, duracionDelTipo, huecosDeLaTraza, leerTurno, minutosEntre, moverAProbadorLibre } from "./turnos.ts";
 
-type Args = { turno_id: string; fecha_hora: string };
+type Args = { turno_id: string; fecha_hora: string; tipo?: TipoTurno | null };
 
 export const reprogramarTurno: Herramienta<Args> = {
   nombre: "reprogramar_turno",
@@ -54,11 +54,13 @@ export const reprogramarTurno: Herramienta<Args> = {
     // 8/10: el horario nuevo lo elige el cliente (eleccion.ts); «a la misma hora» cuenta.
     const eleccion = await eligioElHorario(ctx, inicio, t.inicio);
     if (!eleccion.ok) return rechazo("horario_no_elegido", eleccion.motivo);
-    const candidatos = huecosDeLaTraza(ctx.traza, t.tipo, inicio);
+    // 27/10: si se suma alguien a probarse, el turno pasa a doble (o triple) al moverlo.
+    const tipo = args.tipo ?? t.tipo;
+    const candidatos = huecosDeLaTraza(ctx.traza, tipo, inicio);
     if (candidatos.length === 0) {
       return rechazo(
         "hueco_no_ofrecido",
-        `Esa fecha_hora no salió de buscar_horarios en este turno para el tipo ${t.tipo}. ` +
+        `Esa fecha_hora no salió de buscar_horarios en este turno para el tipo ${tipo}. ` +
           "Llamá a buscar_horarios ahora, con ese tipo, y usá una de las que devuelva, tal cual.",
       );
     }
@@ -74,7 +76,7 @@ export const reprogramarTurno: Herramienta<Args> = {
         `A esa hora toman turnos ${enFranja.franja.probadores} probadores y ninguno de los ofrecidos es de ellos. Ofrecé otro de buscar_horarios.`,
       );
     }
-    const duracion = await duracionDelTipo(ctx.db, t.tipo);
+    const duracion = await duracionDelTipo(ctx.db, tipo);
     if (duracion !== null && duracion !== minutosEntre(inicio, fin)) {
       return rechazo("duracion_inconsistente", "La duración del hueco no coincide con la del tipo de turno. Volvé a llamar a buscar_horarios.");
     }
@@ -82,7 +84,7 @@ export const reprogramarTurno: Herramienta<Args> = {
       return rechazo("turno_despues_del_evento", "Ese horario cae después del evento. Buscá un hueco antes de la fecha del evento.");
     }
 
-    const movido = await moverAProbadorLibre(ctx.db, { turnoId: t.id, inicio, fin, probadores });
+    const movido = await moverAProbadorLibre(ctx.db, { turnoId: t.id, inicio, fin, probadores, tipo: args.tipo ?? null });
     if (!movido) {
       return rechazo("hueco_ocupado", "Ese horario se acaba de ocupar. Llamá otra vez a buscar_horarios y ofrecé otro.");
     }
@@ -90,7 +92,7 @@ export const reprogramarTurno: Herramienta<Args> = {
       turnoId: t.id,
       inicio,
       fin,
-      tipo: t.tipo,
+      tipo,
       probador: movido.probador,
       nombre: ficha.nombre ?? "",
       telefono: ctx.cliente.telefono,

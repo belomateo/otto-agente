@@ -8,12 +8,13 @@
 // elegido por el cliente, etc.): esto solo elige cuál, y exige el dato que cada una necesita.
 // agendar_turno queda aparte a propósito: crear un turno es lo más delicado de Lucía.
 
+import { TIPOS_TURNO, type TipoTurno } from "../enums.ts";
 import { cancelarTurno } from "./cancelar_turno.ts";
 import { confirmarTurno } from "./confirmar_turno.ts";
 import { reprogramarTurno } from "./reprogramar_turno.ts";
 import { type Herramienta, limpio, objeto, rechazo } from "./tipos.ts";
 
-type Args = { accion: "confirmar" | "mover" | "cancelar"; turno_id: string; fecha_hora: string | null; motivo: string | null };
+type Args = { accion: "confirmar" | "mover" | "cancelar"; turno_id: string; fecha_hora: string | null; motivo: string | null; tipo?: TipoTurno | null };
 
 export const cambiarTurno: Herramienta<Args> = {
   nombre: "cambiar_turno",
@@ -34,6 +35,11 @@ export const cambiarTurno: Herramienta<Args> = {
       format: "date-time",
       description: "Solo para mover: una fecha_hora de las que devolvió buscar_horarios en este turno, sin cambiarla. Si no, null.",
     },
+    tipo: {
+      type: ["string", "null"],
+      enum: [...TIPOS_TURNO, null],
+      description: "Solo para mover: el tipo nuevo si cambia cuántos se prueban (se suma uno: doble; dos más: triple). Buscá los horarios con ese tipo. Si no cambia, null.",
+    },
     motivo: { type: ["string", "null"], maxLength: 300, description: "Solo para cancelar: por qué cancela, con sus palabras. Si no, null." },
   }),
   async ejecutar(args, ctx) {
@@ -43,7 +49,7 @@ export const cambiarTurno: Herramienta<Args> = {
       if (!fechaHora) {
         return rechazo("falta_fecha_hora", "Para mover el turno mandá en fecha_hora una de las que devolvió buscar_horarios en este turno.");
       }
-      return await reprogramarTurno.ejecutar({ turno_id: args.turno_id, fecha_hora: fechaHora }, ctx);
+      return await reprogramarTurno.ejecutar({ turno_id: args.turno_id, fecha_hora: fechaHora, tipo: args.tipo ?? null }, ctx);
     }
     const motivo = limpio(args.motivo);
     if (!motivo || motivo.length < 3) {

@@ -360,7 +360,7 @@ export const NOTA_CLAUDE_HERRAMIENTAS =
   "Lo que escribas antes de usar una herramienta no le llega al cliente: usá primero las herramientas que necesites y escribí la respuesta completa al final. " +
   "Un horario solo queda reservado cuando lo agendás con agendar_turno: antes de eso no le digas que se lo guardás ni que se lo separás. " +
   "Si ofreciste la misma hora en dos días y el cliente contesta solo la hora, preguntale qué día prefiere antes de agendar. " +
-  "El tipo de turno es el de quien se viste (graduado, novio o invitado), aunque venga acompañado o se prueben dos: nunca doble. " +
+  "El tipo de turno es el de quien se viste (graduado, novio o invitado), aunque venga acompañado: un acompañante que no se prueba no cuenta. Si se prueban dos personas es doble, y si son tres, triple. Si vienen dos y no está claro si los dos alquilan, preguntale antes de buscar horarios. " +
   "Usá el mismo tipo en todas las búsquedas de la charla.";
 
 export function cuerpoClaude(p: PeticionClaude) {

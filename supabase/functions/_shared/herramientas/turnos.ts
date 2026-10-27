@@ -91,7 +91,7 @@ const SQL_MOVER = `
   update turnos
      set inicio = $2::timestamptz, fin = $3::timestamptz, probador = $4::int, duracion_min = $5::int,
          estado = $6::text, confirmado = false, confirmado_at = null, recordatorio_enviado_at = null,
-         editado_por = $8::text
+         editado_por = $8::text, tipo = coalesce($9::text, tipo)
    where id = $1::uuid
      and not exists (
        select 1 from turnos t
@@ -125,13 +125,13 @@ export async function insertarEnProbadorLibre(
 // horario nuevo (confirmar_turno, AGENTE.md § 4).
 export async function moverAProbadorLibre(
   db: Db,
-  p: { turnoId: string; inicio: Date; fin: Date; probadores: number[] },
+  p: { turnoId: string; inicio: Date; fin: Date; probadores: number[]; tipo?: TipoTurno | null },
 ): Promise<{ probador: number } | null> {
   for (const probador of p.probadores) {
     try {
       const filas = await db.consulta(SQL_MOVER, [
         p.turnoId, p.inicio.toISOString(), p.fin.toISOString(), probador,
-        minutosEntre(p.inicio, p.fin), ESTADO_TURNO_NUEVO, [...ESTADOS_QUE_LIBERAN], AUTOR_LUCIA,
+        minutosEntre(p.inicio, p.fin), ESTADO_TURNO_NUEVO, [...ESTADOS_QUE_LIBERAN], AUTOR_LUCIA, p.tipo ?? null,
       ]);
       if (filas[0]) return { probador };
     } catch (e) {

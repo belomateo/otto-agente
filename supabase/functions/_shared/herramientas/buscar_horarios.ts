@@ -60,6 +60,8 @@ const DIAS_ALTERNATIVOS = 3;
 // Dos personas por turno (Mateo, 2/10): en un turno normal pueden probarse dos. Antes esto decía
 // "doble si vienen dos" y, con un cliente que quería sumar a alguien a su turno, Lucía buscó un
 // doble de hora y media en ese horario, no lo encontró y derivó por dato_no_encontrado.
+// 27/10 (Sofía vía Mateo): al revés otra vez, dos que se prueban son un doble de 90 minutos; sumar a
+// alguien es mover el turno a doble con cambiar_turno.
 export const buscarHorarios: Herramienta<Args> = {
   nombre: "buscar_horarios",
   tipo: "consulta",
@@ -67,9 +69,9 @@ export const buscarHorarios: Herramienta<Args> = {
     "de turnos y los probadores libres, con los eventos más cercanos primero. Obligatoria antes de ofrecer un día " +
     "u hora, y otra vez justo antes de agendar_turno o de mover un turno con cambiar_turno, en el mismo turno. De lo que devuelve " +
     "ofrecé dos, nunca más de tres. Si esos días no tienen lugar, busca sola los más cercanos y los devuelve en " +
-    "alternativas. tipo_turno: graduado, novio o invitado según quién se viste. Dos personas que " +
-    "se prueban entran en un mismo turno: usá ese tipo, no doble; triple solo si son tres. Para sumar a alguien a un " +
-    "turno que ya tiene no hace falta buscar: viene en ese mismo turno. prueba_final solo para la prueba del día " +
+    "alternativas. tipo_turno: graduado, novio o invitado según quién se viste. Si se prueban dos personas, doble " +
+    "(90 minutos); si son tres, triple. Un acompañante que no se prueba no cuenta. Para sumar a alguien a un turno que ya " +
+    "tiene, buscá con doble (o triple) a esa misma hora con fecha_hora y movelo con cambiar_turno y el tipo nuevo. prueba_final solo para la prueba del día " +
     "anterior al evento (también para retirar el traje): mandá la fecha del evento y el día y los horarios los pone " +
     "la agenda (el último día abierto antes del evento, en el horario de prueba final); no ofrezcas otro día. Mandá la fecha " +
     "del evento si la sabés. Si el evento es hoy, mañana o pasado mañana, no devuelve huecos: el sistema le pasa solo el teléfono " +
