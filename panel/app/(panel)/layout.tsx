@@ -15,6 +15,7 @@ import { TabbarMobile } from '@/components/nav/TabbarMobile';
 import { UsuarioProvider } from '@/components/nav/UsuarioContext';
 import { CartelTurno } from '@/components/cartel-turno/CartelTurno';
 import { crearClienteServidor } from '@/lib/supabase/server';
+import { limiteArchivo } from '@/lib/formato';
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
   const supabase = await crearClienteServidor();
@@ -32,7 +33,11 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   // (sin el join de listarDerivaciones, que además trae los últimos mensajes de cada una) para
   // no cargar una consulta pesada en cada navegación; undefined si falla, así no se muestra un
   // número que podría ser cualquier cosa.
-  const { count: pendientes } = await supabase.from('derivaciones').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente');
+  const { count: pendientes } = await supabase
+    .from('derivaciones')
+    .select('id, conversaciones!inner(ultimo_mensaje_at)', { count: 'exact', head: true })
+    .eq('estado', 'pendiente')
+    .gt('conversaciones.ultimo_mensaje_at', limiteArchivo());
 
   return (
     <UsuarioProvider usuario={usuario}>

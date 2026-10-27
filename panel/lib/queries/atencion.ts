@@ -6,7 +6,7 @@
 import 'server-only';
 import type { Derivacion } from '@/lib/mock-data';
 import { BORDE_DERIVACION, ESTILO_MOTIVO } from '@/lib/etiquetas';
-import { haceCuanto, hora } from '@/lib/formato';
+import { haceCuanto, hora, limiteArchivo } from '@/lib/formato';
 import { nombreDe, textoDeMensaje, type ClienteDb } from './comun';
 
 export const ESTADOS_DERIVACION = ['pendiente', 'atendida'] as const;
@@ -40,15 +40,17 @@ export async function listarDerivaciones(
       )
       .eq('estado', estado)
       .neq('conversaciones.canal', 'prueba')
+      .gt('conversaciones.ultimo_mensaje_at', estado === 'pendiente' ? limiteArchivo() : '1970-01-01')
       .order('creado_at', { ascending: false })
       .order('enviado_at', { referencedTable: 'conversaciones.mensajes', ascending: false })
       .limit(ULTIMOS, { referencedTable: 'conversaciones.mensajes' })
       .limit(200),
     db
       .from('derivaciones')
-      .select('id, conversaciones!inner(canal)', { count: 'exact', head: true })
+      .select('id, conversaciones!inner(canal, ultimo_mensaje_at)', { count: 'exact', head: true })
       .eq('estado', 'pendiente')
-      .neq('conversaciones.canal', 'prueba'),
+      .neq('conversaciones.canal', 'prueba')
+      .gt('conversaciones.ultimo_mensaje_at', limiteArchivo()),
     db
       .from('derivaciones')
       .select('id, conversaciones!inner(canal)', { count: 'exact', head: true })

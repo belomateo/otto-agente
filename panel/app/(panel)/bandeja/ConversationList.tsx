@@ -13,15 +13,20 @@ import { Chip } from '@/components/ui-otto/Chip';
 import { Cargando } from '@/components/ui-otto/Cargando';
 import { EstadoError } from '@/components/ui-otto/EstadoError';
 import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
+import { ARCHIVO_MS } from '@/lib/formato';
 import type { FilaBandeja } from '@/lib/queries/bandeja';
 import { VACIO_BANDEJA } from './vacio-bandeja';
 
+// Archivada: 48 hs sin ningún mensaje (formato.ts). Solo aparece en su propio filtro.
+const archivada = (c: FilaBandeja) => Date.now() - Date.parse(c.ultimo_mensaje_at) > ARCHIVO_MS;
+
 const FILTROS: { label: string; pasa: (c: FilaBandeja) => boolean }[] = [
-  { label: 'Todas', pasa: () => true },
-  { label: 'Sin leer', pasa: (c) => c.no_leidos > 0 },
-  { label: 'Con Lucía', pasa: (c) => c.estado === 'activa' },
-  { label: 'Con persona', pasa: (c) => c.estado === 'derivada' },
-  { label: 'Sin respuesta', pasa: (c) => c.sin_respuesta && c.estado !== 'cerrada' },
+  { label: 'Todas', pasa: (c) => !archivada(c) },
+  { label: 'Sin leer', pasa: (c) => !archivada(c) && c.no_leidos > 0 },
+  { label: 'Con Lucía', pasa: (c) => !archivada(c) && c.estado === 'activa' },
+  { label: 'Con persona', pasa: (c) => !archivada(c) && c.estado === 'derivada' },
+  { label: 'Sin respuesta', pasa: (c) => !archivada(c) && c.sin_respuesta && c.estado !== 'cerrada' },
+  { label: 'Archivadas', pasa: archivada },
 ];
 
 const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -47,7 +52,7 @@ export function ConversationList({
   const [filtro, setFiltro] = useState(0);
   const [busqueda, setBusqueda] = useState('');
   const q = normalizar(busqueda.trim());
-  const lista = conversaciones.filter((c) => FILTROS[filtro].pasa(c) && (!q || normalizar(`${c.n} ${c.m} ${c.tel}`).includes(q) || (/^[\d\s()+.-]+$/.test(q) && c.tel.replace(/\D/g, '').includes(q.replace(/\D/g, '')))));
+  const lista = conversaciones.filter((c) => (FILTROS[filtro].pasa(c) || (!!q && archivada(c))) && (!q || normalizar(`${c.n} ${c.m} ${c.tel}`).includes(q) || (/^[\d\s()+.-]+$/.test(q) && c.tel.replace(/\D/g, '').includes(q.replace(/\D/g, '')))));
 
   return (
     <div className={variante === 'desktop' ? 'flex w-lista flex-none flex-col border-r border-borde bg-lino' : 'flex min-w-0 flex-1 flex-col bg-lino'}>

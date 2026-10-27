@@ -159,3 +159,8 @@ export function plata(n: number | null | undefined): string {
 export function dolares(n: number): string {
   return 'US$ ' + new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
+
+// Archivo (Mateo, 27/10): una charla sin ningún mensaje en 48 hs sale de la Bandeja y de Atención
+// humana y pasa a «Archivadas». Si el cliente vuelve a escribir, vuelve sola (y con Lucía, worker).
+export const ARCHIVO_MS = 48 * 60 * 60 * 1000;
+export const limiteArchivo = () => new Date(Date.now() - ARCHIVO_MS).toISOString();

@@ -591,6 +591,29 @@ async function retomaPorPedidoDeTurno(db: Db, conversacionId: string): Promise<b
   return true;
 }
 
+// Archivo (Mateo, 27/10): una charla sin mensajes en 48 hs pasa a «Archivadas» en el panel. Si el
+// cliente vuelve a escribir, la charla vuelve a Lucía aunque la tuviera una persona: la derivación
+// vieja queda atendida como vencida y, si hace falta, Lucía deriva de nuevo. La ráfaga son los
+// mensajes de los últimos 15 minutos; lo anterior a eso es la última interacción.
+const ARCHIVO_MS = 48 * 60 * 60 * 1000;
+
+async function volvioDespuesDelArchivo(db: Db, conversacionId: string): Promise<boolean> {
+  const [f] = await db.consulta<{ antes: string | null; ahora: string | null }>(
+    `select (select max(enviado_at)::text from mensajes where conversacion_id = $1::uuid
+               and enviado_at < (select max(enviado_at) from mensajes where conversacion_id = $1::uuid and direccion = 'entrante') - interval '15 minutes') as antes,
+            (select max(enviado_at)::text from mensajes where conversacion_id = $1::uuid and direccion = 'entrante') as ahora`,
+    [conversacionId],
+  );
+  if (!f?.antes || !f.ahora || Date.parse(f.ahora) - Date.parse(f.antes) < ARCHIVO_MS) return false;
+  await db.consulta("update conversaciones set estado = 'activa', lucia_activa = true where id = $1::uuid", [conversacionId]);
+  await db.consulta(
+    "update derivaciones set estado = 'atendida', atendida_at = now(), atendida_por = 'vencida: 48 hs sin mensajes' where conversacion_id = $1::uuid and estado = 'pendiente'",
+    [conversacionId],
+  );
+  await evento(db, conversacionId, "ok", { etapa: "archivo", nota: "El cliente volvió después de 48 hs: la charla vuelve a Lucía" });
+  return true;
+}
+
 async function estadoDeLaCharla(db: Db, conversacionId: string) {
   const [f] = await db.consulta<{ estado: string; cliente_id: string; telefono: string; lucia_activa: boolean }>(
     `select c.estado, c.cliente_id::text as cliente_id, cl.telefono, c.lucia_activa
@@ -717,6 +740,9 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   }
   // Botón on/off de Lucía (Mateo, 30/9): el mostrador puede silenciarla para esta charla sin
   // derivarla. La charla sigue abierta y ellos pueden escribirle al cliente.
+  if (conv.estado === "derivada" && !conv.lucia_activa && await volvioDespuesDelArchivo(db, t.conversacion_id)) {
+    conv.lucia_activa = true;
+  }
   if (!conv.lucia_activa && !(await retomaPorPedidoDeTurno(db, t.conversacion_id))) {
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: "Lucía desactivada para esta charla" });
     return;
