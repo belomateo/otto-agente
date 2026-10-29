@@ -15,6 +15,7 @@ import 'server-only';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { DIAS_LARGOS } from '@/lib/formato';
+import { telefonoWhatsapp } from '@/lib/telefono';
 import { validarPromptBase } from './prompt';
 
 export const TEMAS_FRAGMENTO = [
@@ -52,7 +53,7 @@ const entero = (min: number, max: number) =>
 export const telefonoAlta = z
   .string()
   .trim()
-  .transform((v) => v.replace(/\D/g, ''))
+  .transform(telefonoWhatsapp)
   .pipe(z.string().min(8, 'Teléfono inválido: muy corto').max(15, 'Teléfono inválido: muy largo'));
 
 type Fila = Record<string, unknown>;
