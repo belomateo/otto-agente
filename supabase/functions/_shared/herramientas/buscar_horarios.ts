@@ -28,6 +28,7 @@ import {
   sumarDias,
 } from "../tiempo.ts";
 import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
+import { turnoActivoDelCliente } from "./turnos.ts";
 import { fechaEventoCreible } from "./fecha_evento.ts";
 import { actualizarFicha, leerFicha } from "./ficha.ts";
 import { dentroDeFranja, type Franja, leerFranjas } from "./horario_laboral.ts";
@@ -114,7 +115,10 @@ export const buscarHorarios: Herramienta<Args> = {
     if (fechaEvento && fechaEvento < hoy) {
       return rechazo("fecha_evento_pasada", `La fecha del evento (${fechaEvento}) ya pasó. Confirmala con el cliente.`);
     }
-    if (esEventoInminente(fechaEvento, ctx.ahora, ctx.tz)) {
+    // 29/10 (Emi): evento cerca y ya tiene turno → se buscan horarios para MOVERLO, hasta el día antes
+    // del evento. Un turno nuevo con el evento cerca sigue yendo al equipo.
+    const paraMover = esEventoInminente(fechaEvento, ctx.ahora, ctx.tz) && (await turnoActivoDelCliente(ctx.db, ctx.cliente.id, ctx.ahora)) !== null;
+    if (esEventoInminente(fechaEvento, ctx.ahora, ctx.tz) && !paraMover) {
       if (args.fecha_evento) await actualizarFicha(ctx.db, ctx.cliente.id, { fecha_evento: args.fecha_evento });
       return await derivarPorEventoInminente(ctx);
     }
@@ -131,7 +135,8 @@ export const buscarHorarios: Herramienta<Args> = {
     // Más de dos semanas: se recorta y se avisa, en vez de rechazar. El modelo pedía "dos semanas"
     // contando 15 días y perdía una vuelta entera (4 rechazos en las últimas 30 charlas; a un
     // cliente le preguntó "qué día te queda cómodo" en vez de ofrecerle horarios).
-    let hasta = args.hasta;
+    let hasta = paraMover && fechaEvento && args.hasta >= fechaEvento ? sumarDias(fechaEvento, -1) : args.hasta;
+    if (paraMover && hasta < desde) return await derivarPorEventoInminente(ctx);
     if (diasEntre(desde, hasta) > RANGO_MAXIMO_DIAS) {
       hasta = sumarDias(desde, RANGO_MAXIMO_DIAS);
       avisos.push(`se buscó hasta ${hasta}: dos semanas por vez.`);
@@ -152,7 +157,7 @@ export const buscarHorarios: Herramienta<Args> = {
       hasta,
       tipo,
       ahora: ctx.ahora,
-      fechaEvento,
+      fechaEvento: paraMover ? null : fechaEvento,
     });
     if (agenda.derivar === "evento_inminente") return await derivarPorEventoInminente(ctx);
 
@@ -176,6 +181,7 @@ export const buscarHorarios: Herramienta<Args> = {
           : "El horario que eligió no está disponible. No derives: ofrecé los horarios más cercanos de la lista y preguntale cuál le queda bien.";
       }
     }
+    if (paraMover && huecos.length === 0) return await derivarPorEventoInminente(ctx); // no hay dónde moverlo antes del evento
     if (huecos.length === 0) {
       Object.assign(
         datos,

@@ -45,9 +45,13 @@ export const reprogramarTurno: Herramienta<Args> = {
       );
     }
     const ficha = await leerFicha(ctx.db, ctx.cliente.id);
-    if (esEventoInminente(ficha.fecha_evento, ctx.ahora, ctx.tz)) return await derivarPorEventoInminente(ctx);
+    // 29/10 (Emi): con el evento cerca el turno se puede mover igual, pero a un día antes del evento.
+    const inminente = esEventoInminente(ficha.fecha_evento, ctx.ahora, ctx.tz);
 
     const inicio = new Date(args.fecha_hora);
+    if (inminente && fechaLocal(inicio, ctx.tz) >= ficha.fecha_evento!) {
+      return rechazo("turno_despues_del_evento", "Con el evento tan cerca el turno tiene que quedar antes del día del evento. Ofrecé uno de buscar_horarios.");
+    }
     if (!(inicio > ctx.ahora)) {
       return rechazo("hueco_en_el_pasado", "Esa fecha y hora ya pasó. Llamá a buscar_horarios y ofrecé un hueco que venga.");
     }

@@ -58,6 +58,7 @@ import type { AccesoStorage } from "../whatsapp/medios.ts";
 import { contextoDeHerramientas } from "./contexto_herramientas.ts";
 import { armarContextoDelTurno, UMBRAL_DIAS_REPRESENTACION } from "./contexto.ts";
 import { derivacionDuraPorEventoInminente } from "./derivacion_dura.ts";
+import { turnoActivoDelCliente } from "../herramientas/turnos.ts";
 import { leerHistorial, ultimoMensajeAntesDe, type MensajeChat } from "./historial.ts";
 import { pidePersonaPorPalabraClave } from "./pide_persona.ts";
 import { CLAVE_TEXTO_COMO_FUNCIONA, pideInformacionGeneral, saludoDeLucia, TEXTO_COMO_FUNCIONA_RESPALDO } from "./informacion_general.ts";
@@ -335,7 +336,8 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
       resultado = quedarseCalladaDerivada();
       return resultado;
     }
-    const dura = derivacionDuraPorEventoInminente(ficha.fecha_evento, p.ahora, p.tz);
+    // 29/10 (Emi): con un turno ya dado, el evento cerca no corta: Lucía lo puede mover o cancelar.
+    const dura = (await turnoActivoDelCliente(db, p.clienteId, p.ahora)) ? null : derivacionDuraPorEventoInminente(ficha.fecha_evento, p.ahora, p.tz);
     if (dura) {
       if (p.yaDerivada) {
         // Ya está derivada: no se vuelve a derivar por esto — sigue el turno normal, Lucía contesta.

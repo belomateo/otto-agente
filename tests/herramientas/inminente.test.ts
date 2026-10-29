@@ -104,12 +104,13 @@ prueba("agendar_turno con el evento mañana deriva en vez de agendar, aunque el 
   assertEquals((await fila(sql, "select fecha_evento::text as f from clientes where id = $1", [clienteId])).f, MARTES);
 });
 
-prueba("reprogramar_turno con el evento hoy deriva en vez de mover", async ({ ctx, sql, clienteId, conversacionId }) => {
+// 29/10 (Emi): ya no deriva; con el evento cerca se mueve, pero solo a un día antes del evento.
+prueba("reprogramar_turno con el evento hoy no lo pasa al mismo día del evento", async ({ ctx, sql, clienteId }) => {
   await sql.query("update clientes set fecha_evento = $2 where id = $1", [clienteId, LUNES]);
   const turno = await crearTurno(sql, { clienteId, inicio: local(LUNES, "16:00") });
   ctx.traza.huecosOfrecidos.push({ ...hueco(LUNES, "17:00", 45), tipo: "invitado" });
   const r = await ejecutarHerramienta("cambiar_turno", { accion: "mover", turno_id: turno, fecha_hora: iso(LUNES, "17:00"), motivo: null }, ctx);
-  await quedoDerivado(sql, conversacionId, r);
+  assertEquals(r.ok, false);
   const t = await fila(sql, "select inicio from turnos where id = $1", [turno]);
   assertEquals(new Date(t.inicio).getTime(), local(LUNES, "16:00").getTime());
 });
@@ -149,4 +150,17 @@ Deno.test({
       assert(f && String(f.valor).trim().length > 0, "falta texto_evento_inminente en contexto_agente");
       assert(!/(^|[^\p{L}])no([^\p{L}]|$)/iu.test(String(f.valor)), `el texto dice que no: ${f.valor}`);
     }),
+});
+
+// 29/10 (Emi): ya tiene turno, el evento es pasado mañana y avisa que no puede venir. buscar_horarios
+// ofrece dónde moverlo, solo hasta el día antes del evento, en vez de derivar.
+prueba("buscar_horarios con el evento cerca y un turno ya dado ofrece horarios hasta el día antes", async ({ ctx, sql, clienteId, agenda }) => {
+  await sql.query("update clientes set fecha_evento = $2 where id = $1", [clienteId, MIERCOLES]);
+  await crearTurno(sql, { clienteId, inicio: local(LUNES, "16:00") });
+  agenda.lista = [hueco(MARTES, "16:00", 45)];
+  const r = await buscar(ctx, LUNES, MIERCOLES, "invitado");
+  esOk(r);
+  assertEquals(r.datos.derivar, undefined);
+  assertEquals((r.datos.huecos as { dia: string }[]).length, 1);
+  assertEquals(agenda.pedidos.at(-1)?.hasta, MARTES);
 });
