@@ -571,7 +571,9 @@ async function retomaPorPedidoDeTurno(db: Db, conversacionId: string): Promise<b
     [conversacionId],
   );
   const delEquipo = mensajes.find((m) => m.direccion === "saliente" && m.contenido?.startsWith("[mostrador]"));
-  if (delEquipo && Date.now() - Date.parse(delEquipo.enviado_at) < EQUIPO_ATENDIENDO_MS) return false;
+  // 3/11 (Jesús: «suspendo la visita» 22 minutos después de que el mostrador le escribió, y nadie contestó):
+  // con el equipo atendiendo, Lucía solo entra si el cliente cancela; lo demás lo sigue llevando la persona.
+  const equipoAtendiendo = !!delEquipo && Date.now() - Date.parse(delEquipo.enviado_at) < EQUIPO_ATENDIENDO_MS;
   if (mensajes[0]?.direccion !== "entrante") return false;
   const charla = charlaParaRecontacto(mensajes.reverse());
   let d = null;
@@ -585,7 +587,7 @@ async function retomaPorPedidoDeTurno(db: Db, conversacionId: string): Promise<b
       conversacionId, d.modelo, d.uso.tokensIn, d.uso.tokensOut, costoUsd(d.modelo, d.uso.tokensIn, d.uso.tokensOut, d.uso.tokensCacheados),
     ]).catch((e) => console.error("consumo_llm (retomar)", e));
   }
-  if (!d?.retomar) return false;
+  if (!d?.retomar || (equipoAtendiendo && !d.cancela)) return false;
   await db.consulta("update conversaciones set lucia_activa = true where id = $1::uuid", [conversacionId]);
   await evento(db, conversacionId, "ok", { etapa: "retomar", nota: "Lucía retomó la charla porque el cliente pidió un turno", que_dijo: d.motivo });
   return true;

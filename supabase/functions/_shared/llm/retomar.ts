@@ -6,7 +6,7 @@
 
 import { llamarChat, type Uso } from "./cliente.ts";
 
-export type DecisionRetomar = { retomar: boolean; motivo: string; modelo: string; uso: Uso; ms: number };
+export type DecisionRetomar = { retomar: boolean; cancela: boolean; motivo: string; modelo: string; uso: Uso; ms: number };
 
 const INSTRUCCION =
   "Sos parte de Mr Otto, una casa de alquiler de trajes. Esta charla la está atendiendo una persona del equipo " +
@@ -14,13 +14,14 @@ const INSTRUCCION =
   "es un pedido de turno: sacar uno nuevo (prueba, prueba final, retiro, devolución), cambiarlo de día u hora, " +
   "o cancelarlo. No lo es si contesta otra cosa (una queja, un reclamo, un pago, una pregunta sobre un arreglo, " +
   "un «gracias» o «ok», o confirma un turno que ya tiene). Primero copiá en que_dijo la frase del cliente que " +
-  "decide (o «nada») y después contestá pide_turno.";
+  "decide (o «nada») y después contestá pide_turno. cancela: true solo si ese último mensaje dice que no va a ir " +
+  "o que cancela, suspende o deja sin efecto la visita o el turno (caso Jesús, 3/11: «suspendo la visita»).";
 
 const ESQUEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["que_dijo", "pide_turno"],
-  properties: { que_dijo: { type: "string" }, pide_turno: { type: "boolean" } },
+  required: ["que_dijo", "pide_turno", "cancela"],
+  properties: { que_dijo: { type: "string" }, pide_turno: { type: "boolean" }, cancela: { type: "boolean" } },
 };
 
 export async function decidirRetomar(charla: string, fetcher?: typeof fetch): Promise<DecisionRetomar | null> {
@@ -36,7 +37,7 @@ export async function decidirRetomar(charla: string, fetcher?: typeof fetch): Pr
     fetcher,
   );
   if (!r?.contenido) return null;
-  let j: { pide_turno?: unknown; que_dijo?: unknown };
+  let j: { pide_turno?: unknown; que_dijo?: unknown; cancela?: unknown };
   try {
     j = JSON.parse(r.contenido);
   } catch {
@@ -44,5 +45,5 @@ export async function decidirRetomar(charla: string, fetcher?: typeof fetch): Pr
     return null;
   }
   if (typeof j?.pide_turno !== "boolean") return null;
-  return { retomar: j.pide_turno, motivo: typeof j.que_dijo === "string" ? j.que_dijo.trim() : "", modelo, uso: r.uso, ms: r.ms };
+  return { retomar: j.pide_turno, cancela: j.cancela === true, motivo: typeof j.que_dijo === "string" ? j.que_dijo.trim() : "", modelo, uso: r.uso, ms: r.ms };
 }

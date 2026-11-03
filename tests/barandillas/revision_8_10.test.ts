@@ -178,3 +178,20 @@ Deno.test("eligioElHorario: un «sí» vale si Lucía nombró dos veces el mismo
   const dos = "Tengo el viernes 16 a las 18:15 o el sábado 17 a las 18:15. Cuál preferís?";
   assertEquals((await eligioElHorario(ctx("si", dos), viernes1815)).ok, false);
 });
+
+Deno.test("eligioElHorario: el horario que ya tenía y los de apertura no cuentan como ofertas (Jesús y Agus, 3/11)", async () => {
+  const ctx = (rafaga: string, nuestro: string) =>
+    ({ db: { consulta: () => Promise.resolve([{ rafaga, nuestro }]) }, tz: "America/Argentina/Cordoba", conversacionId: "x" }) as unknown as ContextoHerramienta;
+  // Jesús: movía su turno de las 13:00 a las 11:15 y Lucía nombró las dos horas en su pregunta.
+  const martes1115 = new Date("2026-11-03T11:15:00-03:00");
+  const martes1300 = new Date("2026-11-03T13:00:00-03:00");
+  const jesus = "Dale, te lo paso a las 11:15. Te lo reservo hoy martes 3 de noviembre a las 11:15, en lugar de las 13:00?";
+  assertEquals(await eligioElHorario(ctx("sisi", jesus), martes1115, martes1300), { ok: true });
+  // Agus: Lucía contó los horarios del local antes de preguntar.
+  const sabado1015 = new Date("2026-11-07T10:15:00-03:00");
+  const agus = "Sí, de lunes a viernes también abrimos, de 10:00 a 19:00. Los sábados abrimos de 9:30 a 18:30 y los domingos cerramos. Te reservo el sábado 7 de noviembre a las 10:15?";
+  assertEquals(await eligioElHorario(ctx("Si", agus), sabado1015), { ok: true });
+  // Sigue frenando lo que no es elegir: ofreció dos horarios de verdad y el cliente solo dijo «sí».
+  const dos = "Tengo lugar a las 11:15 o a las 13:00. Cuál te queda mejor?";
+  assertEquals((await eligioElHorario(ctx("si", dos), martes1115)).ok, false);
+});

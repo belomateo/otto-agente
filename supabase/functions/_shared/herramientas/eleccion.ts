@@ -61,7 +61,7 @@ export function horasNombradas(crudo: string): number[] {
   return [...res];
 }
 
-const SI = /\b(?:si+|sip|claro|por supuesto|dale|ok|okay|oka|okey|perfecto|perfecta|listo|bueno|genial|joya|barbaro|excelente|buenisimo|de una|me sirve|me queda|me viene|ese|esa|confirmo|confirmado|reserva\w*|agenda\w*|anotame|va)\b/;
+const SI = /\b(?:(?:si+)+|sip|claro|por supuesto|dale|ok|okay|oka|okey|perfecto|perfecta|listo|bueno|genial|joya|barbaro|excelente|buenisimo|de una|me sirve|me queda|me viene|ese|esa|confirmo|confirmado|reserva\w*|agenda\w*|anotame|va)\b/;
 const ORDINAL = /\b(primer\w*|segund\w*|ultim\w*)\b/;
 // Un reparo no es elegir, aunque nombre el día («pero el lunes», «es feriado», «no puedo»).
 const REPARO = /\b(?:pero|feriado|imposible|no (?:puedo|podemos|puede|llego|me (?:sirve|queda|viene))|complica\w*|complicad\w*)\b/;
@@ -96,6 +96,14 @@ export function ofertasEn(nuestro: string): Oferta[] {
     }
   });
   return res;
+}
+
+// La última oración con «?» del texto (desde el «¿» o desde el punto anterior); "" si no hay.
+export function ultimaPregunta(t: string): string {
+  const fin = t.lastIndexOf("?");
+  if (fin < 0) return "";
+  const ini = Math.max(t.lastIndexOf("¿", fin), t.lastIndexOf(". ", fin), t.lastIndexOf("! ", fin), t.lastIndexOf("? ", fin - 1));
+  return t.slice(ini < 0 ? 0 : ini + 1, fin + 1);
 }
 
 type Ultimos = { rafaga: string; nuestro: string };
@@ -139,9 +147,19 @@ export async function eligioElHorario(ctx: ContextoHerramienta, inicio: Date, ho
   }
   const partes = partesLocales(inicio, ctx.tz);
   const dia = normalizar(nombreDia(partes.diaSemana));
-  const ofertas = ofertasEn(nuestro);
   const esEsta = (o: Oferta) =>
     o.minutos === minutos && (o.dia === null || o.dia === dia) && (o.numero === null || o.numero === partes.dia);
+  // 3/11 (Jesús y Agus): lo que Lucía nombra de paso no es una oferta. Si su pregunta final trae un horario
+  // («Te reservo el sábado 7 a las 10:15?»), solo cuenta ese, no los de apertura del local que dijo antes; y el
+  // horario que el cliente ya tenía («…a las 11:15, en lugar de las 13:00?») tampoco se le ofrece.
+  const pregunta = ultimaPregunta(nuestro);
+  const deLaPregunta = pregunta ? ofertasEn(pregunta) : [];
+  const viejo = horaQueYaTenia ? partesLocales(horaQueYaTenia, ctx.tz) : null;
+  const minViejo = horaQueYaTenia ? aMinutos(horaLocal(horaQueYaTenia, ctx.tz)) : -1;
+  const diaViejo = viejo ? normalizar(nombreDia(viejo.diaSemana)) : null;
+  const esElViejo = (o: Oferta) =>
+    o.minutos === minViejo && (o.dia === null || o.dia === diaViejo) && (o.numero === null || o.numero === viejo?.dia);
+  const ofertas = (deLaPregunta.length ? deLaPregunta : ofertasEn(nuestro)).filter((o) => !esElViejo(o) || esEsta(o));
   if (ofertas.some(esEsta)) {
     if (REPARO.test(n)) {
       return { ok: false, motivo: `El cliente puso un reparo y no eligió ese horario: contestale eso primero. ${preguntale}` };
