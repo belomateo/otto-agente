@@ -12,7 +12,10 @@ import { enlaceDeTipo } from "../_shared/herramientas/enlaces.ts";
 import type { Db } from "../_shared/db.ts";
 import { costoUsd } from "../_shared/llm/precios.ts";
 import { charlaParaRecontacto, decidirRecontacto, type DecisionRecontacto, type MensajeDeLaCharla } from "../_shared/llm/recontacto.ts";
-import { enviarPlantilla } from "../_shared/whatsapp/enviar.ts";
+import { decidirSeguimiento } from "../_shared/llm/seguimiento.ts";
+import { tocaElSeguimiento } from "../_shared/seguimiento/momento.ts";
+import { CLAVE_TEXTO_SEGUIMIENTO, etapaDelSeguimiento, TEXTO_RESPALDO, textoDelSeguimiento } from "../_shared/seguimiento/texto.ts";
+import { enviarPlantilla, enviarTexto } from "../_shared/whatsapp/enviar.ts";
 import { armarPlantilla, esTipoEnvio, NOMBRE_PLANTILLA, primerNombre, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
 import { igualesEnTiempoConstante } from "../_shared/whatsapp/firma.ts";
 import { telefonoParaMeta } from "../_shared/whatsapp/telefono.ts";
@@ -218,6 +221,97 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
   return r;
 }
 
+// Seguimiento de las 23 horas (Mateo, 3/11): a quien mostró interés y dejó de contestar, un texto libre
+// (Meta lo permite dentro de las 24 hs del último mensaje del cliente). La lista y los motivos para
+// no escribir están en seguimiento_candidatos (0111); la hora, en _shared/seguimiento/momento.ts;
+// quién tiene interés, lo decide Claude (llm/seguimiento.ts); el texto, contexto_agente.
+const SEGUIMIENTO = "seguimiento_23h";
+type CandidatoSeguimiento = {
+  referencia: string; cliente_id: string; telefono: string; nombre: string | null;
+  ultimo_cliente: string; busco_horarios: boolean; tiene_fecha: boolean;
+};
+
+async function enviarSeguimientos() {
+  const r = { tipo: SEGUIMIENTO, candidatos: 0, enviados: 0, errores: 0, omitidos: [] as string[], sin_registrar: [] as string[] };
+  const { data, error } = await supabase.rpc("seguimiento_candidatos");
+  if (error) throw new Error(`seguimiento_candidatos: ${error.message}`);
+  const ahora = new Date();
+  const toca = ((data ?? []) as CandidatoSeguimiento[]).filter((c) => tocaElSeguimiento(new Date(c.ultimo_cliente), ahora, TZ));
+  r.candidatos = toca.length;
+
+  for (const c of toca) {
+    const telefono = telefonoParaMeta(c.telefono);
+    if (!telefono) {
+      r.omitidos.push(`${c.referencia}: sin teléfono válido`);
+      continue;
+    }
+    const { data: msgs, error: eM } = await supabase.from("mensajes").select("direccion, contenido, transcripcion")
+      .eq("conversacion_id", c.referencia).order("enviado_at", { ascending: false }).limit(20);
+    if (eM) {
+      r.omitidos.push(`${c.referencia}: no se pudo leer la charla (${eM.message})`);
+      continue;
+    }
+    let d = null;
+    try {
+      d = await decidirSeguimiento(charlaParaRecontacto(((msgs ?? []) as MensajeDeLaCharla[]).reverse()));
+    } catch (e) {
+      console.error("decidirSeguimiento", e);
+    }
+    if (!d) {
+      r.omitidos.push(`${c.referencia}: no se pudo decidir; se reintenta en la próxima corrida`);
+      continue;
+    }
+    const etapa = etapaDelSeguimiento(d, { buscoHorarios: c.busco_horarios, tieneFecha: c.tiene_fecha });
+    // «seguimiento» (sin interés) hace que la charla no se vuelva a mirar hasta que el cliente escriba;
+    // con interés se anota aparte, porque si el envío falla tiene que poder reintentarse.
+    const ev = await supabase.from("eventos_agente").insert({
+      conversacion_id: c.referencia,
+      tipo: "pensamiento",
+      detalle: { etapa: d.interes ? "seguimiento_decision" : "seguimiento", interes: d.interes, texto: d.interes ? etapa : null, motivo: d.motivo },
+    });
+    if (ev.error) console.error("eventos_agente (seguimiento)", ev.error.message);
+    const co = await supabase.from("consumo_llm").insert({
+      conversacion_id: c.referencia,
+      modelo: d.modelo,
+      tokens_in: d.uso.tokensIn,
+      tokens_out: d.uso.tokensOut,
+      costo_usd: costoUsd(d.modelo, d.uso.tokensIn, d.uso.tokensOut, d.uso.tokensCacheados),
+    });
+    if (co.error) console.error("consumo_llm (seguimiento)", co.error.message);
+    if (!d.interes) {
+      r.omitidos.push(`${c.referencia}: sin interés (${d.motivo})`);
+      continue;
+    }
+
+    const { data: fila } = await supabase.from("contexto_agente").select("valor").eq("clave", CLAVE_TEXTO_SEGUIMIENTO[etapa]).maybeSingle();
+    const guardado = typeof fila?.valor === "string" ? fila.valor.trim() : "";
+    const texto = textoDelSeguimiento(guardado || TEXTO_RESPALDO[etapa], c.nombre);
+
+    const { data: id, error: errReserva } = await supabase.rpc("envio_reservar", {
+      p_tipo: SEGUIMIENTO,
+      p_referencia: c.referencia,
+      p_cliente: c.cliente_id,
+      p_plantilla: `texto_${etapa}`,
+    });
+    if (errReserva) throw new Error(`envio_reservar: ${errReserva.message}`);
+    if (!id) continue; // ya salió o lo está mandando otra corrida
+
+    try {
+      const wamid = await enviarTexto(WA, telefono, texto);
+      const registrado = await registrarConReintento(id, wamid, texto);
+      if (registrado) r.enviados++;
+      else {
+        r.sin_registrar.push(c.referencia);
+        console.error("seguimiento: se envió pero no se pudo registrar tras reintentar", id, c.referencia);
+      }
+    } catch (err) {
+      await supabase.rpc("envio_terminar", { p_id: id, p_ok: false, p_wa_message_id: null, p_texto: texto, p_error: String(err) });
+      r.errores++;
+    }
+  }
+  return r;
+}
+
 // Confirmación inmediata al crear un turno desde el panel: usa la plantilla recordatorio_turno
 // (ya aprobada en Meta) con el mismo contenido que el recordatorio de 18h. Se llama desde
 // altaTurno (panel/lib/edicion/turno-alta.ts) en modo fire-and-forget. Si el turno ya tiene
@@ -282,6 +376,15 @@ Deno.serve(async (req) => {
 
   // Confirmación inmediata al crear turno desde el panel (turno-alta.ts)
   if (tipo === "confirmacion_turno") return confirmarTurno(body.turno_id ?? "");
+
+  // Seguimiento de las 23 horas: texto libre, no una plantilla; va aparte del resto de los tipos.
+  if (tipo === SEGUIMIENTO) {
+    if (!ENCENDIDO) return Response.json({ apagado: true, tipos: [tipo] });
+    if (!TZ) return new Response("falta NEGOCIO_TZ", { status: 500 });
+    const resultado = await enviarSeguimientos();
+    console.log(JSON.stringify([resultado]));
+    return Response.json({ resultados: [resultado] });
+  }
 
   const tipos: unknown[] = tipo === "recontacto" ? ["recontacto_1", "recontacto_2"] : [tipo];
   if (!tipos.every(esTipoEnvio)) return new Response("tipo desconocido", { status: 400 });

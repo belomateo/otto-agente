@@ -38,6 +38,10 @@ const LABEL_CONTEXTO: Record<string, string> = {
   texto_mensaje_no_soportado: 'Mensaje no soportado — cuando el cliente manda algo que no puede leer (audio, ubicación…)',
   texto_adjunto_pendiente: 'Adjunto en camino — mientras termina de recibir una foto o un audio',
   texto_turno_confirmado: 'Turno confirmado — lo que dice al agendar',
+  texto_seguimiento_sin_fecha: 'Seguimiento a las 23 h — cuando no dijo para qué fecha es el evento («{nombre}» se reemplaza por su nombre)',
+  texto_seguimiento_con_fecha: 'Seguimiento a las 23 h — cuando ya dijo la fecha y no sacó turno',
+  texto_seguimiento_horarios: 'Seguimiento a las 23 h — cuando Lucía le ofreció horarios y no eligió',
+  texto_seguimiento_consulta: 'Seguimiento a las 23 h — cuando dijo que lo iba a pensar o consultar',
 };
 // El orden en que se editan: presentación y la lista primero (es lo que ve el cliente al
 // arrancar), después cómo habla y los textos fijos. Una clave nueva que no esté acá va al final.
@@ -54,6 +58,10 @@ const ORDEN_CONTEXTO = [
   'texto_derivacion_corporativo',
   'texto_mensaje_no_soportado',
   'texto_adjunto_pendiente',
+  'texto_seguimiento_sin_fecha',
+  'texto_seguimiento_con_fecha',
+  'texto_seguimiento_horarios',
+  'texto_seguimiento_consulta',
 ];
 const posicion = (clave: string) => (ORDEN_CONTEXTO.includes(clave) ? ORDEN_CONTEXTO.indexOf(clave) : ORDEN_CONTEXTO.length);
 
