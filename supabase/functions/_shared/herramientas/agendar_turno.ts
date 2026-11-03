@@ -69,7 +69,7 @@ export const agendarTurno: Herramienta<Args> = {
       type: ["string", "null"],
       maxLength: 200,
       description: "Una línea para el equipo con lo que se sabe de la charla: para quién es, qué evento, qué busca " +
-        "(color, talle, modelo). Ej: «Primera prueba para el novio, casamiento de noche, busca azul, talle 50». Solo datos que dijo el cliente.",
+        "(color, talle, modelo). Ej: «Primera prueba para el novio, casamiento de noche, busca azul, talle 50». Solo datos que dijo el cliente. Si dijo solo el mes o un momento del mes, anotalo: «Evento a principios/mediados/fines de diciembre, día a confirmar».",
     },
   }),
   async ejecutar(args, ctx) {
