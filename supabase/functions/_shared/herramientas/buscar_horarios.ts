@@ -61,7 +61,7 @@ const DIAS_ALTERNATIVOS = 3;
 // Dos personas por turno (Mateo, 2/10): en un turno normal pueden probarse dos. Antes esto decía
 // "doble si vienen dos" y, con un cliente que quería sumar a alguien a su turno, Lucía buscó un
 // doble de hora y media en ese horario, no lo encontró y derivó por dato_no_encontrado.
-// 27/10 (Sofía vía Mateo): al revés otra vez, dos que se prueban son un doble de 90 minutos; sumar a
+// 27/10 (Sofía vía Mateo): al revés otra vez, dos que se prueban son un doble (más largo); sumar a
 // alguien es mover el turno a doble con cambiar_turno.
 export const buscarHorarios: Herramienta<Args> = {
   nombre: "buscar_horarios",
@@ -71,7 +71,7 @@ export const buscarHorarios: Herramienta<Args> = {
     "u hora, y otra vez justo antes de agendar_turno o de mover un turno con cambiar_turno, en el mismo turno. De lo que devuelve " +
     "ofrecé dos, nunca más de tres. Si esos días no tienen lugar, busca sola los más cercanos y los devuelve en " +
     "alternativas. tipo_turno: graduado, novio o invitado según quién se viste. Si se prueban dos personas, doble " +
-    "(90 minutos); si son tres, triple. Un acompañante que no se prueba no cuenta. Para sumar a alguien a un turno que ya " +
+    "(dura el doble); si son tres, triple. Un acompañante que no se prueba no cuenta. Para sumar a alguien a un turno que ya " +
     "tiene, buscá con doble (o triple) a esa misma hora con fecha_hora y movelo con cambiar_turno y el tipo nuevo. prueba_final solo para la prueba del día " +
     "anterior al evento (también para retirar el traje): mandá la fecha del evento y el día y los horarios los pone " +
     "la agenda (el último día abierto antes del evento, en el horario de prueba final); no ofrezcas otro día. Mandá la fecha " +

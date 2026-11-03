@@ -150,8 +150,8 @@ export async function eligioElHorario(ctx: ContextoHerramienta, inicio: Date, ho
   const esEsta = (o: Oferta) =>
     o.minutos === minutos && (o.dia === null || o.dia === dia) && (o.numero === null || o.numero === partes.dia);
   // 3/11 (Jesús y Agus): lo que Lucía nombra de paso no es una oferta. Si su pregunta final trae un horario
-  // («Te reservo el sábado 7 a las 10:15?»), solo cuenta ese, no los de apertura del local que dijo antes; y el
-  // horario que el cliente ya tenía («…a las 11:15, en lugar de las 13:00?») tampoco se le ofrece.
+  // («Te reservo el sábado 7 a las X?»), solo cuenta ese, no los de apertura del local que dijo antes; y el
+  // horario que el cliente ya tenía («…a las X, en lugar de las Y?») tampoco se le ofrece.
   const pregunta = ultimaPregunta(nuestro);
   const deLaPregunta = pregunta ? ofertasEn(pregunta) : [];
   const viejo = horaQueYaTenia ? partesLocales(horaQueYaTenia, ctx.tz) : null;
