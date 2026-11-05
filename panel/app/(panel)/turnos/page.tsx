@@ -569,10 +569,18 @@ function FilaTurnoLista({ t, onAbrir }: { t: FilaTurno; onAbrir: () => void }) {
 // AgendaDelDia.titulo) y sus turnos, o un aviso corto si no hay franjas o no hay turnos.
 function SeccionDia({ dia, onAbrir }: { dia: AgendaDelDia; onAbrir: (id: string) => void }) {
   const turnos = [...dia.turnos].sort((a, b) => inicioMin(a) - inicioMin(b));
-  const vacio = dia.franjas.length === 0 ? 'Este día no se dan turnos' : turnos.length === 0 ? 'Sin turnos' : null;
+  const cerrado = diaCerrado(dia);
+  const vacio = cerrado && turnos.length === 0 ? 'Local cerrado' : dia.franjas.length === 0 ? 'Este día no se dan turnos' : turnos.length === 0 ? 'Sin turnos' : null;
   return (
-    <div className="border-b border-borde-suave py-3.5 last:border-b-0">
-      <div className="mb-2 font-serif text-[16px] font-semibold">{dia.titulo}</div>
+    <div className={`border-b border-borde-suave py-3.5 last:border-b-0 ${cerrado ? '-mx-2 rounded-otto bg-feriado-suave px-2' : ''}`}>
+      <div className="mb-2 flex flex-wrap items-center gap-2 font-serif text-[16px] font-semibold">
+        <span>{dia.titulo}</span>
+        {cerrado && (
+          <span className="rounded-pill border border-feriado-borde bg-lino px-2.5 py-0.5 font-sans text-[13px] font-medium text-feriado">
+            {marcaCerrado(cerrado.motivo).etiqueta}
+          </span>
+        )}
+      </div>
       {vacio ? (
         <div className="text-[14px] text-grafito">{vacio}</div>
       ) : (
@@ -664,12 +672,17 @@ function VistaSemana({
 // una marca chica. Mismo criterio que la vista del día (estadoFeriado, FeriadoDelDia.tsx): un
 // cierre manda sobre lo que diga el feriado, como para Lucía.
 type MarcaDia = { caja: string; etiqueta: string; color: string; titulo: string };
+// 5/11 (Mateo): un día cerrado es un feriado y se pinta en amarillo clarito, con la palabra «Feriado»
+// (o el motivo que se cargó), igual en la vista del día, la semana y el mes.
 const marcaCerrado = (motivo: string | null): MarcaDia => ({
-  caja: 'border-ladrillo/30 bg-ladrillo-suave',
-  etiqueta: motivo || 'Cerrado',
-  color: 'text-ladrillo',
-  titulo: `Cerrado${motivo ? ` · ${motivo}` : ''}`,
+  caja: 'border-feriado-borde bg-feriado-suave',
+  etiqueta: motivo || 'Feriado',
+  color: 'text-feriado',
+  titulo: `Local cerrado · ${motivo || 'Feriado'}`,
 });
+// ¿El día está cerrado? Un cierre manda sobre lo que diga el feriado (como para Lucía).
+const diaCerrado = (d: { cierre: { motivo: string | null } | null; feriado: FeriadoAgenda | null }): { motivo: string | null } | null =>
+  d.cierre ? d.cierre : d.feriado && estadoFeriado(d.feriado, d.cierre) === 'cerrado' ? { motivo: `Feriado · ${d.feriado.nombre}` } : null;
 function marcaDelDia(d: DiaMes | null): MarcaDia | null {
   if (!d) return null;
   if (!d.feriado) return d.cierre ? marcaCerrado(d.cierre.motivo) : null;
@@ -821,9 +834,10 @@ export default function TurnosPage() {
   // Posible feriado (0098): mismo estado que el cartel de FeriadoDelDia, para que el resumen no
   // diga «Turnos de…» de un día que Lucía no ofrece.
   const estadoDelFeriado = agenda.feriado ? estadoFeriado(agenda.feriado, agenda.cierre) : null;
+  const cerradoHoy = diaCerrado(agenda) !== null;
   const resumen =
     agenda.cierre || estadoDelFeriado === 'cerrado'
-      ? 'Día cerrado'
+      ? 'Feriado · local cerrado'
       : estadoDelFeriado === 'posible'
         ? 'Posible feriado'
         : agenda.franjas.length
@@ -866,8 +880,12 @@ export default function TurnosPage() {
         {cartelDelDia}
 
         {vacio ? (
-          <div className="rounded-otto border border-borde bg-lino">
+          <div className={`rounded-otto border ${cerradoHoy ? 'border-feriado-borde bg-feriado-suave' : 'border-borde bg-lino'}`}>
             <EstadoVacio titulo={vacio.titulo} texto={vacio.texto} />
+          </div>
+        ) : cerradoHoy ? (
+          <div className="flex flex-1 flex-col rounded-otto border border-feriado-borde bg-feriado-suave p-2">
+            <Grilla agenda={agenda} abiertoId={abiertoId} onAbrir={setAbiertoId} onCambio={recargar} />
           </div>
         ) : (
           <Grilla agenda={agenda} abiertoId={abiertoId} onAbrir={setAbiertoId} onCambio={recargar} />
@@ -902,11 +920,11 @@ export default function TurnosPage() {
         </div>
 
         {vacio ? (
-          <div className="mx-4 rounded-otto border border-borde bg-lino">
+          <div className={`mx-4 rounded-otto border ${cerradoHoy ? 'border-feriado-borde bg-feriado-suave' : 'border-borde bg-lino'}`}>
             <EstadoVacio titulo={vacio.titulo} texto={vacio.texto} />
           </div>
         ) : (
-          <div className="flex flex-1 flex-col gap-2.5 px-4 pb-4">
+          <div className={`flex flex-1 flex-col gap-2.5 px-4 pb-4 ${cerradoHoy ? 'bg-feriado-suave pt-3' : ''}`}>
             {turnos.map((t) => (
               <FilaTurnoLista key={t.id} t={t} onAbrir={() => setAbiertoId(t.id)} />
             ))}

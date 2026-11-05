@@ -22,6 +22,8 @@ module.exports = {
         salvia: { DEFAULT: '#5E7F62', suave: '#E7EFE7' },
         ambar: { DEFAULT: '#B8862B', suave: '#F7EFDD' },
         ladrillo: { DEFAULT: '#A6473A', suave: '#F6E3DF' },
+        // 5/11 (Mateo): el día de feriado / cerrado se ve en amarillo clarito en día, semana y mes.
+        feriado: { DEFAULT: '#7A6200', suave: '#FCF6D2', borde: '#E8DA8C' },
       },
       fontFamily: {
         serif: ['var(--font-fraunces)', 'Cormorant Garamond', 'serif'],

@@ -64,12 +64,12 @@ export function CierreDelDia({ fecha, cierre, onCambio }: { fecha: string; cierr
 
   if (cierre) {
     return (
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-otto border border-ladrillo/30 bg-ladrillo-suave px-3 py-2 text-[14px] text-ladrillo md:text-[13px]">
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-otto border border-feriado-borde bg-feriado-suave px-3 py-2 text-[14px] text-feriado md:text-[13px]">
         <span className="flex-1 font-medium">
-          Cerrado{cierre.motivo ? ` · ${cierre.motivo}` : ''}. Lucía no ofrece turnos este día y avisa que el local no abre.
+          Local cerrado · {cierre.motivo || 'Feriado'}. Lucía no ofrece turnos este día y avisa que el local no abre.
         </span>
         {esAdmin && (
-          <button type="button" onClick={reabrir} disabled={enviando} className="flex-none rounded-otto border border-ladrillo/40 bg-lino px-3 py-1.5 font-medium text-ladrillo disabled:opacity-50">
+          <button type="button" onClick={reabrir} disabled={enviando} className="flex-none rounded-otto border border-feriado-borde bg-lino px-3 py-1.5 font-medium text-feriado disabled:opacity-50">
             {enviando ? 'Abriendo…' : 'Quitar el cierre'}
           </button>
         )}

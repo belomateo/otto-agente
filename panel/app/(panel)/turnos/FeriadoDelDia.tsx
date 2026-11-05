@@ -34,13 +34,13 @@ export function estadoFeriado(feriado: FeriadoAgenda, cierre: Cierre | undefined
 const CAJA: Record<EstadoFeriado, string> = {
   posible: 'border-ambar/40 bg-ambar-suave text-ambar',
   abre: 'border-borde bg-lino text-grafito',
-  cerrado: 'border-ladrillo/30 bg-ladrillo-suave text-ladrillo',
+  cerrado: 'border-feriado-borde bg-feriado-suave text-feriado',
 };
 const FOCO = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cobre';
 const BOTON = `flex-none rounded-otto border bg-lino px-3 py-1.5 font-medium disabled:opacity-50 ${FOCO}`;
 const BOTON_ABRIR = `${BOTON} border-borde text-tinta`;
 // En la caja del cerrado, el de abrir va como «Quitar el cierre» de CierreDelDia.
-const BOTON_LADRILLO = `${BOTON} border-ladrillo/40 text-ladrillo`;
+const BOTON_LADRILLO = `${BOTON} border-feriado-borde text-feriado`;
 
 // Qué se está guardando: el botón que se tocó es el que dice «Guardando…».
 type Accion = 'abrir' | 'cerrar' | 'cerrar-igual';
@@ -77,7 +77,7 @@ export function FeriadoDelDia({ fecha, feriado, cierre, onCambio }: { fecha: str
       ? `Posible feriado · ${feriado.nombre}. Lucía no ofrece turnos este día.`
       : estado === 'abre'
         ? `Feriado · ${feriado.nombre}: el local abre. Lucía ofrece turnos como un día normal.`
-        : `Cerrado · Feriado · ${feriado.nombre}. Lucía no ofrece turnos y avisa que el local no abre.`;
+        : `Local cerrado · Feriado · ${feriado.nombre}. Lucía no ofrece turnos y avisa que el local no abre.`;
   const ocupado = enviando !== null;
 
   return (
