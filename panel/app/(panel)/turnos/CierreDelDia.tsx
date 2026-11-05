@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { enviar, ErrorApi } from '@/components/api/cliente';
 import { useUsuario } from '@/components/nav/UsuarioContext';
+import { fechaEnZona } from '@/lib/formato';
 
 type Cierre = { motivo: string | null } | null;
 
@@ -20,14 +21,21 @@ export function CierreDelDia({ fecha, cierre, onCambio }: { fecha: string; cierr
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [turnosAfectados, setTurnosAfectados] = useState<number | null>(null);
+  // 5/11 (Mateo): el feriado se elige desde acá, de hoy en adelante. Sin elegir, es el día que se mira.
+  const [elegida, setElegida] = useState<string | null>(null);
+  const [cerradoAhora, setCerradoAhora] = useState<string | null>(null);
+  const hoy = fechaEnZona();
+  const fechaACerrar = elegida && elegida >= hoy ? elegida : fecha >= hoy ? fecha : hoy;
 
   async function cerrar(confirmar: boolean) {
     setEnviando(true);
     setError(null);
     try {
-      await enviar('/api/configuracion/cierres', 'POST', { fecha, motivo: motivo.trim() || null, confirmar });
+      await enviar('/api/configuracion/cierres', 'POST', { fecha: fechaACerrar, motivo: motivo.trim() || null, confirmar });
       setAbierto(false);
       setTurnosAfectados(null);
+      setElegida(null);
+      setCerradoAhora(fechaACerrar);
       onCambio();
     } catch (e) {
       if (e instanceof ErrorApi && e.status === 409) {
@@ -74,10 +82,18 @@ export function CierreDelDia({ fecha, cierre, onCambio }: { fecha: string; cierr
 
   if (!abierto) {
     return (
-      <div className="mb-3">
-        <button type="button" onClick={() => setAbierto(true)} className="text-[14px] text-tinta underline-offset-2 hover:underline md:text-[13px]">
-          Marcar feriado / cerrar este día
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            setCerradoAhora(null);
+            setAbierto(true);
+          }}
+          className="text-[14px] text-tinta underline-offset-2 hover:underline md:text-[13px]"
+        >
+          Marcar feriado / cerrar un día
         </button>
+        {cerradoAhora && <span className="text-[13px] text-grafito">Listo: quedó cerrado el {cerradoAhora.split('-').reverse().join('/')}.</span>}
       </div>
     );
   }
@@ -85,6 +101,20 @@ export function CierreDelDia({ fecha, cierre, onCambio }: { fecha: string; cierr
   return (
     <div className="mb-3 flex flex-col gap-2 rounded-otto border border-borde bg-lino px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-2 text-[14px]">
+        <label htmlFor={`fecha-cierre-${fecha}`} className="text-grafito md:text-[13px]">
+          Día
+        </label>
+        <input
+          id={`fecha-cierre-${fecha}`}
+          type="date"
+          value={fechaACerrar}
+          min={fechaEnZona()}
+          onChange={(e) => {
+            setElegida(e.target.value);
+            setTurnosAfectados(null);
+          }}
+          className="rounded-otto border border-borde px-3 py-2 text-[14px] outline-none focus:border-cobre"
+        />
         <label htmlFor={`motivo-cierre-${fecha}`} className="text-grafito md:text-[13px]">
           Motivo
         </label>
@@ -103,6 +133,7 @@ export function CierreDelDia({ fecha, cierre, onCambio }: { fecha: string; cierr
           onClick={() => {
             setAbierto(false);
             setTurnosAfectados(null);
+            setElegida(null);
             setError(null);
           }}
           className="text-[14px] text-grafito underline-offset-2 hover:underline md:text-[13px]"

@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { requerirSesion } from '@/lib/api/sesion';
 import { desdeErrorDeBase, error, json } from '@/lib/api/respuestas';
 import { leerCuerpo } from '@/lib/api/validar';
-import { esFecha } from '@/lib/formato';
+import { esFecha, fechaEnZona } from '@/lib/formato';
 import { crearCierre, listarCierres } from '@/lib/queries/cierres';
 
 const esquema = z.strictObject({
@@ -34,6 +34,8 @@ export async function POST(request: Request) {
   if (s instanceof Response) return s;
   const cuerpo = await leerCuerpo(request, esquema);
   if (cuerpo instanceof Response) return cuerpo;
+  // 5/11 (Mateo): un feriado se carga de hoy en adelante; cerrar un día que ya pasó no tiene efecto.
+  if (cuerpo.fecha < fechaEnZona()) return error(400, 'Esa fecha ya pasó: elegí hoy o un día que viene');
 
   try {
     const r = await crearCierre(s, cuerpo.fecha, cuerpo.motivo ?? null, cuerpo.confirmar === true);

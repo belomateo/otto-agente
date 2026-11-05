@@ -21,7 +21,7 @@ import { useEdicion } from '@/components/api/useEdicion';
 import { useToastLocal } from '@/components/ui-otto/useToastLocal';
 import { AccionesEdicion, CAMPO, ETIQUETA, TARJETA } from '../AccionesEdicion';
 import { useConfiguracion } from '../ConfiguracionContexto';
-import { fechaLarga } from '@/lib/formato';
+import { fechaEnZona, fechaLarga } from '@/lib/formato';
 import type { Configuracion } from '@/lib/queries/configuracion';
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -436,6 +436,7 @@ function NuevoCierre({ onCreado }: { onCreado: () => void }) {
         <input
           type="date"
           value={fecha}
+          min={fechaEnZona()}
           onChange={(e) => {
             setFecha(e.target.value);
             setTurnosAfectados(null);

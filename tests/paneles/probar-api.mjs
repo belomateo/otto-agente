@@ -1383,6 +1383,9 @@ try {
     const malaFecha = await api(sa, "POST", "/api/configuracion/cierres", { fecha: "31-03-2031" });
     ok(malaFecha.status === 400, `fecha mal formada → 400 (${malaFecha.status})`);
 
+    const fechaPasada = await api(sa, "POST", "/api/configuracion/cierres", { fecha: "2020-01-06" });
+    ok(fechaPasada.status === 400, `una fecha que ya pasó → 400: el feriado se carga de hoy en adelante (${fechaPasada.status})`);
+
     const FECHA_SIN_TURNOS = "2031-03-15";
     const alta = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_SIN_TURNOS, motivo: "Feriado de prueba" });
     ok(alta.status === 201 && alta.datos.cierre?.fecha === FECHA_SIN_TURNOS && alta.datos.cierre?.motivo === "Feriado de prueba", `admin cierra una fecha sin turnos (${alta.status})`);
