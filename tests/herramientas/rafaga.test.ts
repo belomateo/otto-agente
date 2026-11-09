@@ -10,6 +10,12 @@ import { agruparRafaga, MAXIMO_ADJUNTOS_LEGIBLES_POR_RAFAGA, MAXIMO_CARACTERES_R
 import type { AccesoStorage } from "../../supabase/functions/_shared/whatsapp/medios.ts";
 import { AHORA, prueba } from "./_arnes.ts";
 
+// Desde el 21/10 (rafaga.ts), sin LLM_TRANSCRIPCION el audio ni se baja ni se transcribe y Lucía avisa que
+// no puede escucharlo (esa rama la prueba tests/subagentes/transcriptor.test.ts). Las pruebas de acá son
+// del camino con transcripción prendida; el fetcher es simulado, así que la clave no sale a ninguna parte.
+if (!Deno.env.get("LLM_TRANSCRIPCION")) Deno.env.set("LLM_TRANSCRIPCION", "gpt-4o-mini-transcribe");
+if (!Deno.env.get("OPENAI_API_KEY")) Deno.env.set("OPENAI_API_KEY", "clave-de-prueba-simulada");
+
 async function insertar(
   sql: import("npm:pg@8.13.1").Client,
   conversacionId: string,
