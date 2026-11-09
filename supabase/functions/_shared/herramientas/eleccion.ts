@@ -106,12 +106,23 @@ export function ultimaPregunta(t: string): string {
   return t.slice(ini < 0 ? 0 : ini + 1, fin + 1);
 }
 
-type Ultimos = { rafaga: string; nuestro: string };
+// «hoy», «mañana» y «pasado mañana» dichos desde `base`, pasados al nombre del día (9/11: «Ok hoy»,
+// «Hoy !» eran elegir y se frenaban). «por la mañana» es la franja, y «hoy martes» ya trae su día.
+export function diasRelativos(texto: string, base: Date, tz: string): string {
+  const dia = (n: number) => nombreDia(partesLocales(new Date(base.getTime() + n * 86_400_000), tz).diaSemana);
+  const sinDia = `(?!\\s+(?:${DIAS.replace("miercoles", "mi[eé]rcoles").replace("sabado", "s[aá]bado")})(?![\\p{L}]))`;
+  return texto
+    .replace(new RegExp(`\\bpasado\\s+ma[ñn]ana\\b${sinDia}`, "giu"), dia(2))
+    .replace(new RegExp(`(?<!\\b(?:la|esta)\\s)\\bma[ñn]ana\\b${sinDia}`, "giu"), dia(1))
+    .replace(new RegExp(`\\bhoy\\b${sinDia}`, "giu"), dia(0));
+}
+
+type Ultimos = { rafaga: string; nuestro: string; nuestroAt: Date | null };
 
 // La ráfaga del cliente (todo lo entrante desde la última respuesta) y lo último que le dijimos
 // (los mensajes salientes entre su mensaje anterior y esa respuesta).
 async function leerUltimos(ctx: ContextoHerramienta): Promise<Ultimos> {
-  const [f] = await ctx.db.consulta<{ rafaga: string | null; nuestro: string | null }>(
+  const [f] = await ctx.db.consulta<{ rafaga: string | null; nuestro: string | null; nuestro_at: string | Date | null }>(
     `with ult_sal as (select max(enviado_at) as t from mensajes where conversacion_id = $1::uuid and direccion = 'saliente'),
           ent_prev as (select max(enviado_at) as t from mensajes where conversacion_id = $1::uuid and direccion = 'entrante'
                         and enviado_at < coalesce((select t from ult_sal), '-infinity'::timestamptz))
@@ -122,19 +133,23 @@ async function leerUltimos(ctx: ContextoHerramienta): Promise<Ultimos> {
        (select string_agg(contenido, ' ' order by enviado_at) from mensajes
          where conversacion_id = $1::uuid and direccion = 'saliente'
            and enviado_at > coalesce((select t from ent_prev), '-infinity'::timestamptz)
-           and enviado_at <= coalesce((select t from ult_sal), '-infinity'::timestamptz)) as nuestro`,
+           and enviado_at <= coalesce((select t from ult_sal), '-infinity'::timestamptz)) as nuestro,
+       (select t from ult_sal) as nuestro_at`,
     [ctx.conversacionId],
   );
-  return { rafaga: f?.rafaga ?? "", nuestro: f?.nuestro ?? "" };
+  return { rafaga: f?.rafaga ?? "", nuestro: f?.nuestro ?? "", nuestroAt: f?.nuestro_at ? new Date(f.nuestro_at) : null };
 }
 
 export type Eleccion = { ok: true } | { ok: false; motivo: string };
 
 export async function eligioElHorario(ctx: ContextoHerramienta, inicio: Date, horaQueYaTenia?: Date): Promise<Eleccion> {
-  const { rafaga, nuestro } = await leerUltimos(ctx);
+  const ult = await leerUltimos(ctx);
+  const { rafaga } = ult;
   if (!rafaga.trim()) return { ok: true }; // sin ráfaga no hay con qué comparar: no se frena
+  // «hoy/mañana» del cliente cuentan desde ahora; los de Lucía, desde cuando ella los escribió.
+  const nuestro = ctx.ahora ? diasRelativos(ult.nuestro, ult.nuestroAt ?? ctx.ahora, ctx.tz) : ult.nuestro;
   const minutos = aMinutos(horaLocal(inicio, ctx.tz));
-  const n = normalizar(rafaga);
+  const n = normalizar(ctx.ahora ? diasRelativos(rafaga, ctx.ahora, ctx.tz) : rafaga);
   const cuando = `${fechaLarga(inicio, ctx.tz)} a las ${horaLocal(inicio, ctx.tz)}`;
   const preguntale = `No reserves todavía: preguntale si confirma, por ejemplo «¿Te reservo el ${cuando}?».`;
 
@@ -171,8 +186,6 @@ export async function eligioElHorario(ctx: ContextoHerramienta, inicio: Date, ho
     if (SI.test(n) || nombraElDia || ordinal) {
       // Una sola oferta, o la misma nombrada dos veces («mañana a esa hora hay lugar. ¿Te reservo el viernes
       // 16 a esa hora?», ensayo con Claude del 21/10: el «sí» se rechazaba cuatro veces seguidas).
-      // shortcut: «hoy/mañana» no se traducen a un día, así que «mañana o el viernes, a la misma hora» (días
-      // distintos) también pasa con un «sí»; si aparece en una charla, resolver hoy/mañana en ofertasEn.
       if (ofertas.every(esEsta)) return { ok: true };
       // El día elige solo si ese día le ofrecimos un horario solo.
       const deEseDia = ofertas.filter((o) =>

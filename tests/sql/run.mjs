@@ -381,6 +381,14 @@ async function testColaPorCharla() {
       n === 1 && estados["es para un casamiento"] === "hecho" && estados["Confirmo"] === "pendiente" && estados["y cuanto sale?"] === "pendiente",
       `cola_absorber: se lleva el otro texto de la ráfaga; no el botón ni el mensaje que llegó después (${JSON.stringify(estados)})`
     );
+    // 0113 (Mariela, 8/11): un mensaje con hora de Meta anterior al turno pero cuyo trabajo entró
+    // a la cola después de que el turno arrancó no se absorbe: el turno no lo leyó.
+    const tarde = (await trabajos()).find((t) => t.contenido === "y cuanto sale?");
+    await client.query("update mensajes set enviado_at = now() - interval '1 second' where id = (select (payload->>'mensaje_id')::uuid from cola_trabajos where id = $1)", [tarde.id]);
+    await client.query("update cola_trabajos set creado_at = now() + interval '1 minute' where id = $1", [tarde.id]);
+    const n2 = (await client.query("select cola_absorber($1, now()) as n", [primero.id])).rows[0].n;
+    const estados2 = Object.fromEntries((await trabajos()).map((t) => [t.contenido, t.estado]));
+    assert(n2 === 0 && estados2["y cuanto sale?"] === "pendiente", `cola_absorber: no absorbe un trabajo creado después del arranque del turno (${JSON.stringify(estados2)})`);
     const [texto] = (await client.query("select count(*)::int as n from mensajes where tipo = 'text'")).rows;
     assert(texto.n === 0, "no queda ningún mensaje con el tipo de Meta ('text'): la base dice 'texto'");
   } finally {

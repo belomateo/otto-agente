@@ -179,6 +179,30 @@ Deno.test("eligioElHorario: un «sí» vale si Lucía nombró dos veces el mismo
   assertEquals((await eligioElHorario(ctx("si", dos), viernes1815)).ok, false);
 });
 
+Deno.test("eligioElHorario: «hoy» y «mañana» cuentan como nombrar el día (9/11: «Ok hoy», «Hoy !»)", async () => {
+  const lunes = new Date("2026-11-09T10:00:00-03:00");
+  const ctx = (rafaga: string, nuestro: string, nuestroAt: Date | null = lunes) =>
+    ({
+      db: { consulta: () => Promise.resolve([{ rafaga, nuestro, nuestro_at: nuestroAt }]) },
+      tz: "America/Argentina/Cordoba", conversacionId: "x", ahora: lunes,
+    }) as unknown as ContextoHerramienta;
+  const hoy1430 = new Date("2026-11-09T14:30:00-03:00");
+  const man1100 = new Date("2026-11-10T11:00:00-03:00");
+  const dos = "Tengo hoy a las 14:30 o mañana a las 11:00. Cuál te queda mejor?";
+  assertEquals(await eligioElHorario(ctx("Ok hoy", dos), hoy1430), { ok: true });
+  assertEquals(await eligioElHorario(ctx("Hoy !", dos), hoy1430), { ok: true });
+  assertEquals(await eligioElHorario(ctx("mañana mejor", dos), man1100), { ok: true });
+  // el otro día no queda elegido por nombrar el primero
+  assertEquals((await eligioElHorario(ctx("Ok hoy", dos), man1100)).ok, false);
+  // «por la mañana» es la franja, no el día; y un «sí» solo sigue sin alcanzar con dos horarios
+  assertEquals((await eligioElHorario(ctx("si, por la mañana", dos), man1100)).ok, false);
+  assertEquals((await eligioElHorario(ctx("si", dos), hoy1430)).ok, false);
+  // Lucía escribió «mañana» ayer (domingo): ese mañana es el lunes, no el martes.
+  const ayer = new Date("2026-11-08T10:00:00-03:00");
+  const deAyer = "Tengo mañana a las 14:30 o el martes a las 11:00. Cuál te queda mejor?";
+  assertEquals(await eligioElHorario(ctx("el lunes", deAyer, ayer), hoy1430), { ok: true });
+});
+
 Deno.test("eligioElHorario: el horario que ya tenía y los de apertura no cuentan como ofertas (Jesús y Agus, 3/11)", async () => {
   const ctx = (rafaga: string, nuestro: string) =>
     ({ db: { consulta: () => Promise.resolve([{ rafaga, nuestro }]) }, tz: "America/Argentina/Cordoba", conversacionId: "x" }) as unknown as ContextoHerramienta;
