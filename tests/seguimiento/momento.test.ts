@@ -1,7 +1,7 @@
 // Seguimiento de 23 horas (Mateo, 3/11): cuándo sale y qué texto lleva. Sin base: son funciones puras.
 import { assertEquals } from "jsr:@std/assert@1.0.13";
 import { momentoDelSeguimiento, tocaElSeguimiento } from "../../supabase/functions/_shared/seguimiento/momento.ts";
-import { etapaDelSeguimiento, textoDelSeguimiento } from "../../supabase/functions/_shared/seguimiento/texto.ts";
+import { etapaDelSeguimiento, fraseDelEvento, textoDelSeguimiento } from "../../supabase/functions/_shared/seguimiento/texto.ts";
 
 const TZ = "America/Argentina/Cordoba";
 const ar = (s: string) => new Date(`${s}-03:00`);
@@ -45,4 +45,15 @@ Deno.test("seguimiento: la etapa sale de lo que sabe la base, no solo del modelo
 Deno.test("seguimiento: el nombre entra en el saludo, y sin nombre queda «Hola!»", () => {
   assertEquals(textoDelSeguimiento("Hola {nombre}! Pudiste pensarlo?", "nico perez"), "Hola Nico! Pudiste pensarlo?");
   assertEquals(textoDelSeguimiento("Hola {nombre}! Pudiste pensarlo?", null), "Hola! Pudiste pensarlo?");
+});
+
+Deno.test("seguimiento: «{evento}» nombra la fecha de la ficha si no pasó, y se saca sin ella (10/11)", () => {
+  const ahora = ar("2030-06-11T12:00:00");
+  assertEquals(fraseDelEvento("2030-12-14", ahora, TZ), "Tu evento es el sábado 14 de diciembre.");
+  assertEquals(fraseDelEvento("2030-06-11", ahora, TZ), "Tu evento es el martes 11 de junio."); // hoy todavía cuenta
+  assertEquals(fraseDelEvento("2030-06-10", ahora, TZ), null); // ya pasó
+  assertEquals(fraseDelEvento(null, ahora, TZ), null);
+  const plantilla = "Hola {nombre}! Te sirvió alguno? {evento} Si no, decime qué días te quedan bien.";
+  assertEquals(textoDelSeguimiento(plantilla, "nico", "Tu evento es el sábado 14 de diciembre."), "Hola Nico! Te sirvió alguno? Tu evento es el sábado 14 de diciembre. Si no, decime qué días te quedan bien.");
+  assertEquals(textoDelSeguimiento(plantilla, "nico", null), "Hola Nico! Te sirvió alguno? Si no, decime qué días te quedan bien.");
 });

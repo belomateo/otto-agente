@@ -15,7 +15,10 @@ Deno.test({
     conBase(async (sql) => {
       await sql.query("begin");
       try {
+        // 0114 le cambia las columnas a seguimiento_candidatos: la base ya la tiene así, y 0111 no puede reemplazarla.
+        await sql.query("drop function if exists public.seguimiento_candidatos(timestamptz)");
         await sql.query(await Deno.readTextFile(new URL("../../supabase/migrations/0111_seguimiento_23h.sql", import.meta.url)));
+        await sql.query(await Deno.readTextFile(new URL("../../supabase/migrations/0114_seguimiento_sin_doble_aviso.sql", import.meta.url)));
         let n = 0;
         const charla = async (nombre: string, o: {
           entrante?: Date; luciaActiva?: boolean; ultimo?: "lucia" | "mostrador" | "demora"; turnoPorVenir?: boolean; canal?: string;
@@ -61,8 +64,17 @@ Deno.test({
         // Con la fecha en la ficha y horarios buscados, la lista lo informa (el texto sale de eso).
         await sql.query("update clientes set fecha_evento = '2030-12-01' where id = $1", [normal.cli]);
         await sql.query("insert into eventos_agente (conversacion_id, tipo, detalle) values ($1, 'herramienta', '{\"herramienta\":\"buscar_horarios\",\"ok\":true}')", [normal.conv]);
-        const fila = (await sql.query("select busco_horarios, tiene_fecha from seguimiento_candidatos($1) where referencia = $2", [AHORA.toISOString(), normal.conv])).rows[0];
-        assertEquals([fila.busco_horarios, fila.tiene_fecha], [true, true]);
+        const fila = (await sql.query("select busco_horarios, tiene_fecha, fecha_evento::text as fecha from seguimiento_candidatos($1) where referencia = $2", [AHORA.toISOString(), normal.conv])).rows[0];
+        assertEquals([fila.busco_horarios, fila.tiene_fecha, fila.fecha], [true, true, "2030-12-01"]);
+
+        // 10/11: sin doble aviso. Si el recontacto ya salió después del último mensaje del cliente, no hay seguimiento.
+        const conRecontacto = await charla("ConRecontacto");
+        await sql.query("insert into envios_programados (tipo, referencia, cliente_id, plantilla, estado, enviado_at) values ('recontacto_1', $1, $2, 'recontacto_1', 'enviado', $3)", [conRecontacto.conv, conRecontacto.cli, horas(1).toISOString()]);
+        assert(!(await candidatos()).has(conRecontacto.conv), "un recontacto ya enviado saca la charla de la lista");
+        // …pero uno de antes del último mensaje del cliente no cuenta.
+        const viejo = await charla("RecontactoViejo");
+        await sql.query("insert into envios_programados (tipo, referencia, cliente_id, plantilla, estado, enviado_at) values ('recontacto_1', $1, $2, 'recontacto_1', 'enviado', $3)", [viejo.conv, viejo.cli, horas(60).toISOString()]);
+        assert((await candidatos()).has(viejo.conv), "un recontacto anterior a su último mensaje no impide el seguimiento");
 
         // Convivencia con el recontacto: el cliente escribió ayer; si el seguimiento ya salió, no sale el primero.
         const ayer = new Date(AHORA.getTime() - 26 * 3600 * 1000);

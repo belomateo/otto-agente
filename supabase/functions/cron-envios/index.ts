@@ -14,7 +14,7 @@ import { costoUsd } from "../_shared/llm/precios.ts";
 import { charlaParaRecontacto, decidirRecontacto, type DecisionRecontacto, type MensajeDeLaCharla } from "../_shared/llm/recontacto.ts";
 import { decidirSeguimiento } from "../_shared/llm/seguimiento.ts";
 import { tocaElSeguimiento } from "../_shared/seguimiento/momento.ts";
-import { CLAVE_TEXTO_SEGUIMIENTO, etapaDelSeguimiento, TEXTO_RESPALDO, textoDelSeguimiento } from "../_shared/seguimiento/texto.ts";
+import { CLAVE_TEXTO_SEGUIMIENTO, etapaDelSeguimiento, fraseDelEvento, TEXTO_RESPALDO, textoDelSeguimiento } from "../_shared/seguimiento/texto.ts";
 import { enviarPlantilla, enviarTexto } from "../_shared/whatsapp/enviar.ts";
 import { armarPlantilla, esTipoEnvio, NOMBRE_PLANTILLA, primerNombre, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
 import { igualesEnTiempoConstante } from "../_shared/whatsapp/firma.ts";
@@ -228,7 +228,7 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
 const SEGUIMIENTO = "seguimiento_23h";
 type CandidatoSeguimiento = {
   referencia: string; cliente_id: string; telefono: string; nombre: string | null;
-  ultimo_cliente: string; busco_horarios: boolean; tiene_fecha: boolean;
+  ultimo_cliente: string; busco_horarios: boolean; tiene_fecha: boolean; fecha_evento: string | null;
 };
 
 async function enviarSeguimientos() {
@@ -285,7 +285,7 @@ async function enviarSeguimientos() {
 
     const { data: fila } = await supabase.from("contexto_agente").select("valor").eq("clave", CLAVE_TEXTO_SEGUIMIENTO[etapa]).maybeSingle();
     const guardado = typeof fila?.valor === "string" ? fila.valor.trim() : "";
-    const texto = textoDelSeguimiento(guardado || TEXTO_RESPALDO[etapa], c.nombre);
+    const texto = textoDelSeguimiento(guardado || TEXTO_RESPALDO[etapa], c.nombre, fraseDelEvento(c.fecha_evento, ahora, TZ));
 
     const { data: id, error: errReserva } = await supabase.rpc("envio_reservar", {
       p_tipo: SEGUIMIENTO,
