@@ -43,6 +43,39 @@ export const NOMBRE_PLANTILLA: Record<TipoEnvio, string> = {
 };
 export const IDIOMA_PLANTILLAS = "es_AR";
 
+// Versiones nuevas (11/11, Sofía vía Mateo): se registran en Meta con OTRO nombre, porque el de una plantilla no
+// se cambia y editar la aprobada la deja fuera de servicio mientras la revisan. cron-envios usa la nueva apenas
+// Meta la aprueba y, hasta entonces, la de siempre. El texto tiene que ser EXACTAMENTE el registrado.
+export const NOMBRE_PLANTILLA_NUEVA = {
+  recordatorio_18h: "recordatorio_turno_2",
+  agradecimiento_resena: "resena_evento",
+} as const;
+export type TipoConVersionNueva = keyof typeof NOMBRE_PLANTILLA_NUEVA;
+export const tieneVersionNueva = (t: TipoEnvio): t is TipoConVersionNueva => t in NOMBRE_PLANTILLA_NUEVA;
+
+// UTILITY, es_AR. {{1}} = nombre, {{2}} = «Viernes 14 de Noviembre», {{3}} = «15.00hs». Pide que contesten si
+// vienen o no; la respuesta la lee Lucía y confirma o reprograma (cambiar_turno).
+export const TEXTO_RECORDATORIO_2 = "Hola {{1}}! 👋\n\n" +
+  "Te recordamos tu turno para alquilar el traje:\n" +
+  "🗓️ *Día:* {{2}}\n" +
+  "⏱️ *Hora:* {{3}}\n" +
+  "📍 España 764, Rosario\n" +
+  "https://maps.app.goo.gl/YKyU8qDRqDfNNvWT8\n\n" +
+  "👉 *¿Venís al turno?* Respondé este mensaje con *SÍ* si venís, o con *NO* si no podés y lo reprogramamos.\n\n" +
+  "👪 Se permite un acompañante por persona.\n" +
+  "⏳ El turno es de 45 minutos, con 10 minutos de tolerancia.\n" +
+  "🔖 Si alquilás, para reservar se abona el 100%. Aceptamos efectivo, transferencia y tarjetas de crédito y débito.\n\n" +
+  "¡Gracias! ✨";
+
+// MARKETING, es_AR, sin variables: el texto de Sofía (11/11), con el link de reseñas fijo.
+export const TEXTO_RESENA_EVENTO = "¡Hola! 😊 ¿Cómo estás? Esperamos que hayan disfrutado mucho del evento y que hayan " +
+  "quedado impecables con sus looks de OTTO 🤵‍♂️✨\n\n" +
+  "Nos encantaría ver cómo quedaron, ¿nos compartirías alguna foto del evento con el traje? 📸 Nos ayuda " +
+  "muchísimo para mostrar nuestros looks y seguir inspirando a otros clientes.\n\n" +
+  "Y si tuvieron una buena experiencia con nosotros, ¿nos dejarían una reseña contando cómo fue? ⭐️ Para nuestro " +
+  "equipo es súper valioso y nos ayuda a que más personas nos conozcan. https://g.page/r/CYt3m6AmKYylEBM/review\n\n" +
+  "¡Muchas gracias por elegir OTTO Su Misura! 🖤";
+
 // El link de reseñas tal como quedó ESCRITO FIJO adentro de la plantilla `agradecimiento` de Meta.
 // No se usa para mandar (Meta ya lo tiene): se usa para que la charla guarde el mismo texto que
 // recibió el cliente. Si se edita la plantilla en Meta, hay que cambiarlo acá también, o el
@@ -80,10 +113,14 @@ function horaDePlantilla(fecha: Date, tz: string): string {
   return `${horaLocal(fecha, tz).replace(":", ".")}hs`;
 }
 
-export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string): Plantilla | { falta: string } {
+export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string, nueva = false): Plantilla | { falta: string } {
   // El aviso al equipo sale aunque el cliente no tenga un nombre usable: lo importante es que
   // alguien se entere. Va antes del chequeo del nombre, que es para los mensajes al cliente.
   if (tipo === "aviso_derivacion") return avisoDerivacion(d);
+  // La reseña nueva no lleva el nombre: sale igual sin él.
+  if (tipo === "agradecimiento_resena" && nueva) {
+    return { nombre: NOMBRE_PLANTILLA_NUEVA.agradecimiento_resena, idioma: IDIOMA_PLANTILLAS, botones: [], cuerpo: [], texto: TEXTO_RESENA_EVENTO };
+  }
 
   // Con un perfil que no es un nombre («siempre te elijo» salía «¡Hola Siempre!», 4/10): el
   // recontacto, que es publicidad, no sale; el recordatorio y el agradecimiento, que el cliente
@@ -97,6 +134,14 @@ export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string): Plan
     if (!d.inicio) return { falta: "la hora del turno" };
     const dia = diaDePlantilla(d.inicio, tz);
     const hora = horaDePlantilla(d.inicio, tz);
+    if (nueva) {
+      return {
+        ...base,
+        nombre: NOMBRE_PLANTILLA_NUEVA.recordatorio_18h,
+        cuerpo: [nombre, dia, hora],
+        texto: TEXTO_RECORDATORIO_2.replace("{{1}}", nombre).replace("{{2}}", dia).replace("{{3}}", hora),
+      };
+    }
     return {
       ...base,
       cuerpo: [nombre, dia, hora],

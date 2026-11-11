@@ -68,7 +68,7 @@ const LIMITE_CARACTERES = 400;
 export function charlaParaElLector(mensajes: MensajeDeLaCharla[], ahora: Date, tz: string): string {
   const etiqueta = (d: Date) => `${fechaLocal(d, tz)} ${horaLocal(d, tz)}`;
   const lineas = mensajes
-    .filter((m) => !/Te recordamos el turno/i.test(m.contenido ?? "") && !/^Pasos para alquilar/i.test(m.contenido ?? ""))
+    .filter((m) => !/Te recordamos (?:el|tu) turno/i.test(m.contenido ?? "") && !/^Pasos para alquilar/i.test(m.contenido ?? ""))
     .slice(-LIMITE_MENSAJES)
     .map((m) => {
       const crudo = (m.contenido ?? "").trim();

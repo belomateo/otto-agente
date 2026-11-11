@@ -4,7 +4,7 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.13";
 import { botonDeTurno, PAYLOAD } from "./botones.ts";
 import { enviarPlantilla } from "./enviar.ts";
-import { armarPlantilla, primerNombre } from "./plantillas.ts";
+import { armarPlantilla, NOMBRE_PLANTILLA_NUEVA, primerNombre, TEXTO_RESENA_EVENTO } from "./plantillas.ts";
 import { puedeTextoLibre, VENTANA_MS } from "./ventana.ts";
 
 const TZ = "America/Argentina/Cordoba";
@@ -33,6 +33,31 @@ Deno.test("recordatorio: nombre, día y hora en el formato del texto aprobado, y
   assert(p.texto.includes("⏱️Hora: 16.00hs"));
   assert(p.texto.includes("España 764"));
   assert(p.texto.includes("avisanos en caso de que no puedas asistir"));
+});
+
+Deno.test("versiones nuevas (11/11): recordatorio que pregunta si viene y reseña con el texto de Sofía", () => {
+  const r = armarPlantilla("recordatorio_18h", { nombre: "juan pérez", inicio: new Date("2030-06-06T16:00:00-03:00"), referencia: TURNO, linkResena: null }, TZ, true);
+  assert(!("falta" in r));
+  assertEquals(r.nombre, NOMBRE_PLANTILLA_NUEVA.recordatorio_18h);
+  assertEquals(r.cuerpo, ["Juan", "Jueves 6 de Junio", "16.00hs"]); // mismas variables y formato que la de siempre
+  assertEquals(r.botones, []);
+  assert(r.texto.startsWith("Hola Juan!"));
+  assert(r.texto.includes("*Día:* Jueves 6 de Junio") && r.texto.includes("*Hora:* 16.00hs"));
+  assert(r.texto.includes("*¿Venís al turno?*"));
+  assert(!r.texto.includes("{{"), "no quedan variables sin reemplazar");
+  // El lector de turnos (subida-turnos) saca el recordatorio de la charla: tiene que reconocer el texto nuevo.
+  assert(/Te recordamos (?:el|tu) turno/i.test(r.texto));
+
+  // La reseña nueva no lleva variables: sale igual sin un nombre usable.
+  const s = armarPlantilla("agradecimiento_resena", { nombre: null, inicio: null, referencia: TURNO, linkResena: null }, TZ, true);
+  assert(!("falta" in s));
+  assertEquals([s.nombre, s.cuerpo, s.botones], [NOMBRE_PLANTILLA_NUEVA.agradecimiento_resena, [], []]);
+  assertEquals(s.texto, TEXTO_RESENA_EVENTO);
+  assert(s.texto.includes("https://g.page/r/CYt3m6AmKYylEBM/review"));
+  // Sin la nueva aprobada, sale la de siempre.
+  const vieja = armarPlantilla("agradecimiento_resena", { nombre: "Ana", inicio: null, referencia: TURNO, linkResena: null }, TZ);
+  assert(!("falta" in vieja));
+  assertEquals(vieja.nombre, "agradecimiento");
 });
 
 Deno.test("agradecimiento: UNA sola variable, porque el link quedó fijo adentro de la plantilla de Meta", () => {

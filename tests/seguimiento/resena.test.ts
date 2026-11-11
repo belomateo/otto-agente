@@ -15,8 +15,11 @@ Deno.test({
     conBase(async (sql) => {
       await sql.query("begin");
       try {
+        // 0114 le cambió las columnas a seguimiento_candidatos y 0111 no puede reemplazarla tal cual.
+        await sql.query("drop function if exists public.seguimiento_candidatos(timestamptz)");
         await sql.query(await Deno.readTextFile(new URL("../../supabase/migrations/0111_seguimiento_23h.sql", import.meta.url)));
         await sql.query(await Deno.readTextFile(new URL("../../supabase/migrations/0112_resena_tras_prueba_final.sql", import.meta.url)));
+        await sql.query(await Deno.readTextFile(new URL("../../supabase/migrations/0116_resena_un_dia_despues_del_evento.sql", import.meta.url)));
         let n = 0;
         const prueba = async (o: { pruebaHace: number; evento?: number | null; estado?: string; tipo?: string }) => {
           n++;
@@ -32,7 +35,7 @@ Deno.test({
         const conEventoAyer = await prueba({ pruebaHace: 10, evento: -1 }); // evento ayer → hoy toca
         const eventoHoy = await prueba({ pruebaHace: 10, evento: 0 }); // el evento es hoy → mañana
         const eventoAntes = await prueba({ pruebaHace: 20, evento: -9 }); // pasó hace 9 días: la ventana de 6 ya cerró
-        const sinFecha = await prueba({ pruebaHace: 3 }); // sin evento: 3 días después de la prueba
+        const sinFecha = await prueba({ pruebaHace: 2 }); // sin evento: 2 días después de la prueba (0116)
         const sinFechaReciente = await prueba({ pruebaHace: 1 });
         const cancelado = await prueba({ pruebaHace: 10, evento: -1, estado: "cancelado" });
         const noVino = await prueba({ pruebaHace: 10, evento: -1, estado: "no-vino" });
@@ -44,7 +47,7 @@ Deno.test({
           );
         const l = await lista();
         assert(l.has(conEventoAyer), "el día siguiente al evento sale");
-        assert(l.has(sinFecha), "sin fecha de evento, 3 días después de la prueba");
+        assert(l.has(sinFecha), "sin fecha de evento, 2 días después de la prueba");
         for (const [nombre, id] of Object.entries({ eventoHoy, eventoAntes, sinFechaReciente, cancelado, noVino, otroTipo })) {
           assert(!l.has(id), `${nombre} no sale hoy`);
         }

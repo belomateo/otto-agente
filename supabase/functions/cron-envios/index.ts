@@ -16,7 +16,7 @@ import { decidirSeguimiento } from "../_shared/llm/seguimiento.ts";
 import { tocaElSeguimiento } from "../_shared/seguimiento/momento.ts";
 import { CLAVE_TEXTO_SEGUIMIENTO, etapaDelSeguimiento, fraseDelEvento, TEXTO_RESPALDO, textoDelSeguimiento } from "../_shared/seguimiento/texto.ts";
 import { enviarPlantilla, enviarTexto } from "../_shared/whatsapp/enviar.ts";
-import { armarPlantilla, esTipoEnvio, NOMBRE_PLANTILLA, primerNombre, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
+import { armarPlantilla, esTipoEnvio, NOMBRE_PLANTILLA, NOMBRE_PLANTILLA_NUEVA, primerNombre, tieneVersionNueva, type TipoEnvio } from "../_shared/whatsapp/plantillas.ts";
 import { igualesEnTiempoConstante } from "../_shared/whatsapp/firma.ts";
 import { telefonoParaMeta } from "../_shared/whatsapp/telefono.ts";
 
@@ -154,6 +154,8 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
     return r;
   }
   const motivos = aviso ? await motivosDeDerivacion(candidatos.map((c) => c.referencia)) : new Map<string, string>();
+  // 11/11: la versión nueva (recordatorio con «¿venís?», reseña con el texto de Sofía) sale apenas Meta la aprueba.
+  const nueva = tieneVersionNueva(tipo) && candidatos.length > 0 && await plantillaAprobada(NOMBRE_PLANTILLA_NUEVA[tipo]);
 
   for (const c of candidatos) {
     // Antes de reservar el envío: sin un número válido, Meta lo rechaza igual (2/10: los turnos
@@ -171,7 +173,7 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
       linkResena,
       telefonoCliente: c.telefono,
       motivo: motivos.get(c.referencia) ?? null,
-    }, TZ);
+    }, TZ, nueva);
     if ("falta" in plantilla) {
       r.omitidos.push(`${c.referencia}: falta ${plantilla.falta}`);
       continue;
@@ -342,7 +344,7 @@ async function confirmarTurno(turnoId: string): Promise<Response> {
     inicio: new Date(turno.inicio as string),
     referencia: turnoId,
     linkResena: null,
-  }, TZ);
+  }, TZ, await plantillaAprobada(NOMBRE_PLANTILLA_NUEVA.recordatorio_18h));
   if ("falta" in plantilla) return Response.json({ omitido: true, falta: plantilla.falta });
 
   const { data: id, error: errReserva } = await supabase.rpc("envio_reservar", {
