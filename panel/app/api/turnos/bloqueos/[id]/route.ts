@@ -1,4 +1,4 @@
-// Turnos › desbloquear un horario (0067). Sin {admin}: lo que puso el equipo lo borra cualquiera.
+// Turnos › desbloquear un horario (0067). Solo administradores desde el 12/11 (Mateo; RLS 0119).
 // Lo que puso la dueña, solo un admin — y eso lo frena la base (42501 'bloqueo_de_la_duena' → 403
 // con su texto), no esta ruta: así vale igual para quien pegue directo a PostgREST. No toca ningún
 // turno: bloquear nunca los tocó, así que desbloquear tampoco tiene nada que hacer con ellos.
@@ -8,7 +8,7 @@ import { esUuid } from '@/lib/api/validar';
 import { borrarBloqueo } from '@/lib/queries/bloqueos';
 
 export async function DELETE(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  const s = await requerirSesion();
+  const s = await requerirSesion({ admin: true });
   if (s instanceof Response) return s;
   const { id } = await ctx.params;
   if (!esUuid(id)) return error(400, 'Identificador inválido');

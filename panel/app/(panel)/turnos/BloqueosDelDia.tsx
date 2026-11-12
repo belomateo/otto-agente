@@ -92,7 +92,8 @@ export function BloqueosDelDia({
 
   return (
     <>
-      {editable && !abierto && (
+      {/* 12/11 (Mateo): bloquear y quitar bloqueos, solo Sofía y Mateo (admins); el equipo los ve. */}
+      {editable && esAdmin && !abierto && (
         <button
           type="button"
           onClick={() => {
@@ -113,9 +114,8 @@ export function BloqueosDelDia({
               <span className="flex-1">
                 <span className="font-medium text-tinta">Bloqueado</span> · {b.probador ? `Probador ${b.probador}` : 'Todos los probadores'} · {b.desde} a {hasta(b.hasta)}
                 {b.motivo ? ` · ${b.motivo}` : ''}
-                {b.de_la_duena && !esAdmin ? ' · lo puso la dueña' : ''}
               </span>
-              {editable && (!b.de_la_duena || esAdmin) && (
+              {editable && esAdmin && (
                 <button type="button" onClick={() => quitar(b.id)} disabled={enviando} className="flex-none rounded-otto border border-borde bg-lino px-3 py-1.5 font-medium text-tinta disabled:opacity-50">
                   Quitar
                 </button>

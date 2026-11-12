@@ -2,10 +2,7 @@
 // del local), para todos los probadores (probador: null) o para uno. Ni Lucía ni el panel dan
 // turnos ahí. POST { fecha, desde, hasta, probador, motivo?, confirmar? }.
 //
-// Sin {admin}, a propósito: el equipo también bloquea — es trabajo del día a día, no una decisión
-// de negocio como cerrar el día entero (/api/configuracion/cierres, solo la dueña). Hasta dónde
-// puede el equipo lo decide la base, no esta ruta: si con su bloqueo el día se queda sin lugar para
-// ningún turno, 403 con el texto de la base explicando que eso es de la dueña.
+// Solo administradores (Mateo, 12/11: «solo Sofía y yo»): la API y la RLS (0119) lo exigen; el equipo los ve.
 //
 // Si el rato ya tiene turnos activos, no escribe nada y devuelve 409 con cuáles son: esos turnos
 // NO se cancelan (decisión de la dueña), pero quien bloquea tiene que saber a quién avisarle. Para
@@ -50,7 +47,7 @@ const esquema = z
   });
 
 export async function POST(request: Request) {
-  const s = await requerirSesion();
+  const s = await requerirSesion({ admin: true });
   if (s instanceof Response) return s;
   const cuerpo = await leerCuerpo(request, esquema);
   if (cuerpo instanceof Response) return cuerpo;

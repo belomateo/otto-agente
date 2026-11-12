@@ -1441,7 +1441,7 @@ try {
     ok(dom?.activo === false, `domingo tiene su propia fila, explícitamente cerrado — no por ausencia (activo: ${dom?.activo})`);
   }
 
-  seccion("Horarios bloqueados (0067, pedido de la dueña 26/9): el equipo tapa un rato, el día entero es de la dueña");
+  seccion("Horarios bloqueados (0067; desde el 12/11, 0119, solo administradores): la dueña tapa un rato o el día, el equipo solo los ve");
   // Sin 0067 aplicada no hay contra qué probar: se avisa como una falla y se sigue con el resto
   // del arnés, en vez de tirar una excepción que corte todas las secciones que vienen después.
   const hay0067 = (await q("select to_regclass('public.bloqueos_agenda') is not null as hay"))[0].hay;
@@ -1475,24 +1475,24 @@ try {
     {
       const sinSesion = await api(null, "POST", "/api/turnos/bloqueos", { fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: null });
       ok(sinSesion.status === 401, `sin sesión → 401 (${sinSesion.status})`);
-      const alReves = await bloquear(sn, { fecha: FECHA_A, desde: "16:00", hasta: "15:00", probador: null });
+      const alReves = await bloquear(sa, { fecha: FECHA_A, desde: "16:00", hasta: "15:00", probador: null });
       ok(alReves.status === 400, `desde después de hasta → 400 (${alReves.status})`);
-      const probadorCero = await bloquear(sn, { fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: 0 });
+      const probadorCero = await bloquear(sa, { fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: 0 });
       ok(probadorCero.status === 400, `probador 0 → 400 (${probadorCero.status})`);
-      const sinProbador = await bloquear(sn, { fecha: FECHA_A, desde: "15:00", hasta: "16:00" });
+      const sinProbador = await bloquear(sa, { fecha: FECHA_A, desde: "15:00", hasta: "16:00" });
       ok(sinProbador.status === 400, `sin el campo probador (ni null) → 400: olvidárselo no bloquea a todos (${sinProbador.status})`);
-      const colado = await bloquear(sn, { fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: null, creado_por_admin: true });
+      const colado = await bloquear(sa, { fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: null, creado_por_admin: true });
       ok(colado.status === 400, `mandar creado_por_admin → 400, no se acepta (${colado.status})`);
-      const malId = await api(sn, "DELETE", "/api/turnos/bloqueos/no-es-un-uuid");
+      const malId = await api(sa, "DELETE", "/api/turnos/bloqueos/no-es-un-uuid");
       ok(malId.status === 400, `DELETE con un id que no es uuid → 400 (${malId.status})`);
 
       const cantidad = (await q("select cantidad_probadores from configuracion_agenda"))[0].cantidad_probadores;
-      const noExiste = await bloquear(sn, { fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: cantidad + 1 });
+      const noExiste = await bloquear(sa, { fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: cantidad + 1 });
       ok(
         noExiste.status === 400 && noExiste.datos.codigo === "bloqueo_probador_invalido",
         `un probador que no existe → 400 de la base (${noExiste.status}, ${noExiste.datos.codigo}: ${noExiste.datos.error})`
       );
-      const domingo = await bloquear(sn, { fecha: DOMINGO, desde: "10:00", hasta: "11:00", probador: null });
+      const domingo = await bloquear(sa, { fecha: DOMINGO, desde: "10:00", hasta: "11:00", probador: null });
       ok(
         domingo.status === 400 && domingo.datos.codigo === "bloqueo_dia_sin_turnos",
         `un día sin franjas → 400, no hay nada que bloquear (${domingo.status}, ${domingo.datos.codigo})`
@@ -1501,7 +1501,17 @@ try {
       ok(nada === 0, `ninguno de los rechazados dejó un bloqueo guardado (${nada})`);
     }
 
-    // --- El equipo bloquea un rato suelto y lo desbloquea ---
+    // --- 12/11 (Mateo): el equipo no bloquea ni desbloquea; solo ve ---
+    {
+      const equipoBloquea = await bloquear(sn, { fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: null });
+      ok(equipoBloquea.status === 403, `el equipo intenta bloquear → 403, solo administradores (${equipoBloquea.status})`);
+      const equipoDirecto = await sn.directo.from("bloqueos_agenda").insert({ fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: null }).select("id");
+      for (const r of equipoDirecto.data ?? []) anotar(r.id);
+      ok(equipoDirecto.error?.code === "42501", `sin pasar por mi ruta, la RLS (0119) tampoco lo deja (${equipoDirecto.error?.code})`);
+      ok((await cuantosEn(FECHA_A)) === 0, "no quedó nada guardado de esos intentos");
+    }
+
+    // --- La dueña bloquea un rato suelto y lo desbloquea; el equipo lo ve ---
     {
       const huecosAntes = await api(sn, "GET", `/api/turnos/huecos?fecha=${FECHA_A}&tipo=invitado`);
       ok(
@@ -1510,18 +1520,18 @@ try {
       );
 
       const motivo = `${MARCA} proveedor`;
-      const alta = await bloquear(sn, { fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: null, motivo });
+      const alta = await bloquear(sa, { fecha: FECHA_A, desde: "15:00", hasta: "16:00", probador: null, motivo });
       const b = alta.datos.bloqueo;
       ok(
         alta.status === 201 &&
           b?.fecha === FECHA_A && b?.desde === "15:00" && b?.hasta === "16:00" && b?.probador === null &&
-          b?.motivo === motivo && b?.de_la_duena === false && b?.version === 1,
-        `el equipo bloquea de 15 a 16 para todos → 201 (${alta.status}: ${JSON.stringify(b ?? alta.datos)})`
+          b?.motivo === motivo && b?.de_la_duena === true && b?.version === 1,
+        `la dueña bloquea de 15 a 16 para todos → 201 (${alta.status}: ${JSON.stringify(b ?? alta.datos)})`
       );
       const fila = b ? await enBase(b.id) : null;
       ok(
-        fila?.creado_por === N.id && fila?.creado_por_admin === false,
-        `la base lo firma con la sesión: creado_por es la cuenta del equipo y no es de la dueña (${fila?.creado_por === N.id}, ${fila?.creado_por_admin})`
+        fila?.creado_por === A.id && fila?.creado_por_admin === true,
+        `la base lo firma con la sesión: creado_por es la dueña (${fila?.creado_por === A.id}, ${fila?.creado_por_admin})`
       );
 
       const dia = await api(sn, "GET", `/api/turnos?fecha=${FECHA_A}`);
@@ -1529,7 +1539,7 @@ try {
         dia.status === 200 &&
           dia.datos.cierre === null &&
           JSON.stringify(dia.datos.bloqueos) ===
-            JSON.stringify([{ id: b?.id, desde: "15:00", hasta: "16:00", probador: null, motivo, de_la_duena: false, version: 1 }]),
+            JSON.stringify([{ id: b?.id, desde: "15:00", hasta: "16:00", probador: null, motivo, de_la_duena: true, version: 1 }]),
         `GET /api/turnos trae el bloqueo del día (y cierre: null) (${dia.status}: ${JSON.stringify(dia.datos.bloqueos)}, cierre ${JSON.stringify(dia.datos.cierre)})`
       );
       const semana = await api(sn, "GET", `/api/turnos/semana?desde=${FECHA_A}`);
@@ -1565,9 +1575,9 @@ try {
         `sin pasar por mi ruta: un turno encima del bloqueo → 23P01 turno_en_horario_bloqueado (${directo.error?.code}: ${directo.error?.message})`
       );
 
-      const borrado = await api(sn, "DELETE", `/api/turnos/bloqueos/${b?.id}`);
-      ok(borrado.status === 200 && borrado.datos.bloqueo?.id === b?.id, `el equipo desbloquea lo suyo → 200 (${borrado.status})`);
-      const otraVez = await api(sn, "DELETE", `/api/turnos/bloqueos/${b?.id}`);
+      const borrado = await api(sa, "DELETE", `/api/turnos/bloqueos/${b?.id}`);
+      ok(borrado.status === 200 && borrado.datos.bloqueo?.id === b?.id, `la dueña lo desbloquea → 200 (${borrado.status})`);
+      const otraVez = await api(sa, "DELETE", `/api/turnos/bloqueos/${b?.id}`);
       ok(otraVez.status === 404, `desbloquearlo de nuevo → 404 (${otraVez.status})`);
       const quedan = await cuantosEn(FECHA_A);
       ok(quedan === 0, `no quedó ningún bloqueo ese día (${quedan})`);
@@ -1599,13 +1609,13 @@ try {
       const todoElDia = { fecha: FECHA_B, desde: primero, hasta: ultimo, probador: null, motivo: `${MARCA} todo el día` };
       const delEquipo = await bloquear(sn, todoElDia);
       ok(
-        delEquipo.status === 403 && delEquipo.datos.codigo === "bloqueo_dia_completo_solo_duena" && delEquipo.datos.error.includes("dueña"),
+        delEquipo.status === 403,
         `el equipo intenta tapar el día entero → 403 con el texto de la base (${delEquipo.status}: ${delEquipo.datos.error})`
       );
       const directoDia = await sn.directo.from("bloqueos_agenda").insert(todoElDia).select("id");
       for (const r of directoDia.data ?? []) anotar(r.id);
       ok(
-        directoDia.error?.code === "42501" && directoDia.error.message.includes("bloqueo_dia_completo_solo_duena"),
+        directoDia.error?.code === "42501",
         `sin pasar por mi ruta, tampoco (${directoDia.error?.code}: ${directoDia.error?.message})`
       );
       ok((await cuantosEn(FECHA_B)) === 0, "no quedó nada guardado de esos intentos");
@@ -1621,45 +1631,22 @@ try {
 
       const equipoBorra = await api(sn, "DELETE", `/api/turnos/bloqueos/${idDuena}`);
       ok(
-        equipoBorra.status === 403 && equipoBorra.datos.codigo === "bloqueo_de_la_duena" && equipoBorra.datos.error.includes("dueña"),
+        equipoBorra.status === 403,
         `el equipo intenta desbloquear lo de la dueña → 403 con el texto de la base (${equipoBorra.status}: ${equipoBorra.datos.error})`
       );
       const directoEdita = await sn.directo.from("bloqueos_agenda").update({ motivo: "lo cambió el equipo" }).eq("id", idDuena).select("id");
       const directoBorra = await sn.directo.from("bloqueos_agenda").delete().eq("id", idDuena).select("id");
       ok(
-        directoEdita.error?.code === "42501" && directoEdita.error.message.includes("bloqueo_de_la_duena") &&
-          directoBorra.error?.code === "42501" && directoBorra.error.message.includes("bloqueo_de_la_duena"),
-        `sin pasar por mi ruta, tampoco lo edita ni lo borra (${directoEdita.error?.code}, ${directoBorra.error?.code})`
+        (directoEdita.data ?? []).length === 0 && (directoBorra.data ?? []).length === 0,
+        `sin pasar por mi ruta, la RLS no le deja editarlo ni borrarlo (${directoEdita.data?.length}, ${directoBorra.data?.length})`
       );
       const sigue = idDuena ? await enBase(idDuena) : null;
       ok(Boolean(sigue), "el bloqueo de la dueña sigue en pie");
       const duenaBorra = await api(sa, "DELETE", `/api/turnos/bloqueos/${idDuena}`);
       ok(duenaBorra.status === 200, `la dueña lo desbloquea → 200 (${duenaBorra.status})`);
 
-      // La regla mira TODOS los bloqueos del día juntos: el equipo puede tapar casi todo, pero no
-      // el último turno que queda.
-      const casiTodo = await bloquear(sn, { fecha: FECHA_B, desde: primero, hasta: aHora(ultimoInicio), probador: null, motivo: `${MARCA} casi todo` });
-      ok(casiTodo.status === 201, `el equipo tapa de ${primero} a ${aHora(ultimoInicio)}, queda el turno de las ${aHora(ultimoInicio)} → 201 (${casiTodo.status}: ${casiTodo.datos.error ?? ""})`);
-      const elUltimo = await bloquear(sn, { fecha: FECHA_B, desde: aHora(ultimoInicio), hasta: ultimo, probador: null, motivo: `${MARCA} el último` });
-      ok(
-        elUltimo.status === 403 && elUltimo.datos.codigo === "bloqueo_dia_completo_solo_duena",
-        `y después el último rato, que sumado cierra el día → 403 (${elUltimo.status}, ${elUltimo.datos.codigo})`
-      );
-      if (casiTodo.datos.bloqueo?.id) await api(sn, "DELETE", `/api/turnos/bloqueos/${casiTodo.datos.bloqueo.id}`);
-
-      // Por PostgREST, mandando creado_por y creado_por_admin de la dueña: la base los pisa.
-      const disfrazado = await sn.directo
-        .from("bloqueos_agenda")
-        .insert({ fecha: FECHA_B, desde: primero, hasta: aHora(aMin(primero) + paso), probador: 1, motivo: `${MARCA} disfrazado`, creado_por: A.id, creado_por_admin: true })
-        .select("id, creado_por, creado_por_admin")
-        .single();
-      anotar(disfrazado.data?.id);
-      ok(
-        !disfrazado.error && disfrazado.data?.creado_por === N.id && disfrazado.data?.creado_por_admin === false,
-        `el equipo no se puede anotar un bloqueo como de la dueña: la base lo firma con su sesión (${disfrazado.error?.message ?? `${disfrazado.data?.creado_por === N.id}, ${disfrazado.data?.creado_por_admin}`})`
-      );
-      const sacarlo = disfrazado.data?.id ? await sn.directo.from("bloqueos_agenda").delete().eq("id", disfrazado.data.id).select("id") : null;
-      ok(!sacarlo?.error && sacarlo?.data?.length === 1, `y lo borra él mismo, porque es del equipo (${sacarlo?.error?.message ?? sacarlo?.data?.length})`);
+      // (Hasta el 12/11 acá se probaba el tope del equipo —tapar casi todo pero no el último turno— y que no pudiera
+      // firmar un bloqueo como de la dueña. Desde 0119 el equipo no escribe bloqueos: eso lo cubren los 403/42501 de arriba.)
       const restoB = await cuantosEn(FECHA_B);
       ok(restoB === 0, `no quedó ningún bloqueo ese día (${restoB})`);
     }
@@ -1668,7 +1655,7 @@ try {
     {
       const turnoC = await nuevoTurno(`${FECHA_C}T14:00:00-03:00`); // probador 1, 14:00–14:45
       const cuerpo = { fecha: FECHA_C, desde: "14:00", hasta: "15:00", probador: null, motivo: `${MARCA} encima de un turno` };
-      const sinConfirmar = await bloquear(sn, cuerpo);
+      const sinConfirmar = await bloquear(sa, cuerpo);
       ok(
         sinConfirmar.status === 409 &&
           sinConfirmar.datos.codigo === "turnos_afectados" &&
@@ -1678,11 +1665,11 @@ try {
       );
       ok((await cuantosEn(FECHA_C)) === 0, "sin confirmar, no queda ningún bloqueo a medio guardar");
 
-      const otroProbador = await bloquear(sn, { ...cuerpo, probador: 2 });
+      const otroProbador = await bloquear(sa, { ...cuerpo, probador: 2 });
       ok(otroProbador.status === 201, `el mismo rato pero solo del probador 2 → 201: el turno es del 1, no lo afecta (${otroProbador.status})`);
-      if (otroProbador.datos.bloqueo?.id) await api(sn, "DELETE", `/api/turnos/bloqueos/${otroProbador.datos.bloqueo.id}`);
+      if (otroProbador.datos.bloqueo?.id) await api(sa, "DELETE", `/api/turnos/bloqueos/${otroProbador.datos.bloqueo.id}`);
 
-      const confirmado = await bloquear(sn, { ...cuerpo, confirmar: true });
+      const confirmado = await bloquear(sa, { ...cuerpo, confirmar: true });
       ok(confirmado.status === 201, `confirmando, bloquea igual (${confirmado.status})`);
       const turnoSigue = (await q("select estado, probador, inicio from turnos where id = $1", [turnoC]))[0];
       ok(
@@ -1694,7 +1681,7 @@ try {
         dia.status === 200 && dia.datos.turnos.some((t) => t.id === turnoC) && dia.datos.bloqueos.length === 1,
         `el día muestra las dos cosas: el turno y el bloqueo encima (${dia.status}, ${dia.datos.bloqueos?.length} bloqueo(s))`
       );
-      if (confirmado.datos.bloqueo?.id) await api(sn, "DELETE", `/api/turnos/bloqueos/${confirmado.datos.bloqueo.id}`);
+      if (confirmado.datos.bloqueo?.id) await api(sa, "DELETE", `/api/turnos/bloqueos/${confirmado.datos.bloqueo.id}`);
     }
 
     // --- Día cerrado (0061): no se bloquea, no se agenda, y la agenda lo muestra ---
@@ -1702,7 +1689,7 @@ try {
       const motivoCierre = `${MARCA} cierre`;
       const cierre = await api(sa, "POST", "/api/configuracion/cierres", { fecha: FECHA_D, motivo: motivoCierre });
       ok(cierre.status === 201, `(preparación) la dueña cierra el ${FECHA_D} (${cierre.status})`);
-      const bloqueoCerrado = await bloquear(sn, { fecha: FECHA_D, desde: "10:00", hasta: "11:00", probador: null });
+      const bloqueoCerrado = await bloquear(sa, { fecha: FECHA_D, desde: "10:00", hasta: "11:00", probador: null });
       ok(
         bloqueoCerrado.status === 400 && bloqueoCerrado.datos.codigo === "bloqueo_en_dia_cerrado",
         `bloquear un rato de un día cerrado → 400 (${bloqueoCerrado.status}, ${bloqueoCerrado.datos.codigo})`
