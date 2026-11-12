@@ -153,8 +153,10 @@ export async function agruparRafaga(
   // Se compara sin «¿»/«¡», que prepararParaEnviar saca antes de guardar. Hasta tres demoras seguidas:
   // si a la cuarta la misma ráfaga sigue fallando (una foto que el modelo rechaza siempre), se deja de
   // reintentar y lo nuevo arranca después de la última (revisión del 21/10).
+  // 12/11 (Tony): el texto genérico de pase al equipo («Prefiero que esta consulta te la confirme alguien del
+  // equipo…») tampoco contesta nada. Si la charla vuelve a Lucía, la pregunta de antes tiene que entrar.
   const salientes = await db.consulta<{ enviado_at: string; demora: boolean }>(
-    `select enviado_at, coalesce(contenido = (select translate(valor, '¿¡', '') from contexto_agente where clave = 'texto_demora'), false) as demora
+    `select enviado_at, coalesce(contenido in (select translate(valor, '¿¡', '') from contexto_agente where clave in ('texto_demora', 'texto_derivacion_fallo')), false) as demora
        from mensajes where conversacion_id = $1 and direccion = 'saliente'
       order by enviado_at desc limit ${MAXIMO_DEMORAS_REINTENTADAS + 1}`,
     [conversacionId],

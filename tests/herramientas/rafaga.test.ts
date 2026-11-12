@@ -33,6 +33,21 @@ prueba("agrupar_rafaga: nada nuevo en la ventana no es soloNoTexto (caso parecid
   assertEquals(r.soloNoTexto, false);
 });
 
+prueba("agrupar_rafaga: el texto genérico de pase al equipo no cuenta como respuesta (Tony, 12/11)", async ({ ctx, sql, conversacionId }) => {
+  await sql.query(
+    "insert into contexto_agente (clave, valor) values ('texto_derivacion_fallo', '¡Claro! Prefiero que esta consulta te la confirme alguien del equipo.') on conflict (clave) do nothing",
+  );
+  const generico = (await sql.query("select translate(valor, '¿¡', '') as t from contexto_agente where clave = 'texto_derivacion_fallo'")).rows[0].t;
+  const antes = new Date(AHORA.getTime() - 60_000);
+  await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: "¿Cuánto cuesta alquilar un traje?", enviadoAt: antes });
+  await insertar(sql, conversacionId, { direccion: "saliente", tipo: "texto", contenido: generico, enviadoAt: new Date(antes.getTime() + 1000) });
+  const r = await agruparRafaga(ctx.db, conversacionId, AHORA);
+  assertEquals(r.texto, "¿Cuánto cuesta alquilar un traje?");
+  // Una respuesta de verdad sí corta la ráfaga (caso parecido).
+  await insertar(sql, conversacionId, { direccion: "saliente", tipo: "texto", contenido: "El alquiler arranca a partir de $190.000.", enviadoAt: new Date(antes.getTime() + 2000) });
+  assertEquals((await agruparRafaga(ctx.db, conversacionId, AHORA)).texto, "");
+});
+
 prueba("agrupar_rafaga: un mensaje de texto normal no es soloNoTexto (caso parecido)", async ({ ctx, sql, conversacionId }) => {
   await insertar(sql, conversacionId, { direccion: "entrante", tipo: "texto", contenido: "hola", enviadoAt: AHORA });
   const r = await agruparRafaga(ctx.db, conversacionId, AHORA);
