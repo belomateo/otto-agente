@@ -204,6 +204,31 @@ Deno.test("una_pregunta salta con dos preguntas en un mensaje", async () => {
   await salta(unaPregunta, entrada("¡Hola! ¿Cómo estás? ¿Para qué evento necesitás el traje?"));
 });
 
+Deno.test("una_pregunta en el segundo intento: deja solo la última pregunta en código, sin derivar (Frann, Tony, 12/11)", async () => {
+  const r = await unaPregunta.evaluar(entrada("Todo bien, ¿y vos? El alquiler arranca a partir de $190.000. ¿Para qué evento es?", { saltosPrevios: 1 }));
+  assert(r.salta && r.accion === "limpiar");
+  assertEquals(r.texto, "Todo bien. El alquiler arranca a partir de $190.000. ¿Para qué evento es?");
+  const r2 = await unaPregunta.evaluar(entrada("¡Hola, Fede! ¿Cómo estás? Tu turno sigue en pie.\n\n¿Querés que lo pasemos a otro día?", { saltosPrevios: 1 }));
+  assert(r2.salta);
+  assertEquals(r2.texto, "¡Hola, Fede! Tu turno sigue en pie.\n\n¿Querés que lo pasemos a otro día?");
+  // Una coma que no estaba pegada a la pregunta sacada no se toca («Perfecto, Gisela»).
+  const r3 = await unaPregunta.evaluar(entrada("Perfecto, Gisela. ¿Te paso el catálogo? Tengo lugar el viernes, ¿te sirve?", { saltosPrevios: 1 }));
+  assert(r3.salta);
+  assertEquals(r3.texto, "Perfecto, Gisela. Tengo lugar el viernes, ¿te sirve?");
+  // Y aplicarBarandillas ya no deriva por esto en el segundo intento.
+  const fin = await aplicarBarandillas(entrada("Todo bien, ¿y vos? ¿Para qué evento es?"), { saltosPrevios: 1 });
+  assertEquals(fin.decision, "enviar");
+  assertEquals(fin.texto, "Todo bien. ¿Para qué evento es?");
+});
+
+Deno.test("horario_sin_herramienta: un día ofrecido sin buscar, en el segundo intento se saca la oración en vez de derivar (Fede, 12/11)", async () => {
+  const r = await horarioSinHerramienta.evaluar(entrada("Dale, Fede. Tengo lugar el martes a la mañana también. Querés que te lo busque?", { saltosPrevios: 1 }));
+  assert(r.salta && r.accion === "cortar");
+  assertEquals(r.texto, "Dale, Fede. Querés que te lo busque?");
+  // En el primer intento sigue siendo rehacer (que llame a buscar_horarios).
+  await salta(horarioSinHerramienta, entrada("Tengo lugar el martes a la mañana también."));
+});
+
 Deno.test("una_pregunta no salta con una sola pregunta, aunque tenga dos signos de cierre (caso parecido)", async () => {
   await noSalta(unaPregunta, entrada("¿Para qué evento lo necesitás??"));
   await noSalta(unaPregunta, entrada("¡Hola, Juan! Para graduaciones tenemos varios modelos. ¿Qué fecha es la graduación?"));
@@ -702,6 +727,18 @@ Deno.test("confirmacion_doble no deja pedazos colgando de la frase cortada (ensa
     entrada("Listo, Zulma, quedó tu turno para el jueves 26 de noviembre a las 13:00, con la prueba final y el retiro del traje. Si todavía no elegiste el traje, conviene venir antes.", { traza: conTraza }),
   );
   assertEquals(r2.texto, "Si todavía no elegiste el traje, conviene venir antes.");
+  // 12/11 (Vane): «Se pruebe el traje.» quedaba suelto antes del «Listo! Tu turno ya quedó agendado».
+  const r3 = await salta(
+    confirmacionDoble,
+    entrada("Perfecto, Vane, te agendé el lunes 16 a las 16:30 para que vengan los dos y se pruebe el traje.", { traza: conTraza }),
+  );
+  assertEquals(r3.texto, "");
+  // Lo que sí es contenido propio después de la «y» se queda (caso parecido).
+  const r4 = await salta(
+    confirmacionDoble,
+    entrada("Te agendé el lunes 16 a las 16:30 y te cuento que también alquilamos chalecos y moños.", { traza: conTraza }),
+  );
+  assertMatch(r4.texto ?? "", /chalecos/);
 });
 
 Deno.test("confirmacion_doble saca la despedida con los datos del turno, que ya trae el mensaje de código (21/10)", async () => {

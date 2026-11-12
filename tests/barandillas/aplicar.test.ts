@@ -44,9 +44,12 @@ Deno.test("una que pide rehacer vuelve al modelo con qué corregir", async () =>
 });
 
 Deno.test("dos saltos en el mismo turno: ya se rehizo una vez y vuelve a saltar, entonces deriva", async () => {
-  const r = await aplicarBarandillas(entrada("¿Cómo estás? ¿Para qué evento es?"), { saltosPrevios: 1 });
+  // Decir que es una IA sigue derivando en el segundo intento. Dos preguntas ya no (12/11): se deja la última en código.
+  const r = await aplicarBarandillas(entrada("Soy una inteligencia artificial, no una persona."), { saltosPrevios: 1 });
   assertEquals(r.decision, "derivar");
   assertEquals(r.motivoDerivacion, "barandilla_doble");
+  const p = await aplicarBarandillas(entrada("¿Cómo estás? ¿Para qué evento es?"), { saltosPrevios: 1 });
+  assertEquals([p.decision, p.texto], ["enviar", "¿Para qué evento es?"]);
 });
 
 Deno.test("en el primer intento, dos barandillas que piden rehacer se rehacen una sola vez con los dos motivos", async () => {

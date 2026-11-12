@@ -61,7 +61,9 @@ export function horasNombradas(crudo: string): number[] {
   return [...res];
 }
 
-const SI = /\b(?:(?:si+)+|sip|claro|por supuesto|dale|ok|okay|oka|okey|perfecto|perfecta|listo|bueno|genial|joya|barbaro|excelente|buenisimo|de una|me sirve|me queda|me viene|ese|esa|confirmo|confirmado|reserva\w*|agenda\w*|anotame|va)\b/;
+// «Confimado» (Carina, 11/11: no se tomó como sí y perdió el turno del sábado): confirmo/confirmado y sus errores
+// de tipeo más comunes (confimado, confrimado, confirmao).
+const SI = /\b(?:(?:si+)+|sip|claro|por supuesto|dale|ok|okay|oka|okey|perfecto|perfecta|listo|bueno|genial|joya|barbaro|excelente|buenisimo|de una|me sirve|me queda|me viene|ese|esa|conf(?:ir|ri|i)?m(?:o|a|ad[oa]|ao|amos)|reserva\w*|agenda\w*|anotame|va)\b/;
 const ORDINAL = /\b(primer\w*|segund\w*|ultim\w*)\b/;
 // Un reparo no es elegir, aunque nombre el día («pero el lunes», «es feriado», «no puedo»).
 const REPARO = /\b(?:pero|feriado|imposible|no (?:puedo|podemos|puede|llego|me (?:sirve|queda|viene))|complica\w*|complicad\w*)\b/;

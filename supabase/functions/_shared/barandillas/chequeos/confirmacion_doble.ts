@@ -154,12 +154,14 @@ export const confirmacionDoble: Barandilla = {
     );
     // Lo que queda colgando de una cláusula cortada («Los esperamos a vos y a tu hijo» → «A tu hijo.»; «…con la
     // prueba final y el retiro» → «El retiro.»: ensayo con Claude, 21/10) es parte de ella, no contenido propio.
+    // 12/11 (Vane, Nestor): «…a las 16:30 para que vengan los dos y se pruebe el traje» dejaba «Se pruebe el traje.»;
+    // un resto que arranca con «se», «que», «lo» o «le» tampoco se sostiene solo.
     for (let i = 1; i < clausulas.length; i++) {
       const n = normalizar(clausulas[i].texto);
       if (
         mantener[i] && !mantener[i - 1] && clausulas[i - 1].oracionIdx === clausulas[i].oracionIdx &&
-        clausulas[i].separadorPrevio === " y " && n.split(/\s+/).length <= 4 &&
-        /^(?:a|al|el|la|los|las|un|una|con|de|del|para|en|tu|tus|su|sus)\b/.test(n)
+        clausulas[i].separadorPrevio === " y " && n.split(/\s+/).length <= 5 && !/[?¿]/.test(clausulas[i].texto) &&
+        /^(?:a|al|el|la|los|las|un|una|con|de|del|para|en|tu|tus|su|sus|se|que|lo|le|les)\b/.test(n)
       ) mantener[i] = false;
     }
     if (mantener.every(Boolean) && sinLista === texto) return NO_SALTA;

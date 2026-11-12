@@ -40,6 +40,7 @@ import { useEstadoTurno } from '@/components/api/useEstadoTurno';
 import type { FeriadoAgenda } from '@/lib/queries/feriados';
 import type { AgendaDelDia, FilaTurno } from '@/lib/queries/turnos';
 import { aHora, aMinutos, describirFranjas, horaCorta } from '../configuracion/agenda/franjas';
+import { BloqueosDelDia } from './BloqueosDelDia';
 import { CierreDelDia } from './CierreDelDia';
 import { estadoFeriado, FeriadoDelDia } from './FeriadoDelDia';
 import { MoverTurnoModal } from './MoverTurno';
@@ -60,6 +61,8 @@ type DiaMes = {
   sin_confirmar: number;
   cierre?: { motivo: string | null } | null;
   feriado?: FeriadoAgenda | null;
+  /** Cuántos bloqueos (0067) tiene el día: lo manda /api/turnos/mes. */
+  bloqueos?: number;
 };
 type AgendaMes = { mes: string; dias: DiaMes[] };
 type Vista = 'dia' | 'semana' | 'mes';
@@ -453,6 +456,28 @@ function Grilla({
 
           {probadores.map((p) => (
             <div key={p} className="relative flex-1 border-l border-[#EFEBE2]">
+              {/* Bloqueos (0067): rayado gris, por debajo de los turnos, que se siguen pudiendo abrir. */}
+              {agenda.bloqueos
+                .filter((b) => b.probador === null || b.probador === p)
+                .map((b) => {
+                  const desde = Math.max(INICIO, aMinutos(b.desde) ?? INICIO);
+                  const hasta = Math.min(FIN, b.hasta === '24:00' ? FIN : (aMinutos(b.hasta) ?? FIN));
+                  if (hasta <= desde) return null;
+                  return (
+                    <div
+                      key={b.id}
+                      title={`Bloqueado ${b.desde} a ${b.hasta === '24:00' ? 'el cierre' : b.hasta}${b.motivo ? ` · ${b.motivo}` : ''}`}
+                      className="pointer-events-none absolute inset-x-0 flex items-center justify-center text-[14px] font-medium tracking-[.05em] text-[#8A8578] md:text-[11px]"
+                      style={{
+                        top: y(desde),
+                        height: y(hasta) - y(desde),
+                        background: 'repeating-linear-gradient(135deg, #EFEBE3 0 8px, #E4DFD4 8px 16px)',
+                      }}
+                    >
+                      {y(hasta) - y(desde) >= 30 && 'BLOQUEADO'}
+                    </div>
+                  );
+                })}
               {tramosSinTurnos(agenda.franjas, p).map((t) => {
                 const clave = `${t.desde}-${t.hasta}`;
                 const rotulo = !rotulados.has(clave) && y(t.hasta) - y(t.desde) >= 30;
@@ -578,6 +603,14 @@ function SeccionDia({ dia, onAbrir }: { dia: AgendaDelDia; onAbrir: (id: string)
         {cerrado && (
           <span className="rounded-pill border border-feriado-borde bg-lino px-2.5 py-0.5 font-sans text-[13px] font-medium text-feriado">
             {marcaCerrado(cerrado.motivo).etiqueta}
+          </span>
+        )}
+        {!cerrado && dia.bloqueos.length > 0 && (
+          <span
+            title={dia.bloqueos.map((b) => `${b.probador ? `Probador ${b.probador}` : 'Todos'} ${b.desde} a ${b.hasta === '24:00' ? 'el cierre' : b.hasta}`).join(' · ')}
+            className="rounded-pill border border-borde bg-hueso px-2.5 py-0.5 font-sans text-[13px] font-medium text-grafito"
+          >
+            Con bloqueos
           </span>
         )}
       </div>
@@ -766,6 +799,9 @@ function VistaMes({ mes, onNuevoTurno, onCambio }: { mes: AgendaMes; onNuevoTurn
               >
                 <span className={`font-serif text-[14px] font-semibold md:text-[13px] ${c.esDelMes ? '' : 'text-[#C9C4B9]'}`}>{Number(c.fecha.slice(8, 10))}</span>
                 {marca && <span className={`max-w-full truncate px-1 text-[12px] font-medium md:text-[11px] ${marca.color}`}>{marca.etiqueta}</span>}
+                {!marca && c.esDelMes && (c.dato?.bloqueos ?? 0) > 0 && (
+                  <span className="max-w-full truncate px-1 text-[12px] font-medium text-grafito md:text-[11px]">Con bloqueos</span>
+                )}
                 {c.dato && c.dato.total > 0 && (
                   <span className="flex items-center gap-1">
                     <span className="rounded-pill bg-cobre-claro px-[7px] py-px text-[14px] font-medium text-cobre md:text-[11px]">{c.dato.total}</span>
@@ -854,6 +890,16 @@ export default function TurnosPage() {
   ) : (
     <CierreDelDia fecha={agenda.fecha} cierre={agenda.cierre} onCambio={recargar} />
   );
+  // 12/11 (audio de Sofía): al lado de «Marcar feriado», bloquear un probador o achicar el horario del día.
+  // En un día cerrado no hay nada que bloquear. key: al cambiar de día, el formulario arranca de cero.
+  const cartelYBloqueos = (
+    <div className="flex flex-wrap items-start gap-x-4">
+      <div className="min-w-0 flex-1">{cartelDelDia}</div>
+      {!cerradoHoy && agenda.franjas.length > 0 && (
+        <BloqueosDelDia key={agenda.fecha} fecha={agenda.fecha} franjas={agenda.franjas} probadores={agenda.probadores ?? 1} bloqueos={agenda.bloqueos} onCambio={recargar} />
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -877,7 +923,7 @@ export default function TurnosPage() {
           </button>
         </div>
         <div className="mb-4 text-[14px] text-grafito md:text-[13px]">{resumen}</div>
-        {cartelDelDia}
+        {cartelYBloqueos}
 
         {vacio ? (
           <div className={`rounded-otto border ${cerradoHoy ? 'border-feriado-borde bg-feriado-suave' : 'border-borde bg-lino'}`}>
@@ -907,7 +953,7 @@ export default function TurnosPage() {
             </Flechas>
           </div>
           <div className="mt-2 text-[14px] leading-[1.45] text-grafito">{resumen}</div>
-          <div className="mt-2">{cartelDelDia}</div>
+          <div className="mt-2">{cartelYBloqueos}</div>
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             {!vacio && agenda.sin_confirmar_manana > 0 && (
               <span className="rounded-pill border border-[#EEDFC0] bg-ambar-suave px-3 py-1.5 text-[14px] font-medium text-ambar">Sin confirmar mañana · {agenda.sin_confirmar_manana}</span>

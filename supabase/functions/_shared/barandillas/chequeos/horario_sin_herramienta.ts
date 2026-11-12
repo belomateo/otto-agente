@@ -50,7 +50,11 @@ const OFRECE_DIA =
 // esa hora y sale el resto; si no queda nada, una pregunta neutra para seguir, sin pasar la charla.
 const PREGUNTA_NEUTRA = "Me decís qué día te queda mejor, así lo reviso en la agenda?";
 function sinLasHoras(texto: string, fuera: string[]): string {
-  const linea = (l: string) => l.split(/(?<=[.!?…])\s+/).filter((o) => !horas(o).some((h) => fuera.includes(h))).join(" ").trim();
+  return sinOraciones(texto, (o) => horas(o).some((h) => fuera.includes(h)));
+}
+// 12/11 (Fede): lo mismo con un día ofrecido sin buscar_horarios; antes el segundo intento pasaba la charla.
+function sinOraciones(texto: string, sacar: (oracion: string) => boolean): string {
+  const linea = (l: string) => l.split(/(?<=[.!?…])\s+/).filter((o) => !sacar(o)).join(" ").trim();
   const resultado = texto.split(/(\n+)/).map((b) => (/^\n+$/.test(b) ? b : linea(b))).join("")
     .replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
   return (resultado.match(/\p{L}/gu) ?? []).length < 15 ? PREGUNTA_NEUTRA : resultado;
@@ -73,7 +77,16 @@ export const horarioSinHerramienta: Barandilla = {
       return { salta: true, accion: "rehacer", motivo };
     }
     if (OFRECE_DIA.test(normalizar(texto)) && !llamoA(traza, "buscar_horarios")) {
-      return { salta: true, accion: "rehacer", motivo: "ofrece un día sin haber llamado a buscar_horarios en este turno" };
+      const motivo = "ofrece un día sin haber llamado a buscar_horarios en este turno";
+      if (saltosPrevios) {
+        return {
+          salta: true,
+          accion: "cortar",
+          motivo: `${motivo} (segundo intento: se sacó en código la oración)`,
+          texto: sinOraciones(texto, (o) => OFRECE_DIA.test(normalizar(o))),
+        };
+      }
+      return { salta: true, accion: "rehacer", motivo };
     }
     return NO_SALTA;
   },

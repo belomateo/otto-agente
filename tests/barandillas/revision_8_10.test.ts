@@ -179,6 +179,18 @@ Deno.test("eligioElHorario: un «sí» vale si Lucía nombró dos veces el mismo
   assertEquals((await eligioElHorario(ctx("si", dos), viernes1815)).ok, false);
 });
 
+Deno.test("eligioElHorario: «Confimado» y otros errores de tipeo de «confirmado» son un sí (Carina, 11/11)", async () => {
+  const ctx = (rafaga: string, nuestro: string) =>
+    ({ db: { consulta: () => Promise.resolve([{ rafaga, nuestro }]) }, tz: "America/Argentina/Cordoba", conversacionId: "x" }) as unknown as ContextoHerramienta;
+  const sabado1445 = new Date("2026-11-14T14:45:00-03:00");
+  const oferta = "Tengo lugar el sábado 14 de noviembre a las 14:45. Te lo reservo?";
+  for (const r of ["Confimado", "confirmado", "Confirmo", "confrimado", "confirmao"]) {
+    assertEquals(await eligioElHorario(ctx(r, oferta), sabado1445), { ok: true }, r);
+  }
+  // «confianza» o «confío» no son un sí.
+  assertEquals((await eligioElHorario(ctx("confío en ustedes", oferta), sabado1445)).ok, false);
+});
+
 Deno.test("eligioElHorario: «hoy» y «mañana» cuentan como nombrar el día (9/11: «Ok hoy», «Hoy !»)", async () => {
   const lunes = new Date("2026-11-09T10:00:00-03:00");
   const ctx = (rafaga: string, nuestro: string, nuestroAt: Date | null = lunes) =>
