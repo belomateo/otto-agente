@@ -4,6 +4,7 @@
 // «¿pudiste ver los horarios que te propuse?» a un cliente al que nadie le había propuesto horarios).
 
 import { fechaLarga, fechaLocal, instanteLocal } from "../tiempo.ts";
+import { nombreUsable } from "../nombre.ts";
 import { primerNombre } from "../whatsapp/plantillas.ts";
 
 export type EtapaSeguimiento = "sin_fecha" | "con_fecha" | "horarios" | "consulta";
@@ -43,7 +44,8 @@ export function fraseDelEvento(fechaYmd: string | null, ahora: Date, tz: string)
 
 // «Hola {nombre}! {evento} …» → «Hola Nico! Tu evento es el … …»; sin nombre, «Hola! …»; sin evento, se saca.
 export function textoDelSeguimiento(plantilla: string, nombre: string | null, evento: string | null = null): string {
-  const n = primerNombre(nombre);
+  // 12/11: un perfil que no es un nombre («🎸🎸crifrock73🎸🎸») no va en el saludo: queda «Hola!».
+  const n = primerNombre(nombreUsable(nombre));
   return plantilla
     .replace(/\s*\{nombre\}/g, n ? ` ${n}` : "")
     .replace(/\s*\{evento\}/g, evento ? ` ${evento}` : "")

@@ -820,7 +820,10 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   // esos trabajos corren y el turno no encuentra nada nuevo que contestar: no hay doble respuesta.
   let absorbidos = 0;
   try {
-    const [f] = await db.consulta<{ n: number }>("select cola_absorber($1::uuid, $2::timestamptz) as n", [t.id, ahora.toISOString()]);
+    // Con la lista de lo que el turno leyó (0117), solo esos; sin ella (un doble de prueba), por hora como antes.
+    const [f] = resultado.mensajesLeidos
+      ? await db.consulta<{ n: number }>("select cola_absorber($1::uuid, $2::timestamptz, $3::uuid[]) as n", [t.id, ahora.toISOString(), resultado.mensajesLeidos])
+      : await db.consulta<{ n: number }>("select cola_absorber($1::uuid, $2::timestamptz) as n", [t.id, ahora.toISOString()]);
     absorbidos = Number(f?.n ?? 0);
   } catch (e) {
     console.error("worker: cola_absorber falló", mensajeDeError(e));

@@ -62,7 +62,7 @@ import { turnoActivoDelCliente } from "../herramientas/turnos.ts";
 import { leerHistorial, ultimoMensajeAntesDe, type MensajeChat } from "./historial.ts";
 import { pidePersonaPorPalabraClave } from "./pide_persona.ts";
 import { CLAVE_TEXTO_COMO_FUNCIONA, pideInformacionGeneral, saludoDeLucia, TEXTO_COMO_FUNCIONA_RESPALDO } from "./informacion_general.ts";
-import { agruparRafaga, MAXIMO_CARACTERES_RAFAGA } from "./rafaga.ts";
+import { agruparRafaga, MAXIMO_CARACTERES_RAFAGA, type Rafaga } from "./rafaga.ts";
 import { eventosDeLaTraza, registrarConsumo, registrarEventos, type EventoAgente } from "./bitacora.ts";
 import { prepararParaEnviar, sinSignosDeApertura } from "../whatsapp/preparar.ts";
 
@@ -143,6 +143,9 @@ export type ResultadoTurno = {
   motivoDerivacion?: MotivoDerivacion;
   avisoEquipo?: { motivo: string; derivacionId: string };
   bloqueadoPorVentana: boolean;
+  // Los mensajes del cliente que este turno leyó (la ráfaga): el worker da por contestados solo esos
+  // (cola_absorber con la lista, 0117). Lo llena correrTurno; los dobles de prueba pueden no traerlo.
+  mensajesLeidos?: string[];
 };
 
 // Invariante (pedido de Mateo, 19/9): si el turno deriva (derivo === true), mensajesAlCliente
@@ -255,8 +258,21 @@ export type ParametrosTurno = {
   fetcher?: typeof fetch;
 };
 
+// 12/11 (Gisela, 11/11): «Graduación» entró a la base unas décimas de segundo después de que el turno leyó
+// la charla, pero su trabajo se había creado antes del arranque y cola_absorber lo dio por contestado: nadie
+// le respondió. Ahora el resultado dice qué mensajes leyó el turno y el worker absorbe solo esos.
 export async function correrTurno(db: Db, p: ParametrosTurno): Promise<ResultadoTurno> {
   const limiteMs = Date.now() + (p.limiteTurnoMs ?? LIMITE_TURNO_MS);
+  // Paso 3 — agrupar ráfaga: todo lo que el cliente mandó desde la última respuesta de Lucía
+  // (o desde el principio) hasta ahora, ya insertado en `mensajes` por quien llamó a esto. Desde
+  // el 19/9 esto también transcribe audios y prepara imágenes (rafaga.ts): sale con lo que hay
+  // para pasarle al modelo, y lo que costó (llamadasLlm) para la bitácora.
+  const rafaga = await agruparRafaga(db, p.conversacionId, p.ahora, { acceso: p.acceso, fetcher: p.fetcher });
+  const r = await turnoConRafaga(db, p, rafaga, limiteMs);
+  return { ...r, mensajesLeidos: rafaga.mensajeIds };
+}
+
+async function turnoConRafaga(db: Db, p: ParametrosTurno, rafaga: Rafaga, limiteMs: number): Promise<ResultadoTurno> {
   const eventos: EventoAgente[] = [];
   const llamadasLlm: LlamadaLlm[] = [];
   let resultado: ResultadoTurno | undefined;
@@ -272,11 +288,6 @@ export async function correrTurno(db: Db, p: ParametrosTurno): Promise<Resultado
   // límite de la función, que corta antes de mandar (hallazgo del trabajo 1, 9/10).
   let seAgotoElTiempo = false;
 
-  // Paso 3 — agrupar ráfaga: todo lo que el cliente mandó desde la última respuesta de Lucía
-  // (o desde el principio) hasta ahora, ya insertado en `mensajes` por quien llamó a esto. Desde
-  // el 19/9 esto también transcribe audios y prepara imágenes (rafaga.ts): sale con lo que hay
-  // para pasarle al modelo, y lo que costó (llamadasLlm) para la bitácora.
-  const rafaga = await agruparRafaga(db, p.conversacionId, p.ahora, { acceso: p.acceso, fetcher: p.fetcher });
   const mensaje = rafaga.texto;
   const hayImagenes = rafaga.imagenes.length > 0;
   const ultimoMensajeClienteAt = rafaga.ultimoEnviadoAt ?? p.ahora;

@@ -45,6 +45,9 @@ Deno.test("seguimiento: la etapa sale de lo que sabe la base, no solo del modelo
 Deno.test("seguimiento: el nombre entra en el saludo, y sin nombre queda «Hola!»", () => {
   assertEquals(textoDelSeguimiento("Hola {nombre}! Pudiste pensarlo?", "nico perez"), "Hola Nico! Pudiste pensarlo?");
   assertEquals(textoDelSeguimiento("Hola {nombre}! Pudiste pensarlo?", null), "Hola! Pudiste pensarlo?");
+  // 12/11: un perfil que no es un nombre no entra en el saludo.
+  assertEquals(textoDelSeguimiento("Hola {nombre}! Pudiste pensarlo?", "🎸🎸crifrock73🎸🎸"), "Hola! Pudiste pensarlo?");
+  assertEquals(textoDelSeguimiento("Hola {nombre}! Pudiste pensarlo?", "Solci🩷"), "Hola Solci! Pudiste pensarlo?");
 });
 
 Deno.test("seguimiento: «{evento}» nombra la fecha de la ficha si no pasó, y se saca sin ella (10/11)", () => {

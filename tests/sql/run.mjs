@@ -389,6 +389,16 @@ async function testColaPorCharla() {
     const n2 = (await client.query("select cola_absorber($1, now()) as n", [primero.id])).rows[0].n;
     const estados2 = Object.fromEntries((await trabajos()).map((t) => [t.contenido, t.estado]));
     assert(n2 === 0 && estados2["y cuanto sale?"] === "pendiente", `cola_absorber: no absorbe un trabajo creado después del arranque del turno (${JSON.stringify(estados2)})`);
+    // 0117 (Gisela, 11/11): con la lista de lo que el turno LEYÓ, se absorbe eso y nada más, sin importar las horas.
+    const idDe = async (texto) => (await client.query(
+      "select m.id from mensajes m join conversaciones c on c.id = m.conversacion_id join clientes cl on cl.id = c.cliente_id where cl.telefono = $1 and m.contenido = $2", [TEL, texto])).rows[0].id;
+    const nVacia = (await client.query("select cola_absorber($1, now(), $2::uuid[]) as n", [primero.id, []])).rows[0].n;
+    const nLeido = (await client.query("select cola_absorber($1, now(), $2::uuid[]) as n", [primero.id, [await idDe("y cuanto sale?"), await idDe("Confirmo")]])).rows[0].n;
+    const estados3 = Object.fromEntries((await trabajos()).map((t) => [t.contenido, t.estado]));
+    assert(
+      nVacia === 0 && nLeido === 1 && estados3["y cuanto sale?"] === "hecho" && estados3["Confirmo"] === "pendiente",
+      `cola_absorber con lista: solo lo leído, y el botón sigue aparte (${JSON.stringify(estados3)})`
+    );
     const [texto] = (await client.query("select count(*)::int as n from mensajes where tipo = 'text'")).rows;
     assert(texto.n === 0, "no queda ningún mensaje con el tipo de Meta ('text'): la base dice 'texto'");
   } finally {
