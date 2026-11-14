@@ -4,6 +4,7 @@
 import 'server-only';
 import type { User } from '@supabase/supabase-js';
 import { crearClienteServidor } from '@/lib/supabase/server';
+import { sesionDelConector } from '@/lib/mcp/sesion';
 import { error } from './respuestas';
 
 export type Perfil = {
@@ -25,6 +26,12 @@ export type Sesion = {
 export async function requerirSesion(
   opciones: { admin?: boolean; claveTemporalOk?: boolean } = {}
 ): Promise<Sesion | Response> {
+  // Adentro del conector de Sofía (lib/mcp): la sesión ya viene armada y verificada (admin aprobado).
+  const delConector = sesionDelConector.getStore();
+  if (delConector) {
+    if (opciones.admin && delConector.perfil.rol !== 'admin') return error(403, 'Solo un admin puede hacer esto');
+    return delConector;
+  }
   const supabase = await crearClienteServidor();
   const {
     data: { user },

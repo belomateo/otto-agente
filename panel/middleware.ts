@@ -19,6 +19,8 @@ const RUTA_CAMBIO_CLAVE = '/cambiar-clave';
 const RUTA_API_CAMBIO_CLAVE = '/api/mi-cuenta/clave';
 
 export async function middleware(request: NextRequest) {
+  // El conector de Sofía (app/api/mcp) no viene con cookies: entra con su clave larga y arma su propia sesión.
+  if (request.nextUrl.pathname.startsWith('/api/mcp/')) return NextResponse.next({ request });
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
