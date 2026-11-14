@@ -736,7 +736,12 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   // Cerrada: el equipo dio la charla por terminada y no se reabre sola. (Con un mensaje nuevo
   // registrar_mensaje_entrante abre una conversación nueva, así que acá casi no llega: queda por
   // las dudas.)
+  // 14/11 (Mateo: «que se puedan escuchar los audios y ver las imágenes»): las fotos y audios se bajaban solo cuando
+  // contestaba Lucía. En una charla derivada, apagada o cerrada —justo las que lee una persona— quedaban en
+  // «pendiente» para siempre y el panel no los podía mostrar. Ahora se bajan igual antes de cortar.
+  const bajarAunqueNoConteste = () => bajarMediosPendientes(db, d, t.conversacion_id);
   if (conv.estado !== "activa" && conv.estado !== "derivada") {
+    await bajarAunqueNoConteste();
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${conv.estado}: Lucía no contesta` });
     return;
   }
@@ -746,6 +751,7 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     conv.lucia_activa = true;
   }
   if (!conv.lucia_activa && !(await retomaPorPedidoDeTurno(db, t.conversacion_id))) {
+    await bajarAunqueNoConteste();
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: "Lucía desactivada para esta charla" });
     return;
   }
@@ -760,6 +766,7 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
     await evento(db, t.conversacion_id, "ok", { etapa: "boton-reprogramar", turno_id: boton.turnoId });
   }
   if (!contestaLucia(d.telefonosLucia, conv.telefono)) {
+    await bajarAunqueNoConteste();
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: "número fuera de LUCIA_TELEFONOS: sin respuesta" });
     return;
   }
@@ -771,10 +778,12 @@ export async function procesarTrabajo(db: Db, t: Trabajo, d: Dependencias): Prom
   // contestando sola y mandaba un "te paso con el equipo" tras otro.
   const despues = await estadoDeLaCharla(db, t.conversacion_id);
   if (despues?.estado !== "activa" && despues?.estado !== "derivada") {
+    await bajarAunqueNoConteste();
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: `conversación ${despues?.estado}: Lucía no contesta` });
     return;
   }
   if (!despues?.lucia_activa) {
+    await bajarAunqueNoConteste();
     await evento(db, t.conversacion_id, "ok", { etapa: "worker", nota: "Lucía desactivada para esta charla" });
     return;
   }

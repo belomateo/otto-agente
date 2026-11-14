@@ -382,6 +382,41 @@ prueba("charla derivada: Lucía queda apagada, el mensaje encola y el turno no c
   assert((await eventos(c, TEL)).some((e) => String(e.detalle.nota).includes("Lucía desactivada")));
 });
 
+prueba("charla derivada: Lucía no contesta, pero el audio que mandó el cliente se baja igual para el panel (14/11)", async (c) => {
+  await derivarCharla(c);
+  await c.sql.query("select registrar_mensaje_entrante($1, $2, null, 'audio', null, $3::timestamptz, $4::jsonb)", [
+    `wamid.PRUEBA-AUDIO-${crypto.randomUUID()}`, TEL, new Date(c.t0.getTime() - 5000).toISOString(),
+    JSON.stringify({ type: "audio", audio: { id: "media-de-prueba", mime_type: "audio/ogg; codecs=opus" } }),
+  ]);
+  const estadoAntes = (await c.sql.query(
+    "select m.adjunto_estado from mensajes m join conversaciones cv on cv.id = m.conversacion_id join clientes cl on cl.id = cv.cliente_id where cl.telefono = $1 and m.tipo = 'audio'",
+    [TEL],
+  )).rows[0]?.adjunto_estado;
+  assertEquals(estadoAntes, "pendiente", "(preparación) el audio entra pendiente");
+
+  const { d, turno, meta } = armar(c);
+  const pedidos: string[] = [];
+  d.fetcher = (async (url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    pedidos.push(u);
+    if (u.startsWith("https://graph.facebook.com/") && u.endsWith("/media-de-prueba")) {
+      return new Response(JSON.stringify({ url: "https://meta.test/descarga/audio", mime_type: "audio/ogg", file_size: 4 }), { status: 200 });
+    }
+    if (u === "https://meta.test/descarga/audio") return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+    if (u.startsWith(d.adjuntos!.base)) return new Response("{}", { status: 200 });
+    return meta.fetcher(url, init);
+  }) as typeof fetch;
+
+  await atenderCola(c.db, d, "worker-prueba");
+  assertEquals([turno.llamadas.length, meta.envios.length], [0, 0], "Lucía sigue sin contestar");
+  const despues = (await c.sql.query(
+    "select m.adjunto_estado, m.adjunto_path from mensajes m join conversaciones cv on cv.id = m.conversacion_id join clientes cl on cl.id = cv.cliente_id where cl.telefono = $1 and m.tipo = 'audio'",
+    [TEL],
+  )).rows[0];
+  assertEquals(despues.adjunto_estado, "listo", `el audio quedó bajado (${JSON.stringify(despues)}; pedidos: ${pedidos.join(" | ")})`);
+  assert(String(despues.adjunto_path).length > 0);
+});
+
 prueba("charla derivada y reactivada desde el panel: el turno corre avisado con yaDerivada", async (c) => {
   await derivarCharla(c);
   await c.sql.query(
