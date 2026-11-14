@@ -52,8 +52,9 @@ export default function ClientesPage() {
   return (
     <>
       {/* Escritorio */}
-      <div className="hidden flex-1 md:flex">
-        <div className="flex min-w-0 flex-1 flex-col p-5.5">
+      {/* 14/11: la lista y la ficha bajan cada una por su lado (antes bajaba la página entera y la ficha quedaba arriba). */}
+      <div className="hidden min-h-0 flex-1 md:flex">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto p-5.5">
           <div className="mb-4 flex items-center gap-3">
             <h1 className="flex-none font-serif text-[22px] font-semibold">Clientes</h1>
             <input
@@ -94,8 +95,8 @@ export default function ClientesPage() {
             )}
           </div>
           {contenido ?? (
-            <div className="overflow-hidden rounded-otto border border-borde bg-lino">
-              <div className="flex h-10 items-center gap-3 border-b border-borde bg-[#FBFAF7] px-4 text-[14px] font-semibold uppercase tracking-[.05em] text-grafito md:text-[11.5px]">
+            <div className="min-h-0 overflow-y-auto rounded-otto border border-borde bg-lino">
+              <div className="sticky top-0 z-10 flex h-10 items-center gap-3 border-b border-borde bg-[#FBFAF7] px-4 text-[14px] font-semibold uppercase tracking-[.05em] text-grafito md:text-[11.5px]">
                 <span className="w-40">Nombre</span>
                 <span className="w-[110px]">Teléfono</span>
                 <span className="flex-1">Evento</span>

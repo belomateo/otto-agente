@@ -653,7 +653,7 @@ function VistaSemana({
   return (
     <>
       {/* Escritorio */}
-      <div className="hidden flex-1 flex-col px-6 pt-5.5 md:flex">
+      <div className="hidden flex-none flex-col px-6 pt-5.5 md:flex">
         <div className="mb-1.5 flex items-center gap-3.5">
           <h1 className="font-serif text-[22px] font-semibold">Turnos</h1>
           <FlechasSemana desde={semana.semana.desde}>
@@ -744,7 +744,7 @@ function VistaMes({ mes, onNuevoTurno, onCambio }: { mes: AgendaMes; onNuevoTurn
   return (
     <>
       {/* Escritorio */}
-      <div className="hidden flex-1 flex-col px-6 pt-5.5 md:flex">
+      <div className="hidden flex-none flex-col px-6 pt-5.5 md:flex">
         <div className="mb-1.5 flex items-center gap-3.5">
           <h1 className="font-serif text-[22px] font-semibold">Turnos</h1>
           <FlechasMes mes={mes.mes}>

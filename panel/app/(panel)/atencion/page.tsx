@@ -91,7 +91,7 @@ export default function AtencionPage() {
     <>
       {/* Escritorio */}
       <div className="hidden min-h-0 flex-1 md:flex">
-        <div className="flex w-[420px] flex-none flex-col gap-3.5 border-r border-borde p-5">
+        <div className="flex min-h-0 w-[420px] flex-none flex-col gap-3.5 border-r border-borde p-5">
           <div>
             <h1 className="font-serif text-[22px] font-semibold">Atención humana</h1>
             <div className="mt-2.5 flex gap-0.5 border-b border-borde text-[14px] font-medium md:text-[13.5px]">
@@ -121,7 +121,8 @@ export default function AtencionPage() {
             </div>
           </div>
           {contenido ?? (
-            <div className="flex flex-col gap-3.5">
+            // 14/11: la lista baja sola, sin arrastrar la charla de al lado.
+            <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-1 pb-1">
               {lista.map((d) => (
                 <TarjetaDerivacion key={d.id} d={d} activa={d.id === principal?.id} onClick={() => setSeleccionId(d.id)} />
               ))}

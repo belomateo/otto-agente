@@ -99,7 +99,7 @@ export default function ActividadPage() {
                 </div>
               </div>
               <div className="rounded-otto border border-borde bg-lino p-4.5">
-                <div className={ROTULO}>Costo de API · OpenAI</div>
+                <div className={ROTULO}>Costo de la IA · Claude</div>
                 <div className="mt-3 flex gap-8">
                   {[
                     [bitacora.costo.hoy, 'hoy'],
@@ -166,7 +166,7 @@ export default function ActividadPage() {
             <div className="rounded-otto border border-borde bg-lino p-3.5 text-[14px] leading-[1.7] text-grafito">
               Atención humana: <span className="font-medium text-tinta">{bitacora.atencion.derivadas} derivadas · {bitacora.atencion.resueltas} OK · {bitacora.atencion.primera_respuesta}</span>
               <br />
-              API OpenAI: <span className="font-medium tabular-nums text-tinta">{bitacora.costo.hoy} hoy · {bitacora.costo.por_consulta}/consulta</span>
+              IA (Claude): <span className="font-medium tabular-nums text-tinta">{bitacora.costo.hoy} hoy · {bitacora.costo.por_consulta}/consulta</span>
             </div>
             <div className="overflow-hidden rounded-otto border border-borde">
               {bitacora.eventos.map((e) => (

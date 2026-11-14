@@ -80,7 +80,7 @@ function Interior({ ficha, onRecargar }: { ficha: FichaDeCliente; onRecargar: ()
   }
 
   return (
-    <div className="flex w-drawer flex-none flex-col border-l border-borde bg-lino">
+    <div className="flex min-h-0 w-drawer flex-none flex-col border-l border-borde bg-lino">
       <div className="flex items-baseline gap-2.5 border-b border-borde-suave px-5.5 pb-3.5 pt-5">
         <h2 className="flex-1 truncate font-serif text-xl font-semibold">{ficha.datos.nombre}</h2>
       </div>
