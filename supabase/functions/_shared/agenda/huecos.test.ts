@@ -466,3 +466,22 @@ Deno.test("si el evento recorta lo pedido, la agenda avisa el último día que q
   assertEquals(calcularHuecos(conConfeccion, [], pedido(LUNES, MIERCOLES, { fechaEvento: SABADO })).ultimoDiaAntesDelEvento, undefined);
   assertEquals(calcularHuecos(REGLAS, [], pedido(LUNES, VIERNES)).ultimoDiaAntesDelEvento, undefined);
 });
+
+// 14/11 (Sofía): sábado con los turnos de la tarde en otra grilla (14:00, 14:45…) que la de la franja (13:30, 14:15…).
+// Se cancelaron turnos y quedaron huecos justos, pero ningún inicio de la grilla entraba: el día figuraba lleno.
+Deno.test("día simultáneo: el hueco que deja un turno cancelado se ofrece aunque esté fuera de la grilla (Sofía, 14/11)", () => {
+  const ocupados = [
+    // probador 1: libre solo de 15:30 a 16:15
+    turno(1, SABADO, "13:15", "14:00"), turno(1, SABADO, "14:00", "14:45"), turno(1, SABADO, "14:45", "15:30"),
+    turno(1, SABADO, "16:15", "17:00"), turno(1, SABADO, "17:00", "18:30"),
+    // probador 2: libre de 14:00 a 14:45 y de 16:15 a 17:00
+    turno(2, SABADO, "13:15", "14:00"), turno(2, SABADO, "14:45", "15:30"), turno(2, SABADO, "15:30", "16:15"),
+    turno(2, SABADO, "17:00", "17:45"), turno(2, SABADO, "17:45", "18:30"),
+  ];
+  const r = calcularHuecos(REGLAS_SIMULTANEAS, ocupados, pedido(SABADO, SABADO));
+  const tarde = r.huecos.filter((h) => new Date(h.inicio) >= local(SABADO, "13:30")).map((h) => `${horaLocal(new Date(h.inicio), TZ)} p${h.probador}`);
+  assertEquals(tarde, ["14:00 p2", "15:30 p1", "16:15 p2"]);
+  // Sin turnos, la grilla de siempre (no se agregan inicios de más).
+  const vacio = calcularHuecos(REGLAS_SIMULTANEAS, [], pedido(SABADO, SABADO)).huecos.filter((h) => new Date(h.inicio) >= local(SABADO, "13:30"));
+  assertEquals([...new Set(vacio.map((h) => horaLocal(new Date(h.inicio), TZ)))], ["13:30", "14:15", "15:00", "15:45", "16:30", "17:15"]);
+});

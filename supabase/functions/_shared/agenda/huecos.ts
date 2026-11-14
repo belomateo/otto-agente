@@ -108,6 +108,12 @@ function diaDeLaSemana(ymd: string): number {
 // justo cuando el otro arranca no pisa.
 const pisa = (o: { inicio: Date; fin: Date }, inicio: Date, fin: Date) => o.inicio < fin && o.fin > inicio;
 
+// Minutos desde la medianoche, en la hora del local.
+const minutosLocales = (d: Date, tz: string) => {
+  const [h, m] = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d).split(":").map(Number);
+  return h * MINUTOS_POR_HORA + m;
+};
+
 export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: PedidoHuecos): ResultadoAgenda {
   if (!(reglas.escalonadoMin > 0) || !(reglas.duracionMin > 0)) {
     throw new Error("La agenda necesita un escalonado y una duración mayores que cero.");
@@ -160,7 +166,21 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
     const paso = esSimultaneo ? reglas.duracionMin : reglas.escalonadoMin;
     const franjas = reglas.franjas.filter((f) => f.diaSemana === semana).sort((a, b) => a.desde - b.desde);
     for (const f of franjas) {
-      for (let min = f.desde; min + reglas.duracionMin <= f.hasta; min += paso) {
+      const inicios: number[] = [];
+      for (let min = f.desde; min + reglas.duracionMin <= f.hasta; min += paso) inicios.push(min);
+      // 14/11 (Sofía): en un día simultáneo la grilla va de a un turno entero desde que arranca la franja, y los turnos
+      // ya cargados pueden estar en otra grilla (13:30, 14:15… contra 14:00, 14:45…). Cuando se cancela uno queda un
+      // hueco justo, pero ningún inicio de la grilla entra y el día figuraba lleno. Se suma como inicio posible el
+      // final de cada turno de ese día (y de cada bloqueo), si cae en la franja: así el hueco se ofrece.
+      if (esSimultaneo) {
+        for (const o of [...ocupados, ...p.bloqueos]) {
+          if (fechaLocal(o.fin, p.tz) !== dia) continue;
+          const m = minutosLocales(o.fin, p.tz);
+          if (m >= f.desde && m + reglas.duracionMin <= f.hasta && !inicios.includes(m)) inicios.push(m);
+        }
+        inicios.sort((a, b) => a - b);
+      }
+      for (const min of inicios) {
         if (reglas.pruebaFinal && (min < reglas.pruebaFinal.desde || min > reglas.pruebaFinal.hasta)) continue;
         const inicio = instanteLocal(dia, aHora(min), p.tz);
         if (inicio <= p.ahora) continue;
