@@ -53,7 +53,9 @@ export const MAXIMO_CARACTERES_RAFAGA = 2500;
 export const MAXIMO_ADJUNTOS_LEGIBLES_POR_RAFAGA = 4;
 
 // Cuántos textos fijos de demora seguidos se saltean para volver a contestar lo que quedó sin respuesta.
-export const MAXIMO_DEMORAS_REINTENTADAS = 3;
+// 16/11: era 3, y quien escribió 4 veces durante la caída (06 a 13 h) quedó sin respuesta. Desde el 16/11 el
+// aviso de falla sale una sola vez por charla, así que ya no se encadenan demoras nuevas.
+export const MAXIMO_DEMORAS_REINTENTADAS = 10;
 
 export type ImagenParaElModelo = { url: string; epigrafe: string | null };
 

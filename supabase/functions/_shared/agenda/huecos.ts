@@ -58,7 +58,8 @@ export type ReglasAgenda = {
   // sábado) y arrancando entre las 11:00 y las 17:30, así si hay arreglos los sastres llegan en el día.
   // Opcional: lo prende Lucía (leerReglas, de configuracion_agenda, 0108); el panel no lo manda y el equipo
   // carga a cualquier hora. En minutos desde medianoche.
-  pruebaFinal?: { desde: number; hasta: number } | null;
+  // dias (0121, Sofía 16/11: lunes a viernes, nunca sábado): sin dias, cualquier día que abra.
+  pruebaFinal?: { desde: number; hasta: number; dias?: number[] } | null;
   // Días de la semana (0=dom..6=sáb) donde los probadores no se escalonan: ambos atienden a la
   // misma hora. Pedido de Mateo, 29/9: el sábado el horario es acotado y conviene que los dos
   // probadores estén disponibles en cada slot. En esos días el paso entre slots es la duración
@@ -139,10 +140,10 @@ export function calcularHuecos(reglas: ReglasAgenda, ocupados: Ocupado[], p: Ped
     if (!urgente && primerDia < finDeLaReserva) primerDia = finDeLaReserva;
   }
 
-  // Prueba final: un solo día, el último abierto antes del evento (se saltean domingos y cierres).
+  // Prueba final: un solo día, el último abierto antes del evento entre los días permitidos (0121: lunes a viernes).
   if (reglas.pruebaFinal && p.fechaEvento !== null) {
     let dia = sumarDias(p.fechaEvento, -1);
-    while (dia >= hoy && (p.cerrados.has(dia) || !reglas.franjas.some((f) => f.diaSemana === diaDeLaSemana(dia)))) dia = sumarDias(dia, -1);
+    while (dia >= hoy && (p.cerrados.has(dia) || (reglas.pruebaFinal.dias && !reglas.pruebaFinal.dias.includes(diaDeLaSemana(dia))) || !reglas.franjas.some((f) => f.diaSemana === diaDeLaSemana(dia)))) dia = sumarDias(dia, -1);
     primerDia = dia;
     ultimoDia = dia;
   }
@@ -240,14 +241,16 @@ const aMinutos = (t: unknown) => {
 };
 
 // La ventana de la prueba final (0108). Sin la migración aplicada, no se recorta el horario (solo el día).
-async function ventanaPruebaFinal(db: Db): Promise<{ desde: number; hasta: number }> {
+async function ventanaPruebaFinal(db: Db): Promise<{ desde: number; hasta: number; dias?: number[] }> {
   const [col] = await db.consulta(
     `select 1 from information_schema.columns
       where table_schema = 'public' and table_name = 'configuracion_agenda' and column_name = 'prueba_final_desde'`,
   );
   if (!col) return { desde: 0, hasta: MINUTOS_POR_HORA * MINUTOS_POR_HORA };
-  const [f] = await db.consulta("select prueba_final_desde, prueba_final_hasta from configuracion_agenda limit 1");
-  return { desde: aMinutos(f.prueba_final_desde), hasta: aMinutos(f.prueba_final_hasta) };
+  const [f] = await db.consulta<{ prueba_final_desde: string; prueba_final_hasta: string; prueba_final_dias: number[] }>(
+    "select prueba_final_desde, prueba_final_hasta, prueba_final_dias from configuracion_agenda limit 1",
+  );
+  return { desde: aMinutos(f.prueba_final_desde), hasta: aMinutos(f.prueba_final_hasta), dias: f.prueba_final_dias };
 }
 
 async function leerReglas(db: Db, tipo: TipoTurno): Promise<ReglasAgenda> {

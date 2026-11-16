@@ -12,11 +12,12 @@ import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import { type ClienteSql, type Db, dbDesde, type Fila } from "../../supabase/functions/_shared/db.ts";
 import { calendarioDeEnsayo } from "../../supabase/functions/_shared/herramientas/tipos.ts";
 import { horaLocal } from "../../supabase/functions/_shared/tiempo.ts";
-import { correrTurno as correrTurnoReal, TEXTO_DEMORA_RESPALDO } from "../../supabase/functions/_shared/turno/turno.ts";
+import { AVISO_FALLA_IA, correrTurno as correrTurnoReal } from "../../supabase/functions/_shared/turno/turno.ts";
+import { TEXTO_COMO_FUNCIONA_RESPALDO } from "../../supabase/functions/_shared/turno/informacion_general.ts";
 import { comoChat } from "./_openai_simulado.ts";
 // El principal habla Responses desde el 9/10; los fetchers de acá, Chat Completions: comoChat traduce.
 const correrTurno: typeof correrTurnoReal = (db, p) => correrTurnoReal(db, { ...p, fetcher: p.fetcher ? comoChat(p.fetcher) : p.fetcher });
-import { sinSignosDeApertura } from "../../supabase/functions/_shared/whatsapp/preparar.ts";
+import { prepararParaEnviar, sinSignosDeApertura } from "../../supabase/functions/_shared/whatsapp/preparar.ts";
 import { AHORA, conBase, contar, crearTurno, fila, local, MARTES, prueba, TZ } from "./_arnes.ts";
 
 // Arma una respuesta de Chat Completions mínima, con o sin tool_call.
@@ -327,18 +328,23 @@ prueba("sin respuesta del principal: el último intento contesta, sin derivar ni
   assertEquals([conv.estado, conv.lucia_activa], ["activa", true]);
 });
 
-prueba("si ni el último intento contesta: sale el texto de demora, sin derivar ni apagar a Lucía", async ({ ctx, sql, conversacionId }) => {
-  await sql.query("delete from contexto_agente where clave = 'texto_demora'");
+prueba("si la IA no contesta: sale UNA vez cómo funciona el alquiler y que en unos minutos le responden (16/11), sin derivar ni apagar a Lucía", async ({ ctx, sql, conversacionId }) => {
+  await sql.query("delete from contexto_agente where clave = 'texto_como_funciona'");
   await insertarEntrante(sql, conversacionId, "hola, quiero alquilar un traje");
-  const resultado = await correrTurno(ctx.db, {
+  const turno = () => correrTurno(ctx.db, {
     clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
     calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: principalMudo(null),
   });
+  const resultado = await turno();
   assertEquals(resultado.derivo, false);
-  assertEquals(resultado.mensajesAlCliente, [sinSignosDeApertura(TEXTO_DEMORA_RESPALDO)]);
+  assertEquals(resultado.mensajesAlCliente, prepararParaEnviar([TEXTO_COMO_FUNCIONA_RESPALDO, AVISO_FALLA_IA]));
   assertEquals(await contar(sql, "select count(*)::int as n from derivaciones where conversacion_id = $1", [conversacionId]), 0);
   const conv = await fila(sql, "select estado, lucia_activa from conversaciones where id = $1", [conversacionId]);
   assertEquals([conv.estado, conv.lucia_activa], ["activa", true]);
+  // Si la IA sigue sin contestar, no se le manda nada más (ya se le avisó).
+  await insertarEntrante(sql, conversacionId, "hola? sigo esperando");
+  const segundo = await turno();
+  assertEquals(segundo.mensajesAlCliente, []);
 });
 
 // Hallazgo del trabajo 1 (9/10): si el modelo se quedó sin tiempo, OpenAI puede estar colgado y el

@@ -77,8 +77,10 @@ const CLAVE_TEXTO_MENSAJE_NO_SOPORTADO = "texto_mensaje_no_soportado";
 // Si ni el último intento contesta (OpenAI caído, por ejemplo): un texto fijo, editable en el panel
 // (contexto_agente), con respaldo acá. Pide que vuelva a escribir en vez de prometer una respuesta
 // que nadie va a mandar; Lucía sigue prendida y contesta el próximo mensaje.
-const CLAVE_TEXTO_DEMORA = "texto_demora";
+// El texto de demora de antes (hasta el 16/11). Ya no sale, pero rafaga.ts lo sigue reconociendo en charlas viejas.
 export const TEXTO_DEMORA_RESPALDO = "Perdón la demora, se me complicó revisar eso justo ahora. ¿Me lo escribís de nuevo en un ratito?";
+// 16/11 (Mateo): lo que sigue a «cómo funciona el alquiler» cuando la IA no responde.
+export const AVISO_FALLA_IA = "Si tenés alguna duda o consulta, mandala por acá y en unos minutos te respondemos.";
 const INSTRUCCION_ULTIMO_INTENTO =
   "CORRECCIÓN INTERNA, no se la muestres al cliente ni la menciones: se terminó el tiempo para consultar " +
   "herramientas. Contestale ahora al cliente con lo que ya sabés por esta charla y por lo que ya consultaste en " +
@@ -548,9 +550,22 @@ async function turnoConRafaga(db: Db, p: ParametrosTurno, rafaga: Rafaga, limite
           return res;
         }
       }
-      const texto = (await textoDeContexto(db, CLAVE_TEXTO_DEMORA)) ?? TEXTO_DEMORA_RESPALDO;
-      eventos.push({ tipo: "pensamiento", detalle: { etapa: "ultimo-intento", nota: "tampoco contestó: salió el texto fijo de demora y Lucía sigue prendida" } });
-      return { mensajesAlCliente: prepararParaEnviar([...efectosMensajes, texto]), imagenes, derivo: false, bloqueadoPorVentana: false };
+      // 16/11 (Mateo, tras la caída de la IA de la mañana: unas 110 «Perdón la demora»): si la IA no responde (sin
+      // crédito, caída o error), sale UNA vez por charla cómo funciona el alquiler y que en unos minutos le
+      // responden; si ya salió en las últimas 24 hs, no se manda nada más. Lucía sigue prendida en los dos casos.
+      const [yaAvisado] = await db.consulta<{ n: number }>(
+        `select count(*)::int as n from eventos_agente
+          where conversacion_id = $1::uuid and tipo = 'pensamiento' and detalle->>'etapa' = 'aviso-falla-ia'
+            and creado_at > now() - interval '24 hours'`,
+        [p.conversacionId],
+      );
+      if ((yaAvisado?.n ?? 0) > 0) {
+        eventos.push({ tipo: "pensamiento", detalle: { etapa: "ultimo-intento", nota: "la IA tampoco contestó y ya se le avisó en las últimas 24 hs: no se manda nada más" } });
+        return { mensajesAlCliente: prepararParaEnviar(efectosMensajes), imagenes, derivo: false, bloqueadoPorVentana: false };
+      }
+      const comoFunciona = (await textoDeContexto(db, CLAVE_TEXTO_COMO_FUNCIONA)) ?? TEXTO_COMO_FUNCIONA_RESPALDO;
+      eventos.push({ tipo: "pensamiento", detalle: { etapa: "aviso-falla-ia", nota: "la IA no contestó: salió una vez cómo funciona el alquiler y que en unos minutos le responden; Lucía sigue prendida" } });
+      return { mensajesAlCliente: prepararParaEnviar([...efectosMensajes, comoFunciona, AVISO_FALLA_IA]), imagenes, derivo: false, bloqueadoPorVentana: false };
     };
 
     const corte = r.efectos.find((e) => e.cortaTurno);
