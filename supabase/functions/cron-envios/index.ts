@@ -149,12 +149,12 @@ async function enviarTipo(tipo: TipoEnvio, linkResena: string | null) {
   const r = { tipo, candidatos: candidatos.length, enviados: 0, errores: 0, omitidos: [] as string[], sin_registrar: [] as string[] };
   // El aviso usa una plantilla nueva: mientras Meta no la apruebe, no sale. Se pregunta solo si hay
   // algo para avisar, así el cron de cada minuto no le consulta a Meta en vano.
-  if (aviso && candidatos.length > 0 && !(await plantillaAprobada(NOMBRE_PLANTILLA.aviso_derivacion))) {
-    r.omitidos.push(`la plantilla ${NOMBRE_PLANTILLA.aviso_derivacion} todavía no está aprobada en Meta: el aviso queda en pausa`);
+  if ((aviso || tipo === "confirmacion_asistencia") && candidatos.length > 0 && !(await plantillaAprobada(NOMBRE_PLANTILLA[tipo]))) {
+    r.omitidos.push(`la plantilla ${NOMBRE_PLANTILLA[tipo]} todavía no está aprobada en Meta: queda en pausa`);
     return r;
   }
   const motivos = aviso ? await motivosDeDerivacion(candidatos.map((c) => c.referencia)) : new Map<string, string>();
-  // 11/11: la versión nueva (recordatorio con «¿venís?», reseña con el texto de Sofía) sale apenas Meta la aprueba.
+  // 11/11: la reseña con el texto de Sofía sale apenas Meta la aprueba.
   const nueva = tieneVersionNueva(tipo) && candidatos.length > 0 && await plantillaAprobada(NOMBRE_PLANTILLA_NUEVA[tipo]);
 
   for (const c of candidatos) {
@@ -344,7 +344,7 @@ async function confirmarTurno(turnoId: string): Promise<Response> {
     inicio: new Date(turno.inicio as string),
     referencia: turnoId,
     linkResena: null,
-  }, TZ, await plantillaAprobada(NOMBRE_PLANTILLA_NUEVA.recordatorio_18h));
+  }, TZ);
   if ("falta" in plantilla) return Response.json({ omitido: true, falta: plantilla.falta });
 
   const { data: id, error: errReserva } = await supabase.rpc("envio_reservar", {

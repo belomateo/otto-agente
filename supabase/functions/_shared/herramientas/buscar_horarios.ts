@@ -27,7 +27,7 @@ import {
   partesLocales,
   sumarDias,
 } from "../tiempo.ts";
-import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
+import { avisarPorEventoCercano, DIAS_EVENTO_ESTA_SEMANA, esEventoInminente } from "./derivacion.ts";
 import { turnoActivoDelCliente } from "./turnos.ts";
 import { fechaEventoCreible } from "./fecha_evento.ts";
 import { actualizarFicha, leerFicha } from "./ficha.ts";
@@ -120,7 +120,7 @@ export const buscarHorarios: Herramienta<Args> = {
     const paraMover = esEventoInminente(fechaEvento, ctx.ahora, ctx.tz) && (await turnoActivoDelCliente(ctx.db, ctx.cliente.id, ctx.ahora)) !== null;
     if (esEventoInminente(fechaEvento, ctx.ahora, ctx.tz) && !paraMover) {
       if (args.fecha_evento) await actualizarFicha(ctx.db, ctx.cliente.id, { fecha_evento: args.fecha_evento });
-      return await derivarPorEventoInminente(ctx);
+      return await avisarPorEventoCercano(ctx);
     }
 
     const avisos: string[] = [];
@@ -136,7 +136,7 @@ export const buscarHorarios: Herramienta<Args> = {
     // contando 15 días y perdía una vuelta entera (4 rechazos en las últimas 30 charlas; a un
     // cliente le preguntó "qué día te queda cómodo" en vez de ofrecerle horarios).
     let hasta = paraMover && fechaEvento && args.hasta >= fechaEvento ? sumarDias(fechaEvento, -1) : args.hasta;
-    if (paraMover && hasta < desde) return await derivarPorEventoInminente(ctx);
+    if (paraMover && hasta < desde) return await avisarPorEventoCercano(ctx);
     if (diasEntre(desde, hasta) > RANGO_MAXIMO_DIAS) {
       hasta = sumarDias(desde, RANGO_MAXIMO_DIAS);
       avisos.push(`se buscó hasta ${hasta}: dos semanas por vez.`);
@@ -159,7 +159,7 @@ export const buscarHorarios: Herramienta<Args> = {
       ahora: ctx.ahora,
       fechaEvento: paraMover ? null : fechaEvento,
     });
-    if (agenda.derivar === "evento_inminente") return await derivarPorEventoInminente(ctx);
+    if (agenda.derivar === "evento_inminente") return await avisarPorEventoCercano(ctx);
 
     const { franjas } = await leerFranjas(ctx.db);
     const validos = validosPorInicio(agenda.huecos, desde, hasta, franjas, ctx);
@@ -181,7 +181,7 @@ export const buscarHorarios: Herramienta<Args> = {
           : "El horario que eligió no está disponible. No derives: ofrecé los horarios más cercanos de la lista y preguntale cuál le queda bien.";
       }
     }
-    if (paraMover && huecos.length === 0) return await derivarPorEventoInminente(ctx); // no hay dónde moverlo antes del evento
+    if (paraMover && huecos.length === 0) return await avisarPorEventoCercano(ctx); // no hay dónde moverlo antes del evento
     if (huecos.length === 0) {
       Object.assign(
         datos,
@@ -199,6 +199,11 @@ export const buscarHorarios: Herramienta<Args> = {
           eligioUnHorario: elegido !== null,
         }),
       );
+      // 17/11 (Sofía): evento esta semana y nada antes del evento (ni en lo más cercano) → que se acerque al local.
+      if (datos.sin_lugar_antes_del_evento && fechaEvento && fechaEvento <= sumarDias(hoy, DIAS_EVENTO_ESTA_SEMANA)) {
+        return await avisarPorEventoCercano(ctx);
+      }
+      delete datos.sin_lugar_antes_del_evento;
     }
     if (avisos.length) datos.aviso = avisos.join(" ");
     if (validos.descartados) datos.descartados_fuera_de_horario = validos.descartados;
@@ -335,6 +340,7 @@ async function sinLugarEnLoPedido(ctx: ContextoHerramienta, p: PedidoSinLugar): 
     ? `Tampoco hay lugar en los días más cercanos (se miró del ${nombre(alternativa.mirado.desde)} al ${nombre(alternativa.mirado.hasta)}).`
     : "No queda otro día antes del evento.";
   return {
+    sin_lugar_antes_del_evento: true,
     nota: `${eligio}${porQue} ${tampoco} Derivá con dato_no_encontrado sin enviar una negativa de disponibilidad: ` +
       "el equipo le busca un lugar.",
   };

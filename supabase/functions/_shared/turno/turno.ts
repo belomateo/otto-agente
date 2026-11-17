@@ -30,6 +30,7 @@ import { mensajesDeEfectos } from "../herramientas/efectos.ts";
 import { sinAnuncioDePase } from "./anuncio_de_pase.ts";
 import { esCierreCortes } from "./cierre_cortes.ts";
 import {
+  avisoEventoCercano,
   type ClaveDerivacion,
   CLAVE_TEXTO_DERIVACION_CORPORATIVO,
   CLAVE_TEXTO_DERIVACION_DURA_GENERICA,
@@ -359,13 +360,15 @@ async function turnoConRafaga(db: Db, p: ParametrosTurno, rafaga: Rafaga, limite
           detalle: { etapa: "derivada-sigue", motivo: dura.motivo, porQue: `${dura.porQue}, pero la charla ya está derivada: no se deriva de nuevo, sigue contestando` },
         });
       } else {
-        eventos.push({ tipo: "pensamiento", detalle: { etapa: "derivacion-dura-codigo", motivo: dura.motivo, porQue: dura.porQue } });
-        const claveDura = claveDeDerivacion(dura.motivo);
-        const { texto, usoRespaldo } = await textoDeDerivacion(db, claveDura);
-        if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "derivacion-dura-codigo", error: `contexto_agente.${claveDura} está vacío, se usó el respaldo de código` } });
-        resultado = await derivar(db, { conversacionId: p.conversacionId, motivo: dura.motivo, mensaje: texto, derivacionTel: p.derivacionTel });
-        eventos.push({ tipo: "derivacion", detalle: { motivo: dura.motivo, derivacion_id: resultado.avisoEquipo?.derivacionId, origen: "codigo" } });
-        return resultado;
+        // 17/11 (Sofía): ya no se deriva. Se le dice una vez que se acerque al local (avisoEventoCercano); si ya se le
+        // dijo, sigue el turno normal y Lucía contesta lo demás.
+        const { texto, usoRespaldo } = await avisoEventoCercano(db, p.conversacionId, p.ahora);
+        if (usoRespaldo) eventos.push({ tipo: "error", detalle: { etapa: "evento-cercano", error: `contexto_agente.${CLAVE_TEXTO_EVENTO_INMINENTE} está vacío, se usó el respaldo de código` } });
+        if (texto) {
+          eventos.push({ tipo: "pensamiento", detalle: { etapa: "evento-cercano", porQue: `${dura.porQue}: se le dice que se acerque al local, sin derivar` } });
+          resultado = { mensajesAlCliente: prepararParaEnviar([texto]), imagenes: [], derivo: false, bloqueadoPorVentana: false };
+          return resultado;
+        }
       }
     }
 
@@ -512,7 +515,7 @@ async function turnoConRafaga(db: Db, p: ParametrosTurno, rafaga: Rafaga, limite
         // hace el worker con lo que devuelve el turno.
         mensajesAlCliente: prepararParaEnviar(textosRevisados),
         imagenes: rr.efectos.flatMap((e) => e.imagenes ?? []),
-        derivo: true,
+        derivo: efectoQueCorta.avisoEquipo !== undefined, // 17/11: el aviso de evento cercano corta sin derivar
         motivoDerivacion: motivoDelCorte,
         avisoEquipo: efectoQueCorta.avisoEquipo,
         bloqueadoPorVentana: false,

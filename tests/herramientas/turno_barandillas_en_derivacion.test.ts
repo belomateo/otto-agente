@@ -818,7 +818,7 @@ prueba("corporativo: lo deriva Lucía (sin filtro de palabras) y sale su propio 
 //    puede leerse como precio (54, 341, 239).
 const TEXTO_CON_TELEFONO = "Para un evento tan cercano, lo mejor es que te comuniques directo con el local al +54 9 341 239 2502: ya les avisé, así te ayudan a resolverlo enseguida.";
 
-prueba("evento hoy o mañana ya en la ficha: sale el texto propio, no el genérico (5/10)", async ({ ctx, sql, clienteId, conversacionId }) => {
+prueba("evento hoy o mañana ya en la ficha: sale el texto propio y no se deriva (5/10, 17/11)", async ({ ctx, sql, clienteId, conversacionId }) => {
   await sql.query("update contexto_agente set valor = $1 where clave = 'texto_evento_inminente'", [TEXTO_CON_TELEFONO]);
   await sql.query("update clientes set fecha_evento = $2 where id = $1", [clienteId, "2030-06-04"]); // mañana
   await insertarEntrante(sql, conversacionId, "hola, necesito un traje");
@@ -826,8 +826,7 @@ prueba("evento hoy o mañana ya en la ficha: sale el texto propio, no el genéri
     clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
     calendario: calendarioDeEnsayo, derivacionTel: null, fetcher: fetcherSoloExtractor(),
   });
-  assertEquals(resultado.derivo, true);
-  assertEquals(resultado.motivoDerivacion, "evento_inminente");
+  assertEquals(resultado.derivo, false); // 17/11 (Sofía): ya no se deriva, se le dice que se acerque al local
   assertEquals(resultado.mensajesAlCliente.join(" "), TEXTO_CON_TELEFONO);
 });
 
@@ -864,8 +863,7 @@ prueba("evento hoy o mañana por buscar_horarios: el texto con el teléfono pasa
     clienteId: ctx.cliente.id, telefono: ctx.cliente.telefono, conversacionId, ahora: AHORA, tz: TZ,
     calendario: calendarioDeEnsayo, derivacionTel: null, fetcher,
   });
-  assertEquals(resultado.derivo, true);
-  assertEquals(resultado.motivoDerivacion, "evento_inminente");
+  assertEquals(resultado.derivo, false); // 17/11 (Sofía): ya no se deriva, se le dice que se acerque al local
   assertEquals(resultado.mensajesAlCliente.join(" "), TEXTO_CON_TELEFONO);
   const saltos = await contar(sql, "select count(*)::int as n from eventos_agente where conversacion_id = $1 and detalle->>'etapa' = 'barandilla-en-derivacion'", [conversacionId]);
   assertEquals(saltos, 0, "ninguna barandilla tendría que saltar con este texto");

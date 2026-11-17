@@ -43,10 +43,11 @@ prueba("reserva de urgencia con el evento lejos: el vacío manda a buscar desde 
 // por evento_inminente: con el miércoles 5 que tenía esta prueba ya no llegaba acá). El vacío es de
 // verdad: desde el 10/10 buscar_horarios mira solo lo más cercano y, como ahí tampoco hay lugar,
 // recién entonces indica pasar la charla.
-prueba("evento dentro de la reserva: el vacío es de verdad y, sin lugar cerca, indica pasar la charla", async ({ sql, ctx }) => {
+// 17/11 (Sofía): el evento es esta semana y no hay nada antes → el aviso para que se acerque al local, sin pasar la charla.
+prueba("evento dentro de la reserva: el vacío es de verdad y, sin lugar cerca, sale el aviso del local", async ({ sql, ctx }) => {
   await reserva(sql);
   const r = await buscar(ctx, MARTES, MARTES, "invitado", JUEVES);
   esOk(r);
-  assertMatch(String(r.datos.nota), /Tampoco hay lugar en los días más cercanos/);
-  assertMatch(String(r.datos.nota), /Derivá con dato_no_encontrado/);
+  assertEquals(r.datos.evento_esta_semana, true);
+  assertEquals(r.efectos?.cortaTurno, true);
 });

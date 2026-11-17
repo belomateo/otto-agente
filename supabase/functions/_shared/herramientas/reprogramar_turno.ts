@@ -9,7 +9,7 @@
 import { esEstadoActivo, type TipoTurno } from "../enums.ts";
 import { fechaLarga, fechaLocal, horaLocal } from "../tiempo.ts";
 import { armarConfirmacion } from "./confirmacion.ts";
-import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
+import { avisarPorEventoCercano, esEventoInminente } from "./derivacion.ts";
 import { eligioElHorario } from "./eleccion.ts";
 import { leerFicha } from "./ficha.ts";
 import { dentroDeFranja, leerFranjas } from "./horario_laboral.ts";

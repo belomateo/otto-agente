@@ -23,7 +23,8 @@ import { telefonoParaMeta } from "./telefono.ts";
 
 // aviso_derivacion (Mateo, 9/10) es la única que NO va al cliente: le avisa al equipo que Lucía le
 // pasó una charla (PROCESOS.md § 4, paso 4). La manda cron-envios al teléfono del equipo.
-export const TIPOS_ENVIO = ["recordatorio_18h", "agradecimiento_resena", "recontacto_1", "recontacto_2", "aviso_derivacion"] as const;
+// confirmacion_asistencia (Sofía, 17/11): si no contestó el recordatorio en 3 horas, se le pide que confirme con SI o NO.
+export const TIPOS_ENVIO = ["recordatorio_18h", "agradecimiento_resena", "recontacto_1", "recontacto_2", "aviso_derivacion", "confirmacion_asistencia"] as const;
 export type TipoEnvio = typeof TIPOS_ENVIO[number];
 export const esTipoEnvio = (v: unknown): v is TipoEnvio => (TIPOS_ENVIO as readonly unknown[]).includes(v);
 
@@ -40,6 +41,8 @@ export const NOMBRE_PLANTILLA: Record<TipoEnvio, string> = {
   recontacto_1: "recontacto_cliente",
   recontacto_2: "recontacto_cliente_2",
   aviso_derivacion: "aviso_derivacion",
+  // Mateo la registró en Meta con este nombre (aprobada el 17/11), que antes era el del recordatorio nuevo.
+  confirmacion_asistencia: "recordatorio_turno_2",
 };
 export const IDIOMA_PLANTILLAS = "es_AR";
 
@@ -47,25 +50,16 @@ export const IDIOMA_PLANTILLAS = "es_AR";
 // se cambia y editar la aprobada la deja fuera de servicio mientras la revisan. cron-envios usa la nueva apenas
 // Meta la aprueba y, hasta entonces, la de siempre. El texto tiene que ser EXACTAMENTE el registrado.
 export const NOMBRE_PLANTILLA_NUEVA = {
-  recordatorio_18h: "recordatorio_turno_2",
   agradecimiento_resena: "resena_evento",
 } as const;
 export type TipoConVersionNueva = keyof typeof NOMBRE_PLANTILLA_NUEVA;
 export const tieneVersionNueva = (t: TipoEnvio): t is TipoConVersionNueva => t in NOMBRE_PLANTILLA_NUEVA;
 
-// UTILITY, es_AR. {{1}} = nombre, {{2}} = «Viernes 14 de Noviembre», {{3}} = «15.00hs». Pide que contesten si
-// vienen o no; la respuesta la lee Lucía y confirma o reprograma (cambiar_turno).
-export const TEXTO_RECORDATORIO_2 = "Hola {{1}}! 👋\n\n" +
-  "Te recordamos tu turno para alquilar el traje:\n" +
-  "🗓️ *Día:* {{2}}\n" +
-  "⏱️ *Hora:* {{3}}\n" +
-  "📍 España 764, Rosario\n" +
-  "https://maps.app.goo.gl/YKyU8qDRqDfNNvWT8\n\n" +
-  "👉 *¿Venís al turno?* Respondé este mensaje con *SÍ* si venís, o con *NO* si no podés y lo reprogramamos.\n\n" +
-  "👪 Se permite un acompañante por persona.\n" +
-  "⏳ El turno es de 45 minutos, con 10 minutos de tolerancia.\n" +
-  "🔖 Si alquilás, para reservar se abona el 100%. Aceptamos efectivo, transferencia y tarjetas de crédito y débito.\n\n" +
-  "¡Gracias! ✨";
+// La insistencia (17/11), sin variables: el texto EXACTO aprobado en Meta (recordatorio_turno_2). Si contesta SI,
+// Lucía confirma el turno; si contesta NO, le ofrece moverlo o cancelarlo.
+export const TEXTO_CONFIRMACION_ASISTENCIA = "¡Hola! 😊 Necesitamos que nos confirmes tu asistencia al turno para poder " +
+  "organizar la atención en el local y brindarte el mejor servicio.\n\nPor favor, respondé:\n*SI* si vas a asistir.\n" +
+  "*NO* si necesitás cancelar o reprogramar.\n\n¡Muchas gracias!";
 
 // MARKETING, es_AR, sin variables: el texto de Sofía (11/11), con el link de reseñas fijo.
 export const TEXTO_RESENA_EVENTO = "¡Hola! 😊 ¿Cómo estás? Esperamos que hayan disfrutado mucho del evento y que hayan " +
@@ -118,6 +112,9 @@ export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string, nueva
   // alguien se entere. Va antes del chequeo del nombre, que es para los mensajes al cliente.
   if (tipo === "aviso_derivacion") return avisoDerivacion(d);
   // La reseña nueva no lleva el nombre: sale igual sin él.
+  if (tipo === "confirmacion_asistencia") {
+    return { nombre: NOMBRE_PLANTILLA.confirmacion_asistencia, idioma: IDIOMA_PLANTILLAS, botones: [], cuerpo: [], texto: TEXTO_CONFIRMACION_ASISTENCIA };
+  }
   if (tipo === "agradecimiento_resena" && nueva) {
     return { nombre: NOMBRE_PLANTILLA_NUEVA.agradecimiento_resena, idioma: IDIOMA_PLANTILLAS, botones: [], cuerpo: [], texto: TEXTO_RESENA_EVENTO };
   }
@@ -134,14 +131,6 @@ export function armarPlantilla(tipo: TipoEnvio, d: DatosEnvio, tz: string, nueva
     if (!d.inicio) return { falta: "la hora del turno" };
     const dia = diaDePlantilla(d.inicio, tz);
     const hora = horaDePlantilla(d.inicio, tz);
-    if (nueva) {
-      return {
-        ...base,
-        nombre: NOMBRE_PLANTILLA_NUEVA.recordatorio_18h,
-        cuerpo: [nombre, dia, hora],
-        texto: TEXTO_RECORDATORIO_2.replace("{{1}}", nombre).replace("{{2}}", dia).replace("{{3}}", hora),
-      };
-    }
     return {
       ...base,
       cuerpo: [nombre, dia, hora],

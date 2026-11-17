@@ -12,6 +12,7 @@
 import type { Db } from "../db.ts";
 import { DIAS_EVENTO_INMINENTE, type MotivoDerivacion } from "../enums.ts";
 import { fechaLocal, sumarDias } from "../tiempo.ts";
+import { describirHorarios, leerHorarioDelLocal } from "./horario_laboral.ts";
 import type { ContextoHerramienta, Efectos } from "./tipos.ts";
 
 export const CLAVE_TEXTO_EVENTO_INMINENTE = "texto_evento_inminente";
@@ -43,7 +44,7 @@ export const CLAVE_TEXTO_DEVOLUCION_TARDIA = "texto_devolucion_tardia";
 // lee anuncia_sin_derivar como un pase sin ejecutar y descartaba el texto (ver turno.ts).
 const RESPALDOS = {
   [CLAVE_TEXTO_EVENTO_INMINENTE]:
-    "Como tu evento está tan cerca, lo resuelve directo el equipo del local: ya les avisé para que te ayuden enseguida.",
+    "Como tu evento es en estos días y la agenda de turnos antes de esa fecha ya está completa, te recomiendo que te acerques cuanto antes al local, en España 764. El horario es: {horario} Te atienden por orden de llegada, aunque los turnos ya agendados tienen prioridad. El equipo va a hacer todo lo posible para conseguirte alguna alternativa, aunque sin poder asegurarte la disponibilidad: depende del talle de cada persona y solo se puede ver personalmente en el local.",
   [CLAVE_TEXTO_DERIVACION_DURA_GENERICA]: "Te paso con alguien del equipo para que te ayude con esto. En un rato te escriben.",
   [CLAVE_TEXTO_DERIVACION_RECLAMO]: "Te leo. Esto lo sigue alguien del local: en un rato te escriben.",
   [CLAVE_TEXTO_DERIVACION_FALLO]: "Se me complicó de este lado. Ya avisé a alguien del local y en un rato te escriben.",
@@ -109,27 +110,33 @@ export async function textoDeContexto(db: Db, clave: string): Promise<string | n
   return valor === "" ? null : valor;
 }
 
-// La derivación dura por evento inminente, lista para devolver desde una herramienta. El
-// modelo ve que ya se derivó; el texto fijo y el aviso al equipo los manda el turno.
-export async function derivarPorEventoInminente(
-  ctx: ContextoHerramienta,
-): Promise<{ ok: true; datos: Record<string, unknown>; efectos: Efectos }> {
-  const { id, yaEstaba } = await registrarDerivacion(ctx, "evento_inminente");
-  const { texto, usoRespaldo } = await textoDeDerivacion(ctx.db, CLAVE_TEXTO_EVENTO_INMINENTE);
-  const datos: Record<string, unknown> = {
-    derivar: "evento_inminente",
-    derivacion_id: id,
-    nota: "El evento es dentro de los próximos 2 días: el sistema ya le pasa el teléfono del local para que lo resuelva directo. No ofrezcas turnos ni escribas nada más.",
-  };
-  if (yaEstaba) datos.ya_estaba_derivada = true;
-  if (usoRespaldo) datos.falta = `la fila de contexto_agente de esta derivación (${CLAVE_TEXTO_EVENTO_INMINENTE}) está vacía: se usó el respaldo de código`;
-  return {
-    ok: true,
-    datos,
-    efectos: {
-      cortaTurno: true,
-      mensajesAlCliente: [texto],
-      avisoEquipo: { motivo: "evento_inminente", derivacionId: id },
-    },
-  };
+// Evento esta semana sin turno antes (Sofía, 17/11; hasta entonces se derivaba al equipo): se le dice que se acerque
+// cuanto antes al local, por orden de llegada, con el horario de la agenda en {horario}. No se deriva: la charla sigue
+// con Lucía. Sale una vez por charla en la semana; después texto es null y el modelo contesta lo demás sin turnos.
+export const DIAS_EVENTO_ESTA_SEMANA = 6;
+
+export async function avisoEventoCercano(db: Db, conversacionId: string, ahora: Date): Promise<{ texto: string | null; usoRespaldo: boolean }> {
+  const { texto: crudo, usoRespaldo } = await textoDeDerivacion(db, CLAVE_TEXTO_EVENTO_INMINENTE);
+  const texto = crudo.includes("{horario}") ? crudo.replace("{horario}", describirHorarios(await leerHorarioDelLocal(db), []).local) : crudo;
+  const ya = await db.consulta(
+    `select 1 from mensajes where conversacion_id = $1::uuid and direccion = 'saliente'
+        and enviado_at > $3::timestamptz - interval '7 days'
+        and left(translate(contenido, '¿¡', ''), 40) = left(translate($2, '¿¡', ''), 40) limit 1`,
+    [conversacionId, texto, ahora.toISOString()],
+  );
+  return { texto: ya.length ? null : texto, usoRespaldo };
+}
+
+// Lo mismo, listo para devolver desde una herramienta (buscar_horarios, agendar_turno).
+export async function avisarPorEventoCercano(ctx: ContextoHerramienta): Promise<{ ok: true; datos: Record<string, unknown>; efectos?: Efectos }> {
+  const { texto, usoRespaldo } = await avisoEventoCercano(ctx.db, ctx.conversacionId, ctx.ahora);
+  const datos: Record<string, unknown> = { evento_esta_semana: true };
+  if (usoRespaldo) datos.falta = `la fila de contexto_agente ${CLAVE_TEXTO_EVENTO_INMINENTE} está vacía: se usó el respaldo de código`;
+  if (texto === null) {
+    datos.nota = "Ya se le dijo que se acerque al local cuanto antes, sin turno y por orden de llegada. No ofrezcas turnos " +
+      "ni repitas ese mensaje: contestá lo que pregunta.";
+    return { ok: true, datos };
+  }
+  datos.nota = "No hay turno antes del evento: el sistema ya le manda el mensaje para que se acerque al local. No ofrezcas turnos ni escribas nada más.";
+  return { ok: true, datos, efectos: { cortaTurno: true, mensajesAlCliente: [texto] } };
 }

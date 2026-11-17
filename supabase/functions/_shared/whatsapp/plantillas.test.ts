@@ -4,7 +4,7 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.13";
 import { botonDeTurno, PAYLOAD } from "./botones.ts";
 import { enviarPlantilla } from "./enviar.ts";
-import { armarPlantilla, NOMBRE_PLANTILLA_NUEVA, primerNombre, TEXTO_RESENA_EVENTO } from "./plantillas.ts";
+import { armarPlantilla, NOMBRE_PLANTILLA_NUEVA, primerNombre, TEXTO_CONFIRMACION_ASISTENCIA, TEXTO_RESENA_EVENTO } from "./plantillas.ts";
 import { puedeTextoLibre, VENTANA_MS } from "./ventana.ts";
 
 const TZ = "America/Argentina/Cordoba";
@@ -35,19 +35,12 @@ Deno.test("recordatorio: nombre, día y hora en el formato del texto aprobado, y
   assert(p.texto.includes("avisanos en caso de que no puedas asistir"));
 });
 
-Deno.test("versiones nuevas (11/11): recordatorio que pregunta si viene y reseña con el texto de Sofía", () => {
-  const r = armarPlantilla("recordatorio_18h", { nombre: "juan pérez", inicio: new Date("2030-06-06T16:00:00-03:00"), referencia: TURNO, linkResena: null }, TZ, true);
-  assert(!("falta" in r));
-  assertEquals(r.nombre, NOMBRE_PLANTILLA_NUEVA.recordatorio_18h);
-  assertEquals(r.cuerpo, ["Juan", "Jueves 6 de Junio", "16.00hs"]); // mismas variables y formato que la de siempre
-  assertEquals(r.botones, []);
-  assert(r.texto.startsWith("Hola Juan!"));
-  assert(r.texto.includes("*Día:* Jueves 6 de Junio") && r.texto.includes("*Hora:* 16.00hs"));
-  assert(r.texto.includes("*¿Venís al turno?*"));
-  assert(!r.texto.includes("{{"), "no quedan variables sin reemplazar");
-  // El lector de turnos (subida-turnos) saca el recordatorio de la charla: tiene que reconocer el texto nuevo.
-  assert(/Te recordamos (?:el|tu) turno/i.test(r.texto));
-
+Deno.test("insistencia de confirmación (17/11) y reseña nueva con el texto de Sofía (11/11)", () => {
+  // Sin variables y sin nombre: el texto exacto de recordatorio_turno_2 en Meta.
+  const c = armarPlantilla("confirmacion_asistencia", { nombre: null, inicio: null, referencia: TURNO, linkResena: null }, TZ);
+  assert(!("falta" in c));
+  assertEquals([c.nombre, c.cuerpo, c.botones, c.texto], ["recordatorio_turno_2", [], [], TEXTO_CONFIRMACION_ASISTENCIA]);
+  assert(c.texto.includes("*SI* si vas a asistir.") && c.texto.includes("*NO* si necesitás cancelar o reprogramar."));
   // La reseña nueva no lleva variables: sale igual sin un nombre usable.
   const s = armarPlantilla("agradecimiento_resena", { nombre: null, inicio: null, referencia: TURNO, linkResena: null }, TZ, true);
   assert(!("falta" in s));

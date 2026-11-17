@@ -1,13 +1,14 @@
-// Decisión #8 de Mateo (14/9): con el evento hoy o mañana, lo resuelve una persona. Es una
-// derivación dura: la decide el código, no el modelo, con motivo evento_inminente y el texto
-// fijo de contexto_agente, que nunca dice que no. Se prueba en las tres puertas por donde
-// podría colarse un turno (buscar_horarios, agendar_turno, reprogramar_turno) y el caso
-// parecido (pasado mañana) que tiene que seguir el camino normal.
+// Evento hoy, mañana o pasado (decisión #8), o esta semana sin turno antes del evento: desde el 17/11 (Sofía) ya no
+// se deriva. Sale una vez el texto fijo de contexto_agente (que nunca dice que no) para que se acerque al local por
+// orden de llegada, y la charla sigue con Lucía. Se prueba en las puertas por donde podría colarse un turno
+// (buscar_horarios, agendar_turno, reprogramar_turno) y el caso parecido (3 días, con lugar) que sigue normal.
 
 import { assert, assertEquals } from "jsr:@std/assert@1.0.13";
 import { aplicarBarandillas } from "../../supabase/functions/_shared/barandillas/index.ts";
 import { trazaNueva } from "../../supabase/functions/_shared/traza.ts";
+import { dbDesde } from "../../supabase/functions/_shared/db.ts";
 import { esEventoInminente } from "../../supabase/functions/_shared/herramientas/derivacion.ts";
+import { describirHorarios, leerHorarioDelLocal } from "../../supabase/functions/_shared/herramientas/horario_laboral.ts";
 import { ejecutarHerramienta } from "../../supabase/functions/_shared/herramientas/index.ts";
 import type { Resultado } from "../../supabase/functions/_shared/herramientas/tipos.ts";
 import {
@@ -44,21 +45,39 @@ Deno.test("hoy, mañana o pasado mañana se cuenta con la fecha de Argentina, no
   assertEquals(esEventoInminente(null, casiMedianoche, TZ), false);
 });
 
-async function quedoDerivado(sql: pg.Client, conversacionId: string, r: Resultado) {
+async function quedoAvisado(sql: pg.Client, conversacionId: string, r: Resultado) {
   esOk(r);
-  assertEquals(r.datos.derivar, "evento_inminente");
+  assertEquals(r.datos.evento_esta_semana, true);
   assertEquals(r.efectos?.cortaTurno, true);
   assertEquals(r.efectos?.mensajesAlCliente, [TEXTO_EVENTO_INMINENTE]);
-  const d = await fila(sql, "select motivo, estado from derivaciones where conversacion_id = $1", [conversacionId]);
-  assertEquals([d?.motivo, d?.estado], ["evento_inminente", "pendiente"]);
-  assertEquals((await fila(sql, "select estado from conversaciones where id = $1", [conversacionId])).estado, "derivada");
+  assertEquals(await contar(sql, "select count(*)::int as n from derivaciones where conversacion_id = $1", [conversacionId]), 0);
+  assertEquals((await fila(sql, "select estado, lucia_activa from conversaciones where id = $1", [conversacionId])), { estado: "activa", lucia_activa: true });
 }
+
+prueba("el aviso de evento cercano sale una sola vez: la segunda, Lucía sigue sin ofrecer turnos", async ({ ctx, sql, conversacionId }) => {
+  await quedoAvisado(sql, conversacionId, await buscar(ctx, LUNES, MARTES, "novio", LUNES));
+  await sql.query("insert into mensajes (conversacion_id, direccion, tipo, contenido, enviado_at) values ($1, 'saliente', 'texto', $2, $3)", [conversacionId, TEXTO_EVENTO_INMINENTE, AHORA.toISOString()]);
+  const r = await buscar(ctx, LUNES, MARTES, "novio", LUNES);
+  esOk(r);
+  assertEquals(r.efectos, undefined);
+  assert(String(r.datos.nota).startsWith("Ya se le dijo"));
+});
+
+prueba("evento esta semana (en 5 días) sin lugar antes: el aviso del local; a 17 días sigue el pase de siempre", async ({ ctx, sql, conversacionId, agenda }) => {
+  agenda.lista = [];
+  await quedoAvisado(sql, conversacionId, await buscar(ctx, LUNES, MARTES, "invitado", "2030-06-08"));
+  await sql.query("delete from mensajes where conversacion_id = $1", [conversacionId]);
+  const lejos = await buscar(ctx, LUNES, MARTES, "invitado", "2030-06-20");
+  esOk(lejos);
+  assertEquals(lejos.efectos, undefined);
+  assert(!("sin_lugar_antes_del_evento" in lejos.datos));
+});
 
 prueba("buscar_horarios con el evento mañana (en la ficha) deriva en código y no ofrece turnos", async ({ ctx, sql, clienteId, conversacionId, agenda }) => {
   await sql.query("update clientes set fecha_evento = $2 where id = $1", [clienteId, MARTES]);
   agenda.lista = [hueco(MARTES, "16:00", 45)];
   const r = await buscar(ctx, LUNES, MARTES, "invitado");
-  await quedoDerivado(sql, conversacionId, r);
+  await quedoAvisado(sql, conversacionId, r);
   assertEquals(agenda.pedidos.length, 0, "ni siquiera le pide huecos a la agenda");
   assertEquals(ctx.traza.huecosOfrecidos, []);
   esOk(r);
@@ -67,14 +86,14 @@ prueba("buscar_horarios con el evento mañana (en la ficha) deriva en código y 
 
 prueba("buscar_horarios con el evento hoy (lo manda el modelo) deriva y deja la fecha en la ficha", async ({ ctx, sql, clienteId, conversacionId }) => {
   const r = await buscar(ctx, LUNES, MARTES, "novio", LUNES);
-  await quedoDerivado(sql, conversacionId, r);
+  await quedoAvisado(sql, conversacionId, r);
   assertEquals((await fila(sql, "select fecha_evento::text as f from clientes where id = $1", [clienteId])).f, LUNES);
 });
 
 prueba("buscar_horarios con el evento pasado mañana también deriva (2 días desde el 10/10)", async ({ ctx, sql, conversacionId, agenda }) => {
   agenda.lista = [hueco(MARTES, "16:00", 45)];
   const r = await buscar(ctx, LUNES, MARTES, "invitado", MIERCOLES);
-  await quedoDerivado(sql, conversacionId, r);
+  await quedoAvisado(sql, conversacionId, r);
   assertEquals(agenda.pedidos.length, 0, "ni siquiera le pide huecos a la agenda");
 });
 
@@ -91,7 +110,7 @@ prueba("si la agenda devuelve derivar: evento_inminente, buscar_horarios lo resp
   agenda.derivar = "evento_inminente";
   agenda.lista = [hueco(JUEVES, "16:00", 45)];
   const r = await buscar(ctx, JUEVES, JUEVES, "invitado", "2030-06-20");
-  await quedoDerivado(sql, conversacionId, r);
+  await quedoAvisado(sql, conversacionId, r);
   assertEquals(ctx.traza.huecosOfrecidos, []);
 });
 
@@ -99,7 +118,7 @@ prueba("agendar_turno con el evento mañana deriva en vez de agendar, aunque el 
   await sql.query("update clientes set nombre = 'Juan' where id = $1", [clienteId]);
   ctx.traza.huecosOfrecidos.push({ ...hueco(MARTES, "10:00", 45), tipo: "invitado" });
   const r = await agendar(ctx, MARTES, "10:00", "invitado", { fecha_evento: MARTES });
-  await quedoDerivado(sql, conversacionId, r);
+  await quedoAvisado(sql, conversacionId, r);
   assertEquals(await contar(sql, "select count(*)::int as n from turnos where cliente_id = $1", [clienteId]), 0);
   assertEquals((await fila(sql, "select fecha_evento::text as f from clientes where id = $1", [clienteId])).f, MARTES);
 });
@@ -129,13 +148,15 @@ Deno.test({
         const f = await fila(sql, "select valor from contexto_agente where clave = $1", [clave]);
         assert(f && String(f.valor).trim().length > 0, `falta ${clave} en contexto_agente`);
         assert(!/(^|[^\p{L}])no([^\p{L}]|$)/iu.test(String(f.valor)), `${clave} dice que no: ${f.valor}`);
+        // 17/11: el de evento cercano lleva {horario}, que se completa con el horario de la agenda antes de enviarse.
+        const texto = String(f.valor).replace("{horario}", describirHorarios(await leerHorarioDelLocal(dbDesde(sql)), []).local);
         const traza = trazaNueva();
         traza.llamadas.push({ herramienta, argumentos: {}, ok: true });
         const b = await aplicarBarandillas({
-          texto: String(f.valor), traza, ahora: AHORA, ultimoMensajeClienteAt: AHORA, esPrimerMensaje: false, nombreCliente: null,
+          texto, traza, ahora: AHORA, ultimoMensajeClienteAt: AHORA, esPrimerMensaje: false, nombreCliente: null,
         });
         assertEquals(b.decision, "enviar", `${clave}: ${JSON.stringify(b.saltos)}`);
-        assertEquals(b.texto, String(f.valor), clave);
+        assertEquals(b.texto, texto, clave);
       }
     }),
 });

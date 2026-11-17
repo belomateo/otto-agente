@@ -21,7 +21,7 @@
 import { EVENTOS, type Evento, TIPOS_TURNO, type TipoTurno } from "../enums.ts";
 import { fechaLarga, fechaLocal, horaLocal } from "../tiempo.ts";
 import { armarConfirmacion } from "./confirmacion.ts";
-import { derivarPorEventoInminente, esEventoInminente } from "./derivacion.ts";
+import { avisarPorEventoCercano, esEventoInminente } from "./derivacion.ts";
 import { eligioElHorario } from "./eleccion.ts";
 import { fechaEventoCreible } from "./fecha_evento.ts";
 import { actualizarFicha, leerFicha } from "./ficha.ts";
@@ -91,7 +91,7 @@ export const agendarTurno: Herramienta<Args> = {
         evento: args.evento,
         fecha_evento: args.fecha_evento,
       });
-      return await derivarPorEventoInminente(ctx);
+      return await avisarPorEventoCercano(ctx);
     }
 
     // 8/10: el horario lo elige el cliente (eleccion.ts). Va antes de mirar la traza: si no lo
