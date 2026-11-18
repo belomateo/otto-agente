@@ -23,15 +23,75 @@ import { EstadoVacio } from '@/components/ui-otto/EstadoVacio';
 import { SONDEO_LISTAS_MS, useDatos } from '@/components/api/useDatos';
 import { ChatThread } from '../bandeja/ChatThread';
 import type { EstadoDerivacion, FilaDerivacion } from '@/lib/queries/atencion';
+import { fechaEnZona, fechaLarga, sumarDias } from '@/lib/formato';
 
 const VACIOS: Record<EstadoDerivacion, { titulo: string; texto: string }> = {
   pendiente: { titulo: 'Todavía no hay derivaciones', texto: 'Lucía está atendiendo sola.' },
-  atendida: { titulo: 'Todavía no hay consultas resueltas', texto: 'Acá aparecen las que marcás como OK y las de días anteriores.' },
+  atendida: { titulo: 'No hay conversaciones', texto: 'Probá con otro día o buscá por nombre o teléfono.' },
 };
 
 type Respuesta = { derivaciones: FilaDerivacion[]; pendientes: number; atendidas: number };
 
-function TarjetaDerivacion({ d, activa, onClick, compacta = false, anterior = false }: { d: FilaDerivacion; activa: boolean; onClick?: () => void; compacta?: boolean; anterior?: boolean }) {
+// Consultas OK = el historial de todas las conversaciones (Sofía, 18/11), por secciones: un día por vez, o una
+// búsqueda por nombre o teléfono en todo el historial. Así nunca se cargan miles juntas.
+function ControlesHistorial({ dia, setDia, busqueda, setBusqueda }: { dia: string; setDia: (d: string) => void; busqueda: string; setBusqueda: (b: string) => void }) {
+  const [texto, setTexto] = useState(busqueda);
+  const hoy = fechaEnZona();
+  const flecha = 'rounded-otto border border-borde bg-lino px-3 py-1.5 text-sm disabled:opacity-40';
+  return (
+    <div className="flex flex-col gap-2">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          setBusqueda(texto.trim());
+        }}
+        className="flex gap-2"
+      >
+        <input
+          value={texto}
+          onChange={(e) => {
+            setTexto(e.target.value);
+            if (!e.target.value) setBusqueda('');
+          }}
+          placeholder="Buscar por nombre o teléfono"
+          aria-label="Buscar por nombre o teléfono"
+          className="min-w-0 flex-1 rounded-otto border border-borde bg-lino px-3 py-1.5 text-sm"
+        />
+        <button type="submit" className="rounded-otto bg-cobre px-3 py-1.5 text-sm font-medium text-lino">
+          Buscar
+        </button>
+      </form>
+      {busqueda ? (
+        <div className="text-[13px] text-grafito">
+          Resultados de «{busqueda}» en todo el historial ·{' '}
+          <button type="button" className="underline" onClick={() => { setTexto(''); setBusqueda(''); }}>
+            volver por día
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <button type="button" className={flecha} onClick={() => setDia(sumarDias(dia, -1))} aria-label="Día anterior">
+            ◀
+          </button>
+          <input
+            type="date"
+            value={dia}
+            max={hoy}
+            onChange={(e) => e.target.value && setDia(e.target.value)}
+            aria-label="Día"
+            className="min-w-0 flex-1 rounded-otto border border-borde bg-lino px-3 py-1.5 text-sm"
+          />
+          <button type="button" className={flecha} disabled={dia >= hoy} onClick={() => setDia(sumarDias(dia, 1))} aria-label="Día siguiente">
+            ▶
+          </button>
+        </div>
+      )}
+      {!busqueda && <div className="text-[13px] font-medium text-grafito">{dia === hoy ? 'Hoy' : fechaLarga(dia)}</div>}
+    </div>
+  );
+}
+
+function TarjetaDerivacion({ d, activa, onClick, compacta = false }: { d: FilaDerivacion; activa: boolean; onClick?: () => void; compacta?: boolean }) {
   const clases = `rounded-otto border bg-lino p-4 text-left shadow-otto ${onClick ? 'w-full' : ''}`;
   const estilo = { borderColor: activa ? '#A8703F' : '#E6E1D8' };
   const interior = (
@@ -40,16 +100,10 @@ function TarjetaDerivacion({ d, activa, onClick, compacta = false, anterior = fa
         <span className="flex-1 font-serif text-base font-semibold">{d.n}</span>
         <span className="text-[14px] text-grafito md:text-xs">{d.hace}</span>
       </div>
-      <div className="my-2 flex flex-wrap gap-1.5">
+      <div className="my-2">
         <Chip bg={d.cb} fg={d.cf} className="px-2.5 py-[3px]">
           {d.motivo}
         </Chip>
-        {/* 18/11 (Sofía): en Consultas OK, las de días anteriores que nadie marcó. */}
-        {d.estado === 'pendiente' && anterior && (
-          <Chip bg="#EFEDE8" fg="#5C6068" className="px-2.5 py-[3px]">
-            de días anteriores
-          </Chip>
-        )}
       </div>
       <div className={`text-[14px] leading-[1.5] text-grafito md:text-[13.5px] ${compacta ? '' : 'line-clamp-2'}`}>{d.resumen}</div>
       {compacta && (
@@ -78,10 +132,24 @@ function TarjetaDerivacion({ d, activa, onClick, compacta = false, anterior = fa
 export default function AtencionPage() {
   const [tab, setTab] = useState<EstadoDerivacion>('pendiente');
   const [seleccionId, setSeleccionId] = useState<string | null>(null);
-  const { datos, cargando, error, recargar } = useDatos<Respuesta>(`/api/atencion?estado=${tab}`, { sondeoMs: SONDEO_LISTAS_MS });
+  const [dia, setDia] = useState(() => fechaEnZona());
+  const [busqueda, setBusqueda] = useState('');
+  const ruta = tab === 'pendiente' ? '/api/atencion?estado=pendiente' : `/api/atencion?estado=atendida&dia=${dia}${busqueda ? `&q=${encodeURIComponent(busqueda)}` : ''}`;
+  // El historial no se refresca solo: es un día ya pasado o una búsqueda puntual.
+  const { datos, cargando, error, recargar } = useDatos<Respuesta>(ruta, { sondeoMs: tab === 'pendiente' ? SONDEO_LISTAS_MS : undefined });
   const lista = datos?.derivaciones ?? [];
   const pendientes = datos?.pendientes ?? 0;
-  const atendidas = datos?.atendidas ?? 0;
+  const controles = tab === 'atendida' && (
+    <ControlesHistorial
+      dia={dia}
+      setDia={(d) => { setDia(d); setSeleccionId(null); }}
+      busqueda={busqueda}
+      setBusqueda={(b) => { setBusqueda(b); setSeleccionId(null); }}
+    />
+  );
+  const tope = tab === 'atendida' && lista.length >= 200 && (
+    <div className="text-center text-[13px] text-grafito">Se muestran las 200 más recientes: buscá por nombre o teléfono para encontrar otra.</div>
+  );
   const principal = lista.find((d) => d.id === seleccionId) ?? lista[0] ?? null;
 
   const contenido =
@@ -122,16 +190,18 @@ export default function AtencionPage() {
                 }}
                 className={tab === 'atendida' ? '-mb-px border-b-2 border-cobre px-3 py-2 text-cobre' : 'px-3 py-2 text-grafito'}
               >
-                Consultas OK <Chip className="ml-0.5 px-[7px] py-px text-[14px] font-semibold md:text-[11px]">{atendidas}</Chip>
+                Consultas OK
               </button>
             </div>
           </div>
+          {controles}
           {contenido ?? (
             // 14/11: la lista baja sola, sin arrastrar la charla de al lado.
             <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-1 pb-1">
               {lista.map((d) => (
-                <TarjetaDerivacion key={d.id} d={d} activa={d.id === principal?.id} onClick={() => setSeleccionId(d.id)} anterior={tab === 'atendida'} />
+                <TarjetaDerivacion key={d.id} d={d} activa={d.id === principal?.id} onClick={() => setSeleccionId(d.id)} />
               ))}
+              {tope}
             </div>
           )}
         </div>
@@ -164,12 +234,14 @@ export default function AtencionPage() {
               Pendientes · {pendientes}
             </button>
             <button type="button" onClick={() => setTab('atendida')} className={`flex-1 py-2 text-center ${tab === 'atendida' ? 'bg-cobre text-lino' : 'bg-lino text-grafito'}`}>
-              Consultas OK · {atendidas}
+              Consultas OK
             </button>
           </div>
+          {controles && <div className="mt-3">{controles}</div>}
         </div>
         <div className="flex flex-1 flex-col gap-3 p-4">
-          {contenido ? <div className="rounded-otto border border-borde bg-lino">{contenido}</div> : lista.map((d) => <TarjetaDerivacion key={d.id} d={d} activa={false} compacta anterior={tab === 'atendida'} />)}
+          {contenido ? <div className="rounded-otto border border-borde bg-lino">{contenido}</div> : lista.map((d) => <TarjetaDerivacion key={d.id} d={d} activa={false} compacta />)}
+          {!contenido && tope}
         </div>
       </div>
     </>
