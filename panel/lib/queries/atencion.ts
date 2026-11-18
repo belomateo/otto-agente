@@ -32,37 +32,44 @@ export async function listarDerivaciones(
   db: ClienteDb,
   estado: EstadoDerivacion = 'pendiente'
 ): Promise<{ derivaciones: FilaDerivacion[]; pendientes: number; atendidas: number }> {
-  const [lista, pendientes, atendidas] = await Promise.all([
-    db
+  const limite = limiteArchivo();
+  // Pendientes: las de las últimas 48 hs (archivo, 27/10). Consultas OK (Sofía, 18/11): las marcadas OK y
+  // también las de días anteriores que nadie marcó, que si no, no se veían en ningún lado.
+  const consultar = (estadoFila: EstadoDerivacion, operador: 'gt' | 'lte' | null) => {
+    let q = db
       .from('derivaciones')
       .select(
         'id, conversacion_id, motivo, estado, creado_at, atendida_at, atendida_por, conversaciones!inner(cliente_id, clientes(nombre, telefono), mensajes(contenido, direccion, tipo, enviado_at))'
       )
-      .eq('estado', estado)
-      .neq('conversaciones.canal', 'prueba')
-      .gt('conversaciones.ultimo_mensaje_at', estado === 'pendiente' ? limiteArchivo() : '1970-01-01')
+      .eq('estado', estadoFila)
+      .neq('conversaciones.canal', 'prueba');
+    if (operador) q = q.filter('conversaciones.ultimo_mensaje_at', operador, limite);
+    return q
       .order('creado_at', { ascending: false })
       .order('enviado_at', { referencedTable: 'conversaciones.mensajes', ascending: false })
       .limit(ULTIMOS, { referencedTable: 'conversaciones.mensajes' })
-      .limit(200),
-    db
+      .limit(200);
+  };
+  const contar = (estadoFila: EstadoDerivacion, operador: 'gt' | 'lte' | null) => {
+    let q = db
       .from('derivaciones')
       .select('id, conversaciones!inner(canal, ultimo_mensaje_at)', { count: 'exact', head: true })
-      .eq('estado', 'pendiente')
-      .neq('conversaciones.canal', 'prueba')
-      .gt('conversaciones.ultimo_mensaje_at', limiteArchivo()),
-    db
-      .from('derivaciones')
-      .select('id, conversaciones!inner(canal)', { count: 'exact', head: true })
-      .eq('estado', 'atendida')
-      .neq('conversaciones.canal', 'prueba'),
+      .eq('estado', estadoFila)
+      .neq('conversaciones.canal', 'prueba');
+    if (operador) q = q.filter('conversaciones.ultimo_mensaje_at', operador, limite);
+    return q;
+  };
+  const [listas, pendientes, atendidas, anteriores] = await Promise.all([
+    Promise.all(estado === 'pendiente' ? [consultar('pendiente', 'gt')] : [consultar('atendida', null), consultar('pendiente', 'lte')]),
+    contar('pendiente', 'gt'),
+    contar('atendida', null),
+    contar('pendiente', 'lte'),
   ]);
-  if (lista.error) throw lista.error;
-  if (pendientes.error) throw pendientes.error;
-  if (atendidas.error) throw atendidas.error;
+  for (const r of [...listas, pendientes, atendidas, anteriores]) if (r.error) throw r.error;
+  const filas = listas.flatMap((l) => l.data ?? []).sort((x, y) => y.creado_at.localeCompare(x.creado_at));
 
   const ahora = new Date();
-  const derivaciones = (lista.data ?? []).map((d) => {
+  const derivaciones = filas.map((d) => {
     const conv = d.conversaciones;
     const recientes = conv?.mensajes ?? []; // del más nuevo al más viejo
     const ultimoDelCliente = recientes.find((m) => m.direccion === 'entrante');
@@ -88,5 +95,5 @@ export async function listarDerivaciones(
         .map((m) => ({ direccion: m.direccion, texto: textoDeMensaje(m), hora: hora(m.enviado_at) })),
     };
   });
-  return { derivaciones, pendientes: pendientes.count ?? 0, atendidas: atendidas.count ?? 0 };
+  return { derivaciones, pendientes: pendientes.count ?? 0, atendidas: (atendidas.count ?? 0) + (anteriores.count ?? 0) };
 }

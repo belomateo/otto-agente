@@ -26,12 +26,12 @@ import type { EstadoDerivacion, FilaDerivacion } from '@/lib/queries/atencion';
 
 const VACIOS: Record<EstadoDerivacion, { titulo: string; texto: string }> = {
   pendiente: { titulo: 'Todavía no hay derivaciones', texto: 'Lucía está atendiendo sola.' },
-  atendida: { titulo: 'Todavía no hay consultas resueltas', texto: 'Cuando marques una derivación como OK, aparece acá.' },
+  atendida: { titulo: 'Todavía no hay consultas resueltas', texto: 'Acá aparecen las que marcás como OK y las de días anteriores.' },
 };
 
 type Respuesta = { derivaciones: FilaDerivacion[]; pendientes: number; atendidas: number };
 
-function TarjetaDerivacion({ d, activa, onClick, compacta = false }: { d: FilaDerivacion; activa: boolean; onClick?: () => void; compacta?: boolean }) {
+function TarjetaDerivacion({ d, activa, onClick, compacta = false, anterior = false }: { d: FilaDerivacion; activa: boolean; onClick?: () => void; compacta?: boolean; anterior?: boolean }) {
   const clases = `rounded-otto border bg-lino p-4 text-left shadow-otto ${onClick ? 'w-full' : ''}`;
   const estilo = { borderColor: activa ? '#A8703F' : '#E6E1D8' };
   const interior = (
@@ -40,10 +40,16 @@ function TarjetaDerivacion({ d, activa, onClick, compacta = false }: { d: FilaDe
         <span className="flex-1 font-serif text-base font-semibold">{d.n}</span>
         <span className="text-[14px] text-grafito md:text-xs">{d.hace}</span>
       </div>
-      <div className="my-2">
+      <div className="my-2 flex flex-wrap gap-1.5">
         <Chip bg={d.cb} fg={d.cf} className="px-2.5 py-[3px]">
           {d.motivo}
         </Chip>
+        {/* 18/11 (Sofía): en Consultas OK, las de días anteriores que nadie marcó. */}
+        {d.estado === 'pendiente' && anterior && (
+          <Chip bg="#EFEDE8" fg="#5C6068" className="px-2.5 py-[3px]">
+            de días anteriores
+          </Chip>
+        )}
       </div>
       <div className={`text-[14px] leading-[1.5] text-grafito md:text-[13.5px] ${compacta ? '' : 'line-clamp-2'}`}>{d.resumen}</div>
       {compacta && (
@@ -124,7 +130,7 @@ export default function AtencionPage() {
             // 14/11: la lista baja sola, sin arrastrar la charla de al lado.
             <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-1 pb-1">
               {lista.map((d) => (
-                <TarjetaDerivacion key={d.id} d={d} activa={d.id === principal?.id} onClick={() => setSeleccionId(d.id)} />
+                <TarjetaDerivacion key={d.id} d={d} activa={d.id === principal?.id} onClick={() => setSeleccionId(d.id)} anterior={tab === 'atendida'} />
               ))}
             </div>
           )}
@@ -163,7 +169,7 @@ export default function AtencionPage() {
           </div>
         </div>
         <div className="flex flex-1 flex-col gap-3 p-4">
-          {contenido ? <div className="rounded-otto border border-borde bg-lino">{contenido}</div> : lista.map((d) => <TarjetaDerivacion key={d.id} d={d} activa={false} compacta />)}
+          {contenido ? <div className="rounded-otto border border-borde bg-lino">{contenido}</div> : lista.map((d) => <TarjetaDerivacion key={d.id} d={d} activa={false} compacta anterior={tab === 'atendida'} />)}
         </div>
       </div>
     </>
